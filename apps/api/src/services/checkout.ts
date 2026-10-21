@@ -97,12 +97,11 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResultDTO>
   };
 }
 
-export async function getOrderReceipt(reference: string, email?: string): Promise<OrderDTO> {
+export async function getOrderReceipt(reference: string, email: string): Promise<OrderDTO> {
+  if (!email.trim()) throw notFound("No encontramos la orden solicitada.");
   const order = await getRepositories().orders.findByReference(reference);
   if (!order) throw notFound("No encontramos la orden solicitada.");
-  // The reference alone is guessable; require the purchase email when the
-  // client can provide it (the confirmation page always does).
-  if (email && order.email.toLowerCase() !== email.trim().toLowerCase()) {
+  if (order.email.toLowerCase() !== email.trim().toLowerCase()) {
     throw notFound("No encontramos la orden solicitada.");
   }
   return orderToDTO(order);

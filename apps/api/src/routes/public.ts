@@ -34,7 +34,7 @@ publicRouter.post(
 publicRouter.get(
   "/orders/:reference",
   asyncRoute(async (req, res) => {
-    const email = typeof req.query.email === "string" ? req.query.email : undefined;
+    const email = typeof req.query.email === "string" ? req.query.email : "";
     sendData(res, await getOrderReceipt(req.params.reference, email));
   }),
 );

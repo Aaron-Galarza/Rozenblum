@@ -17,6 +17,7 @@ import {
   computeProgress,
   conversationToMessages,
   enrollmentToDTO,
+  moduleStatuses,
   totalLessons,
 } from "./mappers.js";
 
@@ -91,11 +92,12 @@ export async function setLessonProgress(
   const course = await repos.courses.findById(enrollment.courseId);
   if (!course) throw notFound("Curso no encontrado.");
 
-  const lessonIds = new Set(
-    course.modules.flatMap((mod) => mod.lessons.map((lesson) => lesson.id)),
-  );
-  if (!lessonIds.has(lessonId)) {
+  const module = course.modules.find((mod) => mod.lessons.some((lesson) => lesson.id === lessonId));
+  if (!module) {
     throw badRequest("La lección no pertenece a este curso.");
+  }
+  if (completed && moduleStatuses(course, enrollment.completedLessonIds).get(module.id) === "locked") {
+    throw forbidden("Completá los módulos anteriores para acceder a esta lección.");
   }
 
   const next = new Set(enrollment.completedLessonIds);
@@ -146,6 +148,9 @@ export async function listStudentMessages(
 ): Promise<ChatMessageDTO[]> {
   const repos = getRepositories();
   const enrollment = await loadEnrollment(enrollmentId, user);
+  if (enrollment.status === "Pendiente") {
+    throw forbidden("La mensajería se habilita cuando se aprueba tu acceso.");
+  }
   const conversation = await repos.conversations.findByStudentAndCourse(
     enrollment.studentEmail,
     enrollment.courseId,

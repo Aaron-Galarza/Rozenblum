@@ -140,7 +140,10 @@ export function enrollmentToDTO(
         done: completed.has(lesson.id),
         highlight: lesson.highlight,
         position: lesson.position,
-        content: lesson.content,
+        content:
+          enrollment.status !== "Pendiente" && statuses.get(mod.id) !== "locked"
+            ? lesson.content
+            : [],
       })),
     })),
   };

@@ -95,6 +95,9 @@ test("el comprobante exige que el correo coincida con la orden", async () => {
 
   const wrong = await api(server.baseUrl, `/api/orders/${reference}?email=intruso@email.com`);
   assert.equal(wrong.status, 404);
+
+  const missing = await api(server.baseUrl, `/api/orders/${reference}`);
+  assert.equal(missing.status, 404);
 });
 
 test("el formulario de contacto valida y persiste el mensaje", async () => {

@@ -42,6 +42,42 @@ test("el progreso inicial coincide con el prototipo (60%) y los módulos derivan
     enrollment.modules[0]?.lessons.map((lesson) => lesson.done),
     [true, true],
   );
+  assert.ok(enrollment.modules.filter((mod) => mod.status === "locked").every(
+    (mod) => mod.lessons.every((lesson) => !('content' in lesson) || (lesson as { content: unknown[] }).content.length === 0),
+  ));
+});
+
+test("una inscripción pendiente no entrega lecciones ni habilita la mensajería", async () => {
+  const checkout = await api(server.baseUrl, "/api/checkout", {
+    method: "POST",
+    body: JSON.stringify({
+      courseSlug: "actualizacion-derecho-familia",
+      nombre: "Juan García",
+      email: "alumno@rozenblum.com",
+      dni: "30111222",
+    }),
+  });
+  assert.equal(checkout.status, 201);
+
+  const listed = await api<{ data: Enrollment[] }>(server.baseUrl, "/api/student/enrollments", { token });
+  const pending = listed.body.data.find((item) => item.courseId === 3);
+  assert.ok(pending);
+  assert.equal(pending.status, "Pendiente");
+  assert.ok(pending.modules.every((mod) => mod.lessons.every(
+    (lesson) => !('content' in lesson) || (lesson as { content: unknown[] }).content.length === 0,
+  )));
+
+  const messages = await api(server.baseUrl, `/api/student/enrollments/${pending.id}/messages`, { token });
+  assert.equal(messages.status, 403);
+});
+
+test("una lección de un módulo bloqueado no se puede completar", async () => {
+  const result = await api(server.baseUrl, `/api/student/enrollments/${enrollment.id}/progress`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ lessonId: "3.1", completed: true }),
+  });
+  assert.equal(result.status, 403);
 });
 
 test("marcar una lección recalcula el progreso de toda la inscripción", async () => {

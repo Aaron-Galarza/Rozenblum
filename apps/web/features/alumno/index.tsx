@@ -192,6 +192,11 @@ export default function AlumnoView() {
         <LoadingScreen label="Cargando tu aula..." />
       ) : error ? (
         <ErrorPanel message={error} onRetry={() => void load()} />
+      ) : enrollment?.status === "Pendiente" ? (
+        <EmptyState
+          title="Tu inscripción está pendiente"
+          message="Cuando se valide el pago, vas a poder acceder a las lecciones y conversar con el profesor."
+        />
       ) : !enrollment || !selectedLesson ? (
         <EmptyState
           title="Todavía no tenés cursos activos"
