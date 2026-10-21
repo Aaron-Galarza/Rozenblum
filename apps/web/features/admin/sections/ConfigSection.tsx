@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { SiteSettingsDTO } from "@rozenblum/shared";
 import { errorMessage } from "../../../lib/api";
+import { useModalA11y } from "../../../lib/use-modal-a11y";
+import Toast from "../../../components/ui/Toast";
 
 type SettingsPayload = {
   companyName: string;
@@ -26,6 +28,8 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
   });
   const [privacyText, setPrivacyText] = useState(settings.privacyText);
   const [busy, setBusy] = useState(false);
+  const previewTitleId = useId();
+  const previewDialogRef = useModalA11y<HTMLDivElement>(() => setPreviewOpen(false), previewOpen);
 
   useEffect(() => {
     setCompany({
@@ -124,11 +128,19 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
       {/* Preview modal */}
       {previewOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center" style={{ backgroundColor: "rgba(23,59,108,0.5)", backdropFilter: "blur(3px)" }} onClick={(e) => e.target === e.currentTarget && setPreviewOpen(false)}>
-          <div className="w-full max-w-xl mx-4 p-6 rounded-lg" style={{ backgroundColor: "#FAF8F5", border: "1px solid rgba(181,138,67,0.3)", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
+          <div
+            ref={previewDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={previewTitleId}
+            tabIndex={-1}
+            className="w-full max-w-xl mx-4 p-6 rounded-lg outline-none"
+            style={{ backgroundColor: "#FAF8F5", border: "1px solid rgba(181,138,67,0.3)", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}
+          >
             <div className="flex items-center justify-between mb-4">
-              <h3 style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif", fontSize: "1.3rem", fontWeight: 500 }}>Vista Previa — Política de Privacidad</h3>
-              <button onClick={() => setPreviewOpen(false)} className="hover:opacity-50 transition-opacity" style={{ color: "#173B6C" }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              <h3 id={previewTitleId} style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif", fontSize: "1.3rem", fontWeight: 500 }}>Vista Previa — Política de Privacidad</h3>
+              <button onClick={() => setPreviewOpen(false)} aria-label="Cerrar" className="hover:opacity-50 transition-opacity" style={{ color: "#173B6C" }}>
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </button>
             </div>
             <div className="p-4 rounded text-sm leading-relaxed" style={{ backgroundColor: "#FFFFFF", color: "#173B6C", border: "1px solid rgba(23,59,108,0.08)", maxHeight: 300, overflowY: "auto" }}>
@@ -139,7 +151,7 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
         </div>
       )}
 
-      {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[400] px-5 py-3 rounded-lg shadow-xl text-sm font-medium" style={{ backgroundColor: toast.error ? "#72132C" : "#173B6C", color: "#FAF8F5", border: "1px solid #B58A43" }}>{toast.text}</div>}
+      {toast && <Toast message={toast.text} error={toast.error} />}
     </>
   );
 }

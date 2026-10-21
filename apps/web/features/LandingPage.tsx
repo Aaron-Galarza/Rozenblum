@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PracticeArea } from "../types";
 import { PRACTICE_AREAS } from "../data/practiceAreas";
@@ -8,23 +8,34 @@ import { TEAM } from "../data/team";
 import { IconClose, IconExternal } from "../components/icons";
 import LandingFooter from "../components/layout/LandingFooter";
 import { apiFetch, errorMessage } from "../lib/api";
+import { useModalA11y } from "../lib/use-modal-a11y";
 
 const NAV_LINKS = ["Inicio", "Áreas", "Nosotros", "Equipo", "Cursos", "Contacto"];
 
 function Modal({ area, onClose, onContact }: { area: PracticeArea; onClose: () => void; onContact: () => void }) {
+  const titleId = useId();
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose);
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4"
       style={{ backgroundColor: "rgba(23,59,108,0.6)", backdropFilter: "blur(4px)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="relative w-full max-w-xl max-h-[85vh] overflow-y-auto" style={{ backgroundColor: "#FFFFFF", boxShadow: "0 24px 80px rgba(23,59,108,0.25)" }}>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="relative w-full max-w-xl max-h-[85vh] overflow-y-auto outline-none"
+        style={{ backgroundColor: "#FFFFFF", boxShadow: "0 24px 80px rgba(23,59,108,0.25)" }}
+      >
         <div className="flex items-start justify-between p-8 pb-6" style={{ borderBottom: "1px solid rgba(23,59,108,0.1)" }}>
           <div>
             <p className="text-xs tracking-[0.2em] uppercase font-medium mb-2" style={{ color: "#B58A43" }}>Casos Comunes</p>
-            <h2 className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{area.title}</h2>
+            <h2 id={titleId} className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{area.title}</h2>
           </div>
-          <button onClick={onClose} className="flex-shrink-0 ml-4 mt-1 w-9 h-9 flex items-center justify-center hover:scale-110 transition-transform" style={{ color: "#173B6C", backgroundColor: "rgba(23,59,108,0.06)" }}>
+          <button onClick={onClose} aria-label="Cerrar" className="flex-shrink-0 ml-4 mt-1 w-9 h-9 flex items-center justify-center hover:scale-110 transition-transform" style={{ color: "#173B6C", backgroundColor: "rgba(23,59,108,0.06)" }}>
             <IconClose />
           </button>
         </div>

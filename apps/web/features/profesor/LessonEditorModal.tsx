@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { LessonBlockDTO, LessonType } from "@rozenblum/shared";
+import { useModalA11y } from "../../lib/use-modal-a11y";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type BlockType = "h1" | "h2" | "h3" | "paragraph" | "bullet" | "numbered" | "quote" | "toggle" | "link" | "code";
@@ -45,23 +46,7 @@ function getWordCount(blocks: Block[]) {
   return { chars: text.length, words: text ? text.split(" ").filter(Boolean).length : 0 };
 }
 
-// ── Pre-filled content (edit mode) ────────────────────────────────────────────
-const EDIT_BLOCKS: Block[] = [
-  { id: "b1", type: "h1", content: "Delitos Contra la Propiedad" },
-  { id: "b2", type: "paragraph", content: "En este módulo estudiaremos los delitos que lesionan el patrimonio de las personas. Estos delitos protegen el derecho a la propiedad y el patrimonio económico." },
-  { id: "b3", type: "h2", content: "¿Cuáles son los elementos del robo?" },
-  { id: "b4", type: "bullet", content: "", items: ["Apoderamiento (tomar algo que no es tuyo)", "Cosa mueble (objeto que se puede mover)", "Sin consentimiento del dueño", "Ánimo de lucro (intención de obtener ganancia)"] },
-  { id: "b5", type: "quote", content: "Art. 162 del Código Penal: Será reprimido con prisión de un mes a seis años, el que se apropiare de una cosa mueble, total o parcialmente ajena..." },
-  { id: "b6", type: "h3", content: "Diferencia entre robo y hurto" },
-  { id: "b7", type: "paragraph", content: "El robo se diferencia del hurto en que el robo implica violencia o amenaza, mientras que el hurto es el apoderamiento sin estas circunstancias." },
-  { id: "b8", type: "numbered", content: "", items: ["Robo a mano armada: Con armas o instrumentos peligrosos", "Robo a personas: Quitando cosas que la víctima trae consigo", "Robo en domicilio: Entrando sin consentimiento a casa ajena"] },
-  { id: "b9", type: "toggle", content: "Jurisprudencia Relevante", expanded: false, toggleContent: "Fallo de la Corte Suprema (2022): La sentencia estableció que los elementos del tipo deben acreditarse con certeza.\n\nTribunal de Apelación (2023): Confirmó el criterio anterior y amplió su aplicación a delitos informáticos." },
-  { id: "b10", type: "link", content: "📺 Ver video explicativo — youtube.com/watch?v=xxxxx" },
-  { id: "b11", type: "h2", content: "Casos prácticos" },
-  { id: "b12", type: "paragraph", content: "Lee el siguiente caso documentado en la plataforma de Jurisprudencia Argentina: Caso de Robo a Vivienda (2021)" },
-  { id: "b13", type: "paragraph", content: "Estos delitos son fundamentales para entender la protección legal del patrimonio. En la siguiente lección profundizaremos en las penas y circunstancias agravantes." },
-];
-
+// ── Empty block ────────────────────────────────────────────────────────────────
 const EMPTY_BLOCK = (): Block => ({ id: genId(), type: "paragraph", content: "" });
 
 // ── Slash commands ─────────────────────────────────────────────────────────────
@@ -331,6 +316,8 @@ function BlockRow({ block, isHovered, onHover, onFocus, onChange, onKeyDown, onD
 
 // ── Main modal ─────────────────────────────────────────────────────────────────
 export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleName, initialBlocks, initialType, onClose, onSave }: LessonEditorModalProps) {
+  const titleId = useId();
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose, isOpen);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [title, setTitle] = useState(lessonTitle ?? "");
   const [lessonType, setLessonType] = useState<LessonType>(initialType ?? "video");
@@ -341,6 +328,7 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashBlockId, setSlashBlockId] = useState<string | null>(null);
   const [slashFilter, setSlashFilter] = useState("");
+  const [slashAnchor, setSlashAnchor] = useState<{ top: number; left: number } | null>(null);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [mounted, setMounted] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -355,26 +343,18 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
       setBlocks(
         mode === "edit" && initialBlocks && initialBlocks.length > 0
           ? initialBlocks.map((b) => ({ ...b, items: b.items ? [...b.items] : undefined }))
-          : mode === "edit"
-            ? EDIT_BLOCKS.map((b) => ({ ...b, items: b.items ? [...b.items] : undefined }))
-            : [EMPTY_BLOCK()],
+          : [EMPTY_BLOCK()],
       );
       setSaveLabel("GUARDAR");
       setSaveState("idle");
       setShowSlashMenu(false);
+      setSlashAnchor(null);
       setAutoSaveText("");
       requestAnimationFrame(() => setMounted(true));
     } else {
       setMounted(false);
     }
   }, [isOpen, mode, lessonTitle, initialBlocks, initialType]);
-
-  // ESC to close
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    if (isOpen) window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [isOpen, onClose]);
 
   // Auto-save on block change
   useEffect(() => {
@@ -432,6 +412,7 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
     }
     if (showSlashMenu && (e.key === "Escape" || e.key === "Enter")) {
       setShowSlashMenu(false);
+      setSlashAnchor(null);
     }
   }, [blocks, addBlockAfter, deleteBlock, showSlashMenu]);
 
@@ -442,10 +423,22 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
         setShowSlashMenu(true);
         setSlashBlockId(id);
         setSlashFilter("");
+        const rect = document.activeElement?.getBoundingClientRect();
+        setSlashAnchor(
+          rect
+            ? {
+                top: Math.min(rect.bottom + 4, window.innerHeight - 320),
+                left: Math.min(rect.left, window.innerWidth - 272),
+              }
+            : null,
+        );
       } else if (showSlashMenu && content.startsWith("/")) {
         setSlashFilter(content.slice(1));
       } else {
-        if (showSlashMenu && !content.startsWith("/")) setShowSlashMenu(false);
+        if (showSlashMenu && !content.startsWith("/")) {
+          setShowSlashMenu(false);
+          setSlashAnchor(null);
+        }
       }
     }
     updateBlock(id, patch);
@@ -464,6 +457,7 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
     setShowSlashMenu(false);
     setSlashBlockId(null);
     setSlashFilter("");
+    setSlashAnchor(null);
   };
 
   const changeActiveType = (type: BlockType) => {
@@ -528,7 +522,12 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className="flex flex-col w-[90%] max-w-4xl transition-all duration-300"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="flex flex-col w-[90%] max-w-4xl transition-all duration-300 outline-none"
         style={{
           height: "90vh",
           backgroundColor: "#FAF8F5",
@@ -544,7 +543,7 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
           style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #B58A43", borderRadius: "12px 12px 0 0" }}
         >
           <div>
-            <h2 style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif", fontSize: "1.4rem", fontWeight: 600, lineHeight: 1.2 }}>
+            <h2 id={titleId} style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif", fontSize: "1.4rem", fontWeight: 600, lineHeight: 1.2 }}>
               {mode === "edit" ? `Editar Lección: ${lessonTitle ?? ""}` : "Crear Nueva Lección"}
             </h2>
             {moduleName && (
@@ -569,10 +568,11 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
             </button>
             <button
               onClick={onClose}
+              aria-label="Cerrar"
               className="w-9 h-9 flex items-center justify-center rounded-full transition-all duration-150 hover:opacity-60"
               style={{ color: "#173B6C" }}
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
@@ -584,10 +584,11 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
           className="flex-shrink-0 flex flex-wrap items-center gap-3 px-6 py-3"
           style={{ backgroundColor: "#FAF8F5", borderBottom: "1px solid #E0E0E0" }}
         >
-          <label className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "rgba(23,59,108,0.6)", fontFamily: "'Roboto', sans-serif" }}>
+          <label htmlFor="lesson-title" className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "rgba(23,59,108,0.6)", fontFamily: "'Roboto', sans-serif" }}>
             Título
           </label>
           <input
+            id="lesson-title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Título de la lección"
@@ -596,10 +597,11 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
             onFocus={(e) => (e.currentTarget.style.borderColor = "#B58A43")}
             onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(23,59,108,0.2)")}
           />
-          <label className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "rgba(23,59,108,0.6)", fontFamily: "'Roboto', sans-serif" }}>
+          <label htmlFor="lesson-type" className="text-[10px] font-bold tracking-widest uppercase" style={{ color: "rgba(23,59,108,0.6)", fontFamily: "'Roboto', sans-serif" }}>
             Tipo
           </label>
           <select
+            id="lesson-type"
             value={lessonType}
             onChange={(e) => setLessonType(e.target.value as LessonType)}
             className="px-3 py-2 text-sm outline-none bg-white"
@@ -747,9 +749,9 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
                 border: "1px solid #E0E0E0",
                 boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
                 borderRadius: "8px",
-                top: "50%",
-                left: "50%",
-                transform: "translate(-50%, -50%) translateY(20px)",
+                ...(slashAnchor
+                  ? { top: slashAnchor.top, left: slashAnchor.left }
+                  : { top: "50%", left: "50%", transform: "translate(-50%, -50%) translateY(20px)" }),
               }}
             >
               <p className="px-3 py-1.5 text-[10px] font-bold tracking-widest uppercase" style={{ color: "rgba(23,59,108,0.4)" }}>

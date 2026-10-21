@@ -3,22 +3,8 @@
 import { useState } from "react";
 import type { AdminAlumnoDTO } from "@rozenblum/shared";
 import { errorMessage } from "../../../lib/api";
-
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center" style={{ backgroundColor: "rgba(23,59,108,0.5)", backdropFilter: "blur(3px)" }} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-md mx-4 p-6 rounded-lg" style={{ backgroundColor: "#FAF8F5", border: "1px solid rgba(181,138,67,0.3)", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
-        <div className="flex items-center justify-between mb-5">
-          <h3 style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif", fontSize: "1.3rem", fontWeight: 500 }}>{title}</h3>
-          <button onClick={onClose} className="hover:opacity-50 transition-opacity" style={{ color: "#173B6C" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
+import Modal from "../../../components/ui/Modal";
+import Toast from "../../../components/ui/Toast";
 
 const inputStyle: React.CSSProperties = { border: "1px solid rgba(23,59,108,0.2)", borderRadius: 4, color: "#173B6C", backgroundColor: "#FAF8F5" };
 
@@ -212,7 +198,7 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
         </Modal>
       )}
 
-      {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[400] px-5 py-3 rounded-lg shadow-xl text-sm font-medium" style={{ backgroundColor: toast.error ? "#72132C" : "#173B6C", color: "#FAF8F5", border: "1px solid #B58A43" }}>{toast.text}</div>}
+      {toast && <Toast message={toast.text} error={toast.error} />}
     </>
   );
 }

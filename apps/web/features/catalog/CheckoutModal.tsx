@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { CheckoutResultDTO } from "@rozenblum/shared";
 import type { Course } from "../../types";
 import { apiFetch, errorMessage } from "../../lib/api";
+import { useModalA11y } from "../../lib/use-modal-a11y";
 
 type CheckoutModalProps = {
   course: Course;
@@ -12,6 +13,8 @@ type CheckoutModalProps = {
 };
 
 export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutModalProps) {
+  const titleId = useId();
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose);
   const [form, setForm] = useState({ nombre: "", email: "", dni: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -45,10 +48,18 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
       style={{ backgroundColor: "rgba(0,0,0,0.5)", overflowY: "auto", padding: "1.5rem 1rem" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="w-full max-w-lg" style={{ backgroundColor: "#FFFFFF", boxShadow: "0 24px 80px rgba(0,0,0,0.25)", maxHeight: "90vh", overflowY: "auto" }}>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="w-full max-w-lg outline-none"
+        style={{ backgroundColor: "#FFFFFF", boxShadow: "0 24px 80px rgba(0,0,0,0.25)", maxHeight: "90vh", overflowY: "auto" }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-8 pt-8 pb-6" style={{ borderBottom: "1px solid rgba(23,59,108,0.1)" }}>
-          <h2 className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>
+          <h2 id={titleId} className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>
             Inscripción al Curso
           </h2>
           <button
@@ -80,8 +91,9 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
             { id: "dni", label: "DNI / Documento de Identidad *", type: "text", placeholder: "28.123.456" },
           ].map(({ id, label, type, placeholder }) => (
             <div key={id} className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium tracking-widest uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>{label}</label>
+              <label htmlFor={id} className="text-xs font-medium tracking-widest uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>{label}</label>
               <input
+                id={id}
                 required
                 type={type}
                 placeholder={placeholder}

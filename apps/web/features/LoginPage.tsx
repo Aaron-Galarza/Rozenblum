@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SessionDTO } from "@rozenblum/shared";
 import { apiFetch, errorMessage, saveSession } from "../lib/api";
+import { useModalA11y } from "../lib/use-modal-a11y";
 
 const DEMO_PASSWORD = "rozenblum-demo-2026";
 
@@ -55,6 +56,8 @@ const ROLES = [
 type Role = typeof ROLES[number];
 
 function LoginModal({ role, onClose, onLogin }: { role: Role; onClose: () => void; onLogin: (session: SessionDTO) => void }) {
+  const titleId = useId();
+  const dialogRef = useModalA11y<HTMLDivElement>(onClose);
   const [email, setEmail] = useState(role.demoEmail);
   const [pass, setPass] = useState(role.demoPass);
   const [loading, setLoading] = useState(false);
@@ -86,7 +89,12 @@ function LoginModal({ role, onClose, onLogin }: { role: Role; onClose: () => voi
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className="w-full max-w-sm mx-4 flex flex-col"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="w-full max-w-sm mx-4 flex flex-col outline-none"
         style={{ backgroundColor: "#FAF8F5", borderRadius: "10px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)", border: "1px solid rgba(181,138,67,0.3)" }}
       >
         {/* Modal header */}
@@ -97,21 +105,22 @@ function LoginModal({ role, onClose, onLogin }: { role: Role; onClose: () => voi
             </div>
             <div>
               <p className="text-xs font-medium tracking-widest uppercase" style={{ color: "#B58A43" }}>Acceso</p>
-              <p className="text-base font-medium" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{role.title}</p>
+              <p id={titleId} className="text-base font-medium" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{role.title}</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:opacity-50 transition-opacity" style={{ color: "#173B6C" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          <button onClick={onClose} aria-label="Cerrar" className="w-8 h-8 flex items-center justify-center rounded-full hover:opacity-50 transition-opacity" style={{ color: "#173B6C" }}>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="px-6 py-6 space-y-4">
           <div>
-            <label className="block text-xs font-medium mb-1.5 tracking-wide" style={{ color: "rgba(23,59,108,0.7)" }}>
+            <label htmlFor="login-email" className="block text-xs font-medium mb-1.5 tracking-wide" style={{ color: "rgba(23,59,108,0.7)" }}>
               Correo electrónico
             </label>
             <input
+              id="login-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -128,10 +137,11 @@ function LoginModal({ role, onClose, onLogin }: { role: Role; onClose: () => voi
             />
           </div>
           <div>
-            <label className="block text-xs font-medium mb-1.5 tracking-wide" style={{ color: "rgba(23,59,108,0.7)" }}>
+            <label htmlFor="login-password" className="block text-xs font-medium mb-1.5 tracking-wide" style={{ color: "rgba(23,59,108,0.7)" }}>
               Contraseña
             </label>
             <input
+              id="login-password"
               type="password"
               value={pass}
               onChange={(e) => setPass(e.target.value)}
@@ -156,7 +166,7 @@ function LoginModal({ role, onClose, onLogin }: { role: Role; onClose: () => voi
             </p>
           </div>
 
-          {error && <p className="text-xs text-center" style={{ color: "#72132C" }}>{error}</p>}
+          {error && <p role="alert" className="text-xs text-center" style={{ color: "#72132C" }}>{error}</p>}
 
           <button
             type="submit"

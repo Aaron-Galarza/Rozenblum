@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { OrderDTO, OrderStatus } from "@rozenblum/shared";
 import { errorMessage } from "../../../lib/api";
+import Toast from "../../../components/ui/Toast";
 
 const ORDER_STATUSES: OrderStatus[] = ["Pagado", "Pendiente", "Rechazado", "Reembolsado"];
 
@@ -119,7 +120,7 @@ export default function PagosSection({ orders, onStatusChange }: PagosSectionPro
         </table>
       </div>
 
-      {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[400] px-5 py-3 rounded-lg shadow-xl text-sm font-medium" style={{ backgroundColor: toast.error ? "#72132C" : "#173B6C", color: "#FAF8F5", border: "1px solid #B58A43" }}>{toast.text}</div>}
+      {toast && <Toast message={toast.text} error={toast.error} />}
     </>
   );
 }

@@ -11,6 +11,7 @@ import ChatSidebar from "./ChatSidebar";
 import { apiFetch, errorMessage } from "../../lib/api";
 import { useSession } from "../../lib/use-session";
 import { EmptyState, ErrorPanel, LoadingScreen } from "../../components/ui/AsyncState";
+import Toast from "../../components/ui/Toast";
 
 export default function AlumnoView() {
   const { session, ready } = useSession("alumno");
@@ -257,11 +258,7 @@ export default function AlumnoView() {
         </>
       )}
 
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[400] px-5 py-3 rounded-lg shadow-xl text-sm font-medium" style={{ backgroundColor: "#173B6C", color: "#FAF8F5", border: "1px solid #B58A43" }}>
-          {toast}
-        </div>
-      )}
+      {toast && <Toast message={toast} />}
 
       <SimpleFooter />
     </div>
