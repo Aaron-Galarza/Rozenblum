@@ -1,0 +1,109 @@
+import type {
+  CheckoutInput,
+  CheckoutResultDTO,
+  OrderDTO,
+} from "@rozenblum/shared";
+import { badRequest, notFound } from "../lib/http.js";
+import { newId, nowIso } from "../lib/utils.js";
+import { getRepositories } from "../repositories/index.js";
+import type { StoredOrder } from "../types.js";
+import { enrollmentToDTO, orderToDTO } from "./mappers.js";
+
+function todayLabel() {
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date());
+}
+
+export async function checkout(input: CheckoutInput): Promise<CheckoutResultDTO> {
+  const repos = getRepositories();
+  const course = await repos.courses.findBySlug(input.courseSlug);
+  if (!course || course.status !== "published") {
+    throw notFound("El curso solicitado no está disponible.");
+  }
+
+  const existingOrders = await repos.orders.list();
+  const nextNumber =
+    existingOrders.reduce((max, order) => {
+      const numeric = Number(order.id.replace(/\D/g, ""));
+      return Number.isFinite(numeric) ? Math.max(max, numeric) : max;
+    }, 0) + 1;
+
+  const reference = `RB-${new Date().getFullYear()}-${String(nextNumber).padStart(4, "0")}`;
+  const order: StoredOrder = {
+    id: `ORD-${String(nextNumber).padStart(3, "0")}`,
+    externalReference: reference,
+    alumno: input.nombre,
+    email: input.email.toLowerCase(),
+    curso: course.title,
+    courseSlug: course.slug,
+    courseId: course.legacyId,
+    monto: course.price,
+    montoCents: course.priceCents,
+    fecha: todayLabel(),
+    metodo: "MercadoPago",
+    estado: "Pendiente",
+    createdAt: nowIso(),
+  };
+
+  const createdOrder = await repos.orders.create(order);
+
+  let enrollment = await repos.enrollments.findByStudentAndCourse(
+    input.email,
+    course.legacyId,
+  );
+  if (enrollment) {
+    if (enrollment.status === "Pendiente") {
+      throw badRequest(
+        "Ya existe una inscripción pendiente para este correo. Avisanos por WhatsApp para agilizar la validación.",
+      );
+    }
+  } else {
+    enrollment = await repos.enrollments.create({
+      studentEmail: input.email,
+      studentName: input.nombre,
+      courseId: course.legacyId,
+      status: "Pendiente",
+      completedLessonIds: [],
+    });
+  }
+
+  const conversation = await repos.conversations.findByStudentAndCourse(
+    input.email,
+    course.legacyId,
+  );
+  if (!conversation) {
+    const teacher = course.professorEmail
+      ? await repos.users.findByEmail(course.professorEmail)
+      : null;
+    await repos.conversations.create({
+      id: newId("cnv"),
+      courseId: course.legacyId,
+      studentEmail: input.email.toLowerCase(),
+      studentName: input.nombre,
+      teacherEmail: teacher?.email ?? course.professorEmail ?? "",
+      teacherName: teacher?.name ?? course.professor,
+      messages: [],
+    });
+  }
+
+  return {
+    order: orderToDTO(createdOrder),
+    enrollment: enrollmentToDTO(enrollment, course),
+    message:
+      "Inscripción registrada. Un administrador validará el pago y habilitará el acceso al aula.",
+  };
+}
+
+export async function getOrderReceipt(reference: string, email?: string): Promise<OrderDTO> {
+  const order = await getRepositories().orders.findByReference(reference);
+  if (!order) throw notFound("No encontramos la orden solicitada.");
+  // The reference alone is guessable; require the purchase email when the
+  // client can provide it (the confirmation page always does).
+  if (email && order.email.toLowerCase() !== email.trim().toLowerCase()) {
+    throw notFound("No encontramos la orden solicitada.");
+  }
+  return orderToDTO(order);
+}
