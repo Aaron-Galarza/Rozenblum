@@ -6,7 +6,9 @@ import type { SessionDTO } from "@rozenblum/shared";
 import { apiFetch, errorMessage, saveSession } from "../lib/api";
 import { useModalA11y } from "../lib/use-modal-a11y";
 
-const DEMO_PASSWORD = "rozenblum-demo-2026";
+// Demo credentials are only prefilled outside production builds.
+const DEMO_MODE = process.env.NODE_ENV !== "production";
+const DEMO_PASSWORD = DEMO_MODE ? "rozenblum-demo-2026" : "";
 
 const ROLES = [
   {
@@ -14,7 +16,7 @@ const ROLES = [
     title: "Alumno",
     desc: "Accede a tus cursos, visualiza tu progreso y descarga certificados.",
     cta: "INGRESAR COMO ALUMNO",
-    demoEmail: "alumno@rozenblum.com",
+    demoEmail: DEMO_MODE ? "alumno@rozenblum.com" : "",
     demoPass: DEMO_PASSWORD,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7">
@@ -28,7 +30,7 @@ const ROLES = [
     title: "Profesor",
     desc: "Gestiona tus cursos, revisa el progreso de alumnos y responde dudas.",
     cta: "INGRESAR COMO PROFESOR",
-    demoEmail: "profesor@rozenblum.com",
+    demoEmail: DEMO_MODE ? "profesor@rozenblum.com" : "",
     demoPass: DEMO_PASSWORD,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7">
@@ -42,7 +44,7 @@ const ROLES = [
     title: "Administrador",
     desc: "Panel completo: gestiona profesores, alumnos, pagos y toda la plataforma.",
     cta: "INGRESAR COMO ADMIN",
-    demoEmail: "admin@rozenblum.com",
+    demoEmail: DEMO_MODE ? "admin@rozenblum.com" : "",
     demoPass: DEMO_PASSWORD,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7">
