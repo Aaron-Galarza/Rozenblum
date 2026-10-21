@@ -347,7 +347,6 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
   const [slashBlockId, setSlashBlockId] = useState<string | null>(null);
   const [slashFilter, setSlashFilter] = useState("");
   const [slashAnchor, setSlashAnchor] = useState<{ top: number; left: number } | null>(null);
-  const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [mounted, setMounted] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -674,14 +673,6 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
             boxShadow: "0 2px 4px rgba(0,0,0,0.04)",
           }}
         >
-          {/* Format buttons */}
-          <TBtn label="Negrita (Ctrl+B)" onClick={() => document.execCommand("bold")}><span className="font-black">B</span></TBtn>
-          <TBtn label="Cursiva (Ctrl+I)" onClick={() => document.execCommand("italic")}><span className="italic">I</span></TBtn>
-          <TBtn label="Subrayado (Ctrl+U)" onClick={() => document.execCommand("underline")}><span className="underline">U</span></TBtn>
-          <TBtn label="Tachado" onClick={() => document.execCommand("strikeThrough")}><span className="line-through">S</span></TBtn>
-
-          <div className="w-px h-5 mx-1" style={{ backgroundColor: "#E0E0E0" }} />
-
           {/* Block type buttons */}
           {(["h1", "h2", "h3"] as BlockType[]).map((t) => (
             <TBtn key={t} label={`Heading ${t[1]}`} active={activeType === t} onClick={() => changeActiveType(t)}>
@@ -709,39 +700,10 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
           <TBtn label="Código" active={activeType === "code"} onClick={() => changeActiveType("code")}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg>
           </TBtn>
-          <TBtn label="Tabla (Próximamente)" disabled onClick={() => {}}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" /><line x1="9" y1="3" x2="9" y2="21" /><line x1="15" y1="3" x2="15" y2="21" /></svg>
-          </TBtn>
-
-          <div className="w-px h-5 mx-1" style={{ backgroundColor: "#E0E0E0" }} />
-
-          {/* More options */}
-          <div className="relative">
-            <TBtn label="Más opciones" onClick={() => setShowMoreOptions(!showMoreOptions)}>
-              <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5"><circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" /></svg>
-            </TBtn>
-            {showMoreOptions && (
-              <div
-                className="absolute left-0 top-9 w-52 z-50 py-1"
-                style={{ backgroundColor: "#FFFFFF", border: "1px solid #E0E0E0", boxShadow: "0 4px 16px rgba(0,0,0,0.1)", borderRadius: "6px" }}
-              >
-                {["Insertar ecuación", "Insertar archivo", "Cambiar color de texto", "Cambiar color de fondo"].map((opt) => (
-                  <div key={opt} className="flex items-center gap-2 px-3 py-2 text-xs" style={{ color: "rgba(23,59,108,0.3)", cursor: "not-allowed" }}>
-                    <span>{opt}</span>
-                    <span className="ml-auto text-[9px]" style={{ backgroundColor: "#F0F0F0", color: "rgba(23,59,108,0.4)", padding: "1px 4px", borderRadius: 2 }}>pronto</span>
-                  </div>
-                ))}
-                <div className="h-px mx-2 my-1" style={{ backgroundColor: "#E0E0E0" }} />
-                <button className="w-full text-left px-3 py-2 text-xs hover:opacity-70 transition-opacity" style={{ color: "#173B6C" }} onClick={() => setShowMoreOptions(false)}>
-                  Copiar enlace del bloque
-                </button>
-              </div>
-            )}
-          </div>
         </div>
 
         {/* ── CANVAS ── */}
-        <div className="flex-1 overflow-y-auto relative" onClick={() => setShowMoreOptions(false)}>
+        <div className="flex-1 overflow-y-auto relative">
           <div className="max-w-3xl mx-auto px-8 py-6 min-h-full">
             {blocks.length === 1 && blocks[0].content === "" && blocks[0].type === "paragraph" ? (
               <div className="relative">
