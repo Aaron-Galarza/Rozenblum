@@ -1,0 +1,52 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500&family=Roboto:wght@300;400;500;700&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --color-antique-white: #FAF8F5;
+  --color-navy: #173B6C;
+  --color-gold: #B58A43;
+  --color-gold-light: #D4A855;
+  --color-gold-dark: #9A7435;
+  --color-burgundy: #72132C;
+  --font-serif: 'Cormorant Garamond', Georgia, serif;
+  --font-sans: 'Roboto', system-ui, sans-serif;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  background-color: #FAF8F5;
+  color: #173B6C;
+  font-family: 'Roboto', system-ui, sans-serif;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #B58A43 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 4px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #B58A43;
+  border-radius: 2px;
+}
+
+/* Visible keyboard focus, consistent with the gold accent palette. */
+:focus-visible {
+  outline: 2px solid #B58A43;
+  outline-offset: 2px;
+}
+
+/* Small helper used by error/empty states. */
+.muted-navy {
+  color: rgba(23, 59, 108, 0.65);
+}
