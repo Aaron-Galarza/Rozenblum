@@ -17,6 +17,12 @@ interface Block {
   toggleContent?: string;
 }
 
+export type LessonEditorPayload = {
+  title: string;
+  type: LessonType;
+  content: LessonBlockDTO[];
+};
+
 interface LessonEditorModalProps {
   isOpen: boolean;
   mode: "new" | "edit";
@@ -25,7 +31,9 @@ interface LessonEditorModalProps {
   initialBlocks?: LessonBlockDTO[];
   initialType?: LessonType;
   onClose: () => void;
-  onSave: (payload: { title: string; type: LessonType; content: LessonBlockDTO[] }) => Promise<void> | void;
+  onSave: (payload: LessonEditorPayload) => Promise<void> | void;
+  /** Debounced persistence for existing lessons. Omit to disable auto-save. */
+  onAutoSave?: (payload: LessonEditorPayload) => Promise<void> | void;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -48,6 +56,16 @@ function getWordCount(blocks: Block[]) {
 
 // ── Empty block ────────────────────────────────────────────────────────────────
 const EMPTY_BLOCK = (): Block => ({ id: genId(), type: "paragraph", content: "" });
+
+const toContent = (blocks: Block[]): LessonBlockDTO[] =>
+  blocks.map((block) => ({
+    id: block.id,
+    type: block.type,
+    content: block.content,
+    items: block.items,
+    expanded: block.expanded,
+    toggleContent: block.toggleContent,
+  }));
 
 // ── Slash commands ─────────────────────────────────────────────────────────────
 const SLASH_CMDS = [
@@ -315,7 +333,7 @@ function BlockRow({ block, isHovered, onHover, onFocus, onChange, onKeyDown, onD
 }
 
 // ── Main modal ─────────────────────────────────────────────────────────────────
-export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleName, initialBlocks, initialType, onClose, onSave }: LessonEditorModalProps) {
+export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleName, initialBlocks, initialType, onClose, onSave, onAutoSave }: LessonEditorModalProps) {
   const titleId = useId();
   const dialogRef = useModalA11y<HTMLDivElement>(onClose, isOpen);
   const [blocks, setBlocks] = useState<Block[]>([]);
@@ -334,17 +352,51 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoSaveText, setAutoSaveText] = useState("");
+  const lastSavedRef = useRef("");
+  const autoSavePendingRef = useRef<LessonEditorPayload | null>(null);
+  const autoSaveInFlightRef = useRef(false);
+  const autoSaveHandlerRef = useRef(onAutoSave);
+
+  useEffect(() => {
+    autoSaveHandlerRef.current = onAutoSave;
+  }, [onAutoSave]);
+
+  const flushAutoSave = useCallback(async () => {
+    if (autoSaveInFlightRef.current) return;
+    const payload = autoSavePendingRef.current;
+    const handler = autoSaveHandlerRef.current;
+    if (!payload || !handler) return;
+    autoSavePendingRef.current = null;
+    autoSaveInFlightRef.current = true;
+    setAutoSaveText("Guardando...");
+    try {
+      await handler(payload);
+      lastSavedRef.current = JSON.stringify(payload);
+      setAutoSaveText("✓ Guardado hace unos segundos");
+      setTimeout(() => setAutoSaveText((current) => (current.startsWith("✓") ? "" : current)), 3000);
+    } catch {
+      setAutoSaveText("No se pudo guardar automáticamente");
+    } finally {
+      autoSaveInFlightRef.current = false;
+      if (autoSavePendingRef.current) void flushAutoSave();
+    }
+  }, []);
 
   // Init on open
   useEffect(() => {
     if (isOpen) {
-      setTitle(lessonTitle ?? "");
-      setLessonType(initialType ?? "video");
-      setBlocks(
+      const nextTitle = lessonTitle ?? "";
+      const nextType = initialType ?? "video";
+      const nextBlocks =
         mode === "edit" && initialBlocks && initialBlocks.length > 0
           ? initialBlocks.map((b) => ({ ...b, items: b.items ? [...b.items] : undefined }))
-          : [EMPTY_BLOCK()],
-      );
+          : [EMPTY_BLOCK()];
+      setTitle(nextTitle);
+      setLessonType(nextType);
+      setBlocks(nextBlocks);
+      lastSavedRef.current =
+        mode === "edit" ? JSON.stringify({ title: nextTitle, type: nextType, content: toContent(nextBlocks) }) : "";
+      autoSavePendingRef.current = null;
       setSaveLabel("GUARDAR");
       setSaveState("idle");
       setShowSlashMenu(false);
@@ -356,17 +408,23 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
     }
   }, [isOpen, mode, lessonTitle, initialBlocks, initialType]);
 
-  // Auto-save on block change
+  // Debounced auto-save for existing lessons
   useEffect(() => {
-    if (!isOpen || blocks.length === 0) return;
+    if (!isOpen || mode !== "edit" || !onAutoSave) return;
+    const payload: LessonEditorPayload = { title: title.trim(), type: lessonType, content: toContent(blocks) };
+    const serialized = JSON.stringify(payload);
+    if (!payload.title || serialized === lastSavedRef.current) return;
+
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    setAutoSaveText("Guardando...");
     autoSaveTimerRef.current = setTimeout(() => {
-      setAutoSaveText("Guardado hace unos segundos");
-      setTimeout(() => setAutoSaveText(""), 3000);
+      if (JSON.stringify(payload) === lastSavedRef.current) return;
+      autoSavePendingRef.current = payload;
+      void flushAutoSave();
     }, 1200);
-    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
-  }, [blocks]);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [isOpen, mode, onAutoSave, title, lessonType, blocks, flushAutoSave]);
 
   const updateBlock = useCallback((id: string, patch: Partial<Block>) => {
     setBlocks((prev) => prev.map((b) => b.id === id ? { ...b, ...patch } : b));
@@ -479,19 +537,12 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
     }
     setSaveLabel("GUARDANDO...");
     setSaveState("saving");
+    const payload: LessonEditorPayload = { title: title.trim(), type: lessonType, content: toContent(blocks) };
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSavePendingRef.current = null;
     try {
-      await onSave({
-        title: title.trim(),
-        type: lessonType,
-        content: blocks.map((block) => ({
-          id: block.id,
-          type: block.type,
-          content: block.content,
-          items: block.items,
-          expanded: block.expanded,
-          toggleContent: block.toggleContent,
-        })),
-      });
+      await onSave(payload);
+      lastSavedRef.current = JSON.stringify(payload);
       setSaveLabel("✓ GUARDADO");
       setSaveState("saved");
     } catch {

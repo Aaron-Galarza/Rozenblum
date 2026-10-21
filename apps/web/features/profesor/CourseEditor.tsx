@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ChatMessageDTO, ConversationDTO, LessonBlockDTO, LessonType } from "@rozenblum/shared";
 import type { EditableModule, EditableLesson, ProfesorStudent, SortDir } from "../../types";
 import LessonEditorModal from "./LessonEditorModal";
@@ -114,6 +114,15 @@ export default function CourseEditor({
     }
     setEditorOpen(false);
   };
+
+  const handleAutoSave = useCallback(
+    async (payload: LessonPayload) => {
+      if (editing?.lesson?.id) {
+        await onUpdateLesson(editing.moduleId, editing.lesson.id, payload);
+      }
+    },
+    [editing, onUpdateLesson],
+  );
 
   const sendChat = async () => {
     if (!chatInput.trim() || !studentModal) return;
@@ -407,6 +416,7 @@ export default function CourseEditor({
         initialType={(editing?.lesson?.type as LessonType | undefined) ?? "video"}
         onClose={() => setEditorOpen(false)}
         onSave={handleEditorSave}
+        onAutoSave={handleAutoSave}
       />
 
       {/* Student "Ver" modal */}
