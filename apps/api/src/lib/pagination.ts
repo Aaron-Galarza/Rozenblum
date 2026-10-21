@@ -28,6 +28,3 @@ export function parsePagination(req: Request): Pagination {
   return { limit, offset };
 }
 
-export function paginate<T>(items: T[], page: Pagination): T[] {
-  return items.slice(page.offset, page.offset + page.limit);
-}

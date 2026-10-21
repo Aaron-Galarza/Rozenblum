@@ -51,10 +51,11 @@ export function createMongooseRepositories(): Repositories {
       const doc = await UserModel.findOne({ id }).lean().exec();
       return doc ? clean<StoredUser>(doc) : null;
     },
-    async list(role?: Role) {
+    async list(role: Role | undefined, page) {
       const docs = await UserModel.find(role ? { role } : {})
         .sort({ name: 1 })
-        .limit(LIST_HARD_LIMIT)
+        .skip(page?.offset ?? 0)
+        .limit(page?.limit ?? LIST_HARD_LIMIT)
         .lean()
         .exec();
       return docs.map((doc) => clean<StoredUser>(doc));
@@ -167,10 +168,11 @@ export function createMongooseRepositories(): Repositories {
   };
 
   const enrollments: EnrollmentRepository = {
-    async listAll() {
+    async listAll(page) {
       const docs = await EnrollmentModel.find({})
         .sort({ startedAt: -1 })
-        .limit(LIST_HARD_LIMIT)
+        .skip(page?.offset ?? 0)
+        .limit(page?.limit ?? LIST_HARD_LIMIT)
         .lean()
         .exec();
       return docs.map((doc) => clean<StoredEnrollment>(doc));
@@ -333,10 +335,11 @@ export function createMongooseRepositories(): Repositories {
   };
 
   const contacts: ContactRepository = {
-    async list() {
+    async list(page) {
       const docs = await ContactModel.find({})
         .sort({ createdAt: -1 })
-        .limit(LIST_HARD_LIMIT)
+        .skip(page?.offset ?? 0)
+        .limit(page?.limit ?? LIST_HARD_LIMIT)
         .lean()
         .exec();
       return docs.map((doc) => clean<StoredContact>(doc));

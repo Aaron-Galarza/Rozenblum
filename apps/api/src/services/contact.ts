@@ -1,7 +1,7 @@
 import type { ContactInput, SiteSettingsDTO } from "@rozenblum/shared";
 import { newId, nowIso } from "../lib/utils.js";
 import { env } from "../config/env.js";
-import { paginate, type Pagination } from "../lib/pagination.js";
+import type { Pagination } from "../lib/pagination.js";
 import { getRepositories } from "../repositories/index.js";
 import { settingsToDTO } from "./mappers.js";
 import type { StoredContact } from "../types.js";
@@ -17,8 +17,7 @@ export async function submitContact(input: ContactInput): Promise<StoredContact>
 }
 
 export async function listContacts(page?: Pagination): Promise<StoredContact[]> {
-  const contacts = await getRepositories().contacts.list();
-  return page ? paginate(contacts, page) : contacts;
+  return getRepositories().contacts.list(page);
 }
 
 export async function getPublicSettings(): Promise<SiteSettingsDTO> {

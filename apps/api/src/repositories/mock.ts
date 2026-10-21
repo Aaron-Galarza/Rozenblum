@@ -69,8 +69,9 @@ export function createMockRepositories(): Repositories {
     async findById(id) {
       return db.users.find((u) => u.id === id) ?? null;
     },
-    async list(role?: Role) {
-      return role ? db.users.filter((u) => u.role === role) : [...db.users];
+    async list(role: Role | undefined, page) {
+      const users = role ? db.users.filter((u) => u.role === role) : [...db.users];
+      return page ? users.slice(page.offset, page.offset + page.limit) : users;
     },
     async create(input) {
       const user: StoredUser = {
@@ -172,8 +173,9 @@ export function createMockRepositories(): Repositories {
   };
 
   const enrollments: EnrollmentRepository = {
-    async listAll() {
-      return db.enrollments.map(clone);
+    async listAll(page) {
+      const items = db.enrollments.map(clone);
+      return page ? items.slice(page.offset, page.offset + page.limit) : items;
     },
     async listByStudent(email) {
       return db.enrollments
@@ -288,8 +290,9 @@ export function createMockRepositories(): Repositories {
   };
 
   const contacts: ContactRepository = {
-    async list() {
-      return [...db.contacts].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(clone);
+    async list(page) {
+      const items = [...db.contacts].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(clone);
+      return page ? items.slice(page.offset, page.offset + page.limit) : items;
     },
     async create(input) {
       db.contacts.push(clone(input));

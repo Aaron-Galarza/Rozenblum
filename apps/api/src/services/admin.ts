@@ -3,7 +3,7 @@ import { conflict, notFound, badRequest } from "../lib/http.js";
 import { hashPassword } from "../lib/password.js";
 import { initialsFromName } from "../lib/utils.js";
 import { env } from "../config/env.js";
-import { paginate, type Pagination } from "../lib/pagination.js";
+import type { Pagination } from "../lib/pagination.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredUser } from "../types.js";
 import { settingsToDTO, userToDTO } from "./mappers.js";
@@ -107,6 +107,5 @@ export async function listAdminUsers(
   role: "alumno" | "profesor",
   page?: Pagination,
 ): Promise<StoredUser[]> {
-  const users = await getRepositories().users.list(role);
-  return page ? paginate(users, page) : users;
+  return getRepositories().users.list(role, page);
 }

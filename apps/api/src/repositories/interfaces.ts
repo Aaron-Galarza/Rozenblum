@@ -1,4 +1,5 @@
 import type { OrderStatus, Role } from "@rozenblum/shared";
+import type { Pagination } from "../lib/pagination.js";
 import type {
   CourseInput,
   StoredContact,
@@ -17,7 +18,7 @@ export type AppMode = "mock" | "atlas";
 export interface UserRepository {
   findByEmail(email: string): Promise<StoredUser | null>;
   findById(id: string): Promise<StoredUser | null>;
-  list(role?: Role): Promise<StoredUser[]>;
+  list(role?: Role, page?: Pagination): Promise<StoredUser[]>;
   create(input: {
     name: string;
     email: string;
@@ -64,7 +65,7 @@ export interface CourseRepository {
 }
 
 export interface EnrollmentRepository {
-  listAll(): Promise<StoredEnrollment[]>;
+  listAll(page?: Pagination): Promise<StoredEnrollment[]>;
   listByStudent(email: string): Promise<StoredEnrollment[]>;
   findById(id: string): Promise<StoredEnrollment | null>;
   findByStudentAndCourse(email: string, courseId: number): Promise<StoredEnrollment | null>;
@@ -105,7 +106,7 @@ export interface SettingsRepository {
 }
 
 export interface ContactRepository {
-  list(): Promise<StoredContact[]>;
+  list(page?: Pagination): Promise<StoredContact[]>;
   create(input: StoredContact): Promise<StoredContact>;
 }
 
