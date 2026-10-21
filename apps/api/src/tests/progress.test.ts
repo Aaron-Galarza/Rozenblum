@@ -232,3 +232,51 @@ test("un profesor no puede editar cursos de otro profesor ni el panel admin", as
   const admin = await api(server.baseUrl, "/api/admin/overview", { token: teacherToken });
   assert.equal(admin.status, 403);
 });
+
+test("el docente sólo gestiona cursos asignados por email y no cambia precios", async () => {
+  const teacherToken = await login(server.baseUrl, "profesor");
+  const adminToken = await login(server.baseUrl, "admin");
+  const created = await api<{ data: { id: number } }>(server.baseUrl, "/api/admin/courses", {
+    method: "POST",
+    token: adminToken,
+    body: JSON.stringify({
+      title: "Curso de asignación docente",
+      description: "Curso de prueba para verificar permisos docentes.",
+      priceCents: 100000,
+      level: "Inicial",
+      duration: "On-Demand",
+      professor: "Karin Rozenblum",
+      status: "draft",
+    }),
+  });
+  assert.equal(created.status, 201);
+  const courseId = created.body.data.id;
+
+  const own = await api(server.baseUrl, `/api/teacher/courses/${courseId}`, { token: teacherToken });
+  assert.equal(own.status, 200);
+
+  const price = await api(server.baseUrl, `/api/teacher/courses/${courseId}`, {
+    method: "PATCH",
+    token: teacherToken,
+    body: JSON.stringify({ priceCents: 1 }),
+  });
+  assert.equal(price.status, 400);
+});
+
+test("el reordenamiento rechaza IDs repetidos", async () => {
+  const teacherToken = await login(server.baseUrl, "profesor");
+  const structure = await api<{ data: { modules: { id: number }[] } }>(
+    server.baseUrl,
+    "/api/teacher/courses/5",
+    { token: teacherToken },
+  );
+  const ids = structure.body.data.modules.map((mod) => mod.id);
+  assert.ok(ids.length > 1);
+  ids[1] = ids[0];
+  const reordered = await api(server.baseUrl, "/api/teacher/courses/5/modules/reorder", {
+    method: "PUT",
+    token: teacherToken,
+    body: JSON.stringify({ ids }),
+  });
+  assert.equal(reordered.status, 400);
+});

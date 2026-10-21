@@ -71,6 +71,14 @@ if (raw.NODE_ENV === "production" && raw.DEMO_PASSWORD === "rozenblum-demo-2026"
   );
 }
 
+if (raw.NODE_ENV === "production" && raw.APP_MODE !== "atlas") {
+  throw new Error("APP_MODE debe ser atlas en producción.");
+}
+
+if (raw.NODE_ENV === "production" && (!raw.AUTH_SECRET || raw.AUTH_SECRET.length < 32)) {
+  throw new Error("AUTH_SECRET debe tener al menos 32 caracteres en producción.");
+}
+
 export const env = {
   ...raw,
   AUTH_SECRET:

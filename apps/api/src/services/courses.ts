@@ -14,10 +14,16 @@ import { courseStructure, courseToDTO, enrollmentToDTO, moduleStatuses } from ".
 export function canManageCourse(course: StoredCourse, user: StoredUser): boolean {
   if (user.role === "admin") return true;
   if (user.role !== "profesor") return false;
-  return (
-    course.professorEmail?.toLowerCase() === user.email.toLowerCase() ||
-    course.professor.toLowerCase().includes(user.name.toLowerCase())
+  return course.professorEmail?.toLowerCase() === user.email.toLowerCase();
+}
+
+async function resolveProfessor(name: string): Promise<StoredUser> {
+  const normalized = name.replace(/^(Abg\.|Dr\.|Dra\.|Prof\.)\s*/i, "").trim().toLowerCase();
+  const matches = (await getRepositories().users.list("profesor")).filter(
+    (user) => user.name.trim().toLowerCase() === normalized,
   );
+  if (matches.length !== 1) throw badRequest("Seleccioná un profesor registrado con nombre único.");
+  return matches[0];
 }
 
 export async function listPublishedCourses(): Promise<CourseDTO[]> {
@@ -107,7 +113,10 @@ export async function updateCourse(
   if (!course) throw notFound("Curso no encontrado.");
   if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
 
-  const updated = await repos.courses.update(courseId, patch);
+  const nextPatch = patch.professor
+    ? { ...patch, professorEmail: (await resolveProfessor(patch.professor)).email }
+    : patch;
+  const updated = await repos.courses.update(courseId, nextPatch);
   if (!updated) throw notFound("Curso no encontrado.");
   return courseToDTO(updated);
 }
@@ -208,7 +217,7 @@ export async function reorderModules(
   const course = await getRepositories().courses.findById(courseId);
   if (!course) throw notFound("Curso no encontrado.");
   if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
-  if (ids.length !== course.modules.length) {
+  if (ids.length !== course.modules.length || new Set(ids).size !== ids.length) {
     throw badRequest("El orden debe incluir todos los módulos del curso.");
   }
 
@@ -315,7 +324,7 @@ export async function reorderLessons(
   if (!course) throw notFound("Curso no encontrado.");
   if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
   const mod = findModule(course, moduleId);
-  if (ids.length !== mod.lessons.length) {
+  if (ids.length !== mod.lessons.length || new Set(ids).size !== ids.length) {
     throw badRequest("El orden debe incluir todas las lecciones del módulo.");
   }
 
@@ -375,6 +384,7 @@ export async function createEmptyCourseForAdmin(input: {
   img?: string;
   status?: "published" | "draft";
 }): Promise<CourseDTO> {
+  const professor = await resolveProfessor(input.professor);
   const course = await getRepositories().courses.create({
     title: input.title,
     description: input.description,
@@ -382,6 +392,7 @@ export async function createEmptyCourseForAdmin(input: {
     level: input.level ?? "Inicial",
     duration: input.duration ?? "On-Demand",
     professor: input.professor,
+    professorEmail: professor.email,
     status: input.status ?? "draft",
     img:
       input.img ??

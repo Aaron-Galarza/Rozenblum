@@ -151,6 +151,7 @@ export type CourseInput = {
   duration: string;
   level: string;
   professor: string;
+  professorEmail?: string;
   status: "published" | "draft";
   img: string;
 };

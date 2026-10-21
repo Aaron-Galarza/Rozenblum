@@ -37,6 +37,12 @@ teacherRouter.use(requireAuth, requireRole("profesor", "admin"));
 const moduleTitleSchema = z.object({
   title: z.string().trim().min(1).max(180),
 });
+const teacherCoursePatchSchema = adminCoursePatchSchema.pick({
+  title: true,
+  description: true,
+  status: true,
+  img: true,
+}).strict();
 
 teacherRouter.get(
   "/dashboard",
@@ -64,7 +70,7 @@ teacherRouter.patch(
   "/courses/:courseId",
   asyncRoute(async (req, res) => {
     const courseId = numericParam(req.params.courseId, "Curso");
-    const patch = parseBody(adminCoursePatchSchema, req.body);
+    const patch = parseBody(teacherCoursePatchSchema, req.body);
     sendData(res, await updateCourse(courseId, patch, req.authUser!));
   }),
 );

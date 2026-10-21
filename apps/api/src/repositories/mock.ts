@@ -138,6 +138,7 @@ export function createMockRepositories(): Repositories {
         level: input.level,
         img: input.img,
         professor: input.professor,
+        professorEmail: input.professorEmail,
         status: input.status,
         temario: [],
         modules: [],
