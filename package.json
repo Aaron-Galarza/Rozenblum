@@ -1,0 +1,31 @@
+{
+  "name": "rozenblum-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Plataforma full-stack Estudio Jurídico Rozenblum - V0.1 (Next.js + Express + MongoDB Atlas)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build:shared": "npm --workspace @rozenblum/shared run build",
+    "predev": "npm run build:shared",
+    "dev": "concurrently -n api,web -c yellow,cyan \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:web": "npm --workspace @rozenblum/web run dev",
+    "dev:api": "npm --workspace @rozenblum/api run dev",
+    "prebuild": "npm run build:shared",
+    "build": "npm --workspace @rozenblum/api run build && npm --workspace @rozenblum/web run build",
+    "start:api": "npm --workspace @rozenblum/api run start",
+    "start:web": "npm --workspace @rozenblum/web run start",
+    "pretypecheck": "npm run build:shared",
+    "typecheck": "npm --workspace @rozenblum/api run typecheck && npm --workspace @rozenblum/web run typecheck",
+    "test": "npm --workspace @rozenblum/api run test",
+    "seed:atlas": "npm --workspace @rozenblum/api run seed:atlas"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  }
+}

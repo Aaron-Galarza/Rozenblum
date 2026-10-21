@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+.turbo/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment / credentials (never commit Atlas URIs)
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local database / artifacts (root only, never app sources)
+/data/
+.codebase-memory/
+
+# Reference-only material (design source / internal docs, not shipped to production)
+/src/
+/docs/
+apps/web/public/brand/reference-pillars.png
