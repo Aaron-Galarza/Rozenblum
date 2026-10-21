@@ -65,6 +65,15 @@ export const SEED_USERS: SeedUser[] = [
     createdAt: "2026-02-01T10:00:00.000Z",
   },
   {
+    id: "usr_prof_hernan",
+    name: "Hernán Vidal",
+    email: "hernan@rozenblum.com",
+    role: "profesor",
+    status: "Activo",
+    initials: "HV",
+    createdAt: "2026-02-01T10:00:00.000Z",
+  },
+  {
     id: "usr_alumna_maria",
     name: "María López",
     email: "maria@email.com",
@@ -383,7 +392,7 @@ const COURSE_SEEDS: CourseSeed[] = [
     level: "Avanzado",
     img: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&h=300&fit=crop&auto=format",
     professor: "Dr. Hernán Vidal",
-    professorEmail: "martin@rozenblum.com",
+    professorEmail: "hernan@rozenblum.com",
     status: "published",
     temario: [
       {
@@ -499,7 +508,7 @@ const COURSE_SEEDS: CourseSeed[] = [
     level: "Intermedio",
     img: "https://images.unsplash.com/photo-1556157382-97eda2d62296?w=600&h=300&fit=crop&auto=format",
     professor: "Dr. Hernán Vidal",
-    professorEmail: "martin@rozenblum.com",
+    professorEmail: "hernan@rozenblum.com",
     status: "draft",
     temario: [
       {

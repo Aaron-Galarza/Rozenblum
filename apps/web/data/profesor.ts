@@ -9,7 +9,7 @@ export const STUDENTS: ProfesorStudent[] = [
 ];
 
 export const NOTIFICATIONS: ProfesorNotification[] = [
-  { icon: "🔔", text: "Nuevo alumno inscrito: Carlos Martínez", time: "14:30" },
+  { icon: "🔔", text: "Nuevo alumno inscrito: Carlos Pérez", time: "14:30" },
   { icon: "✉️", text: "Nuevo mensaje de María López", time: "12:15" },
   { icon: "✓", text: "Juan García completó el módulo 1", time: "09:45" },
   { icon: "🔔", text: "Nueva inscripción: Sofía Ramírez", time: "08:20" },
