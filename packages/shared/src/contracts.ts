@@ -97,7 +97,7 @@ export type EnrollmentDTO = {
   courseProfessor: string;
   studentName: string;
   progress: number;
-  status: "Activo" | "Pendiente" | "Completado";
+  status: "Activo" | "Pendiente" | "Completado" | "Revocado";
   modules: ModuleDTO[];
 };
 

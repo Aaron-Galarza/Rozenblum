@@ -82,6 +82,14 @@ export async function updateAdminOrder(
         status: "Activo",
       });
     }
+  } else {
+    const enrollment = await repos.enrollments.findByStudentAndCourse(order.email, order.courseId);
+    if (enrollment) {
+      await repos.enrollments.updateStatus(
+        enrollment.id,
+        estado === "Pendiente" ? "Pendiente" : "Revocado",
+      );
+    }
   }
 }
 

@@ -24,16 +24,21 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResultDTO>
     throw notFound("El curso solicitado no está disponible.");
   }
 
-  const existingOrders = await repos.orders.list();
-  const nextNumber =
-    existingOrders.reduce((max, order) => {
-      const numeric = Number(order.id.replace(/\D/g, ""));
-      return Number.isFinite(numeric) ? Math.max(max, numeric) : max;
-    }, 0) + 1;
+  const existingEnrollment = await repos.enrollments.findByStudentAndCourse(
+    input.email,
+    course.legacyId,
+  );
+  if (existingEnrollment) {
+    throw badRequest(
+      existingEnrollment.status === "Pendiente"
+        ? "Ya existe una inscripción pendiente para este correo. Avisanos por WhatsApp para agilizar la validación."
+        : "Este correo ya tiene una inscripción para el curso.",
+    );
+  }
 
-  const reference = `RB-${new Date().getFullYear()}-${String(nextNumber).padStart(4, "0")}`;
+  const reference = `RB-${new Date().getFullYear()}-${newId("ref").slice(4).toUpperCase()}`;
   const order: StoredOrder = {
-    id: `ORD-${String(nextNumber).padStart(3, "0")}`,
+    id: newId("ord"),
     externalReference: reference,
     alumno: input.nombre,
     email: input.email.toLowerCase(),
@@ -50,25 +55,13 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResultDTO>
 
   const createdOrder = await repos.orders.create(order);
 
-  let enrollment = await repos.enrollments.findByStudentAndCourse(
-    input.email,
-    course.legacyId,
-  );
-  if (enrollment) {
-    if (enrollment.status === "Pendiente") {
-      throw badRequest(
-        "Ya existe una inscripción pendiente para este correo. Avisanos por WhatsApp para agilizar la validación.",
-      );
-    }
-  } else {
-    enrollment = await repos.enrollments.create({
-      studentEmail: input.email,
-      studentName: input.nombre,
-      courseId: course.legacyId,
-      status: "Pendiente",
-      completedLessonIds: [],
-    });
-  }
+  const enrollment = await repos.enrollments.create({
+    studentEmail: input.email,
+    studentName: input.nombre,
+    courseId: course.legacyId,
+    status: "Pendiente",
+    completedLessonIds: [],
+  });
 
   const conversation = await repos.conversations.findByStudentAndCourse(
     input.email,

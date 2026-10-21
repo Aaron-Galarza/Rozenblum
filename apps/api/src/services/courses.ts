@@ -78,7 +78,7 @@ export async function getCourseStructureForStudent(
 ): Promise<ReturnType<typeof courseStructure>> {
   const repos = getRepositories();
   const enrollment = await repos.enrollments.findByStudentAndCourse(user.email, courseId);
-  if (!enrollment || enrollment.status === "Pendiente") {
+  if (!enrollment || enrollment.status === "Pendiente" || enrollment.status === "Revocado") {
     throw forbidden("Tu acceso a este curso todavía no fue aprobado.");
   }
   const course = await repos.courses.findById(courseId);

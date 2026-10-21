@@ -85,8 +85,8 @@ export async function setLessonProgress(
 ): Promise<EnrollmentDTO> {
   const repos = getRepositories();
   const enrollment = await loadEnrollment(enrollmentId, user);
-  if (enrollment.status === "Pendiente") {
-    throw forbidden("Tu inscripción aún está pendiente de aprobación.");
+  if (enrollment.status === "Pendiente" || enrollment.status === "Revocado") {
+    throw forbidden("Tu inscripción no tiene acceso activo.");
   }
 
   const course = await repos.courses.findById(enrollment.courseId);
@@ -148,7 +148,7 @@ export async function listStudentMessages(
 ): Promise<ChatMessageDTO[]> {
   const repos = getRepositories();
   const enrollment = await loadEnrollment(enrollmentId, user);
-  if (enrollment.status === "Pendiente") {
+  if (enrollment.status === "Pendiente" || enrollment.status === "Revocado") {
     throw forbidden("La mensajería se habilita cuando se aprueba tu acceso.");
   }
   const conversation = await repos.conversations.findByStudentAndCourse(
@@ -167,7 +167,7 @@ export async function sendStudentMessage(
   const enrollment = await loadEnrollment(enrollmentId, user);
   const course = await repos.courses.findById(enrollment.courseId);
   if (!course) throw notFound("Curso no encontrado.");
-  if (enrollment.status === "Pendiente") {
+  if (enrollment.status === "Pendiente" || enrollment.status === "Revocado") {
     throw forbidden("La mensajería se habilita cuando se aprueba tu acceso.");
   }
 

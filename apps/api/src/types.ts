@@ -60,7 +60,7 @@ export type StoredEnrollment = {
   studentEmail: string;
   studentName: string;
   courseId: number;
-  status: "Activo" | "Pendiente" | "Completado";
+  status: "Activo" | "Pendiente" | "Completado" | "Revocado";
   startedAt: string;
   completedLessonIds: string[];
 };

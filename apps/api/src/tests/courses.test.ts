@@ -68,9 +68,75 @@ test("el checkout crea una orden pendiente y una inscripción pendiente", async 
 
   assert.equal(result.status, 201);
   assert.equal(result.body.data.order.estado, "Pendiente");
-  assert.match(result.body.data.order.externalReference, /^RB-\d{4}-\d{4}$/);
+  assert.match(result.body.data.order.externalReference, /^RB-\d{4}-[A-F0-9]{20}$/);
   assert.equal(result.body.data.enrollment.status, "Pendiente");
   assert.equal(result.body.data.enrollment.progress, 0);
+});
+
+test("un segundo checkout no crea otra orden para la misma inscripción", async () => {
+  const body = JSON.stringify({
+    courseSlug: "derecho-laboral-practico",
+    nombre: "Test Persona",
+    email: "test.persona@email.com",
+    dni: "30111222",
+  });
+  const duplicate = await api(server.baseUrl, "/api/checkout", { method: "POST", body });
+  assert.equal(duplicate.status, 400);
+
+  const admin = await api<{ data: { token: string } }>(server.baseUrl, "/api/auth/demo-login", {
+    method: "POST",
+    body: JSON.stringify({ role: "admin" }),
+  });
+  const overview = await api<{ data: { orders: { alumno: string; courseSlug: string }[] } }>(
+    server.baseUrl,
+    "/api/admin/overview",
+    { token: admin.body.data.token },
+  );
+  assert.equal(overview.body.data.orders.filter(
+    (order) => order.alumno === "Test Persona" && order.courseSlug === "derecho-laboral-practico",
+  ).length, 1);
+});
+
+test("rechazar un pago revoca el acceso y volver a pagarlo lo restaura", async () => {
+  const created = await api<{ data: { order: { id: string }; enrollment: { id: string } } }>(
+    server.baseUrl,
+    "/api/checkout",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        courseSlug: "litigacion-oral",
+        nombre: "Pago de Prueba",
+        email: "pago.prueba@email.com",
+        dni: "30111222",
+      }),
+    },
+  );
+  assert.equal(created.status, 201);
+
+  const admin = await api<{ data: { token: string } }>(server.baseUrl, "/api/auth/demo-login", {
+    method: "POST",
+    body: JSON.stringify({ role: "admin" }),
+  });
+  const orderId = created.body.data.order.id;
+  const enrollmentId = created.body.data.enrollment.id;
+  for (const [orderStatus, enrollmentStatus] of [
+    ["Pagado", "Activo"],
+    ["Reembolsado", "Revocado"],
+    ["Pagado", "Activo"],
+  ] as const) {
+    const changed = await api(server.baseUrl, `/api/admin/orders/${orderId}`, {
+      method: "PATCH",
+      token: admin.body.data.token,
+      body: JSON.stringify({ estado: orderStatus }),
+    });
+    assert.equal(changed.status, 200);
+    const overview = await api<{ data: { inscripciones: { id: string; estado: string }[] } }>(
+      server.baseUrl,
+      "/api/admin/overview",
+      { token: admin.body.data.token },
+    );
+    assert.equal(overview.body.data.inscripciones.find((item) => item.id === enrollmentId)?.estado, enrollmentStatus);
+  }
 });
 
 test("el comprobante exige que el correo coincida con la orden", async () => {

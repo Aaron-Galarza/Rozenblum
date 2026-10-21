@@ -96,7 +96,7 @@ const enrollmentSchema = new Schema<StoredEnrollment>(
     studentEmail: { type: String, required: true, index: true, lowercase: true },
     studentName: { type: String, required: true },
     courseId: { type: Number, required: true, index: true },
-    status: { type: String, required: true, enum: ["Activo", "Pendiente", "Completado"] },
+    status: { type: String, required: true, enum: ["Activo", "Pendiente", "Completado", "Revocado"] },
     startedAt: { type: String, required: true },
     completedLessonIds: { type: [String], default: [] },
   },

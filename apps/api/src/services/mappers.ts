@@ -109,13 +109,14 @@ export function enrollmentToDTO(
   course: StoredCourse,
 ): EnrollmentDTO {
   const progress = computeProgress(course, enrollment.completedLessonIds);
+  const canAccess = enrollment.status !== "Pendiente" && enrollment.status !== "Revocado";
   const status =
-    enrollment.status === "Pendiente"
-      ? "Pendiente"
+    !canAccess
+      ? enrollment.status
       : progress >= 100
         ? "Completado"
         : "Activo";
-  const statuses = moduleStatuses(course, enrollment.completedLessonIds);
+  const statuses = canAccess ? moduleStatuses(course, enrollment.completedLessonIds) : new Map();
   const completed = new Set(enrollment.completedLessonIds);
 
   return {
@@ -141,7 +142,7 @@ export function enrollmentToDTO(
         highlight: lesson.highlight,
         position: lesson.position,
         content:
-          enrollment.status !== "Pendiente" && statuses.get(mod.id) !== "locked"
+          canAccess && statuses.get(mod.id) !== "locked"
             ? lesson.content
             : [],
       })),
