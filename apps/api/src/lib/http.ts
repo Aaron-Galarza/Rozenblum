@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { logger } from "./logger.js";
 
 export class ApiError extends Error {
   status: number;
@@ -51,11 +52,18 @@ export function errorHandler(
     return;
   }
 
-  console.error("[api] Error no controlado:", error instanceof Error ? error.message : error);
+  const requestId =
+    typeof res.locals?.requestId === "string" ? res.locals.requestId : undefined;
+  logger.error("unhandled_error", {
+    requestId,
+    name: error instanceof Error ? error.name : typeof error,
+    message: error instanceof Error ? error.message : String(error),
+  });
   res.status(500).json({
     error: {
       code: "INTERNAL_ERROR",
       message: "Ocurrió un error inesperado. Intentá nuevamente.",
+      requestId,
     },
   });
 }

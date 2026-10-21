@@ -88,6 +88,8 @@ const courseSchema = new Schema<StoredCourse>(
   { _id: false, versionKey: false, collection: "courses" },
 );
 
+courseSchema.index({ status: 1, legacyId: 1 });
+
 const enrollmentSchema = new Schema<StoredEnrollment>(
   {
     id: { type: String, required: true, unique: true, index: true },
@@ -126,6 +128,8 @@ const orderSchema = new Schema<StoredOrder>(
   { _id: false, versionKey: false, collection: "orders" },
 );
 
+orderSchema.index({ estado: 1, createdAt: -1 });
+
 const messageSchema = new Schema(
   {
     id: { type: String, required: true },
@@ -150,6 +154,8 @@ const conversationSchema = new Schema<StoredConversation>(
   { _id: false, versionKey: false, collection: "conversations" },
 );
 
+conversationSchema.index({ studentEmail: 1, courseId: 1 });
+
 const settingsSchema = new Schema<StoredSettings>(
   {
     companyName: { type: String, required: true },
@@ -171,6 +177,8 @@ const contactSchema = new Schema<StoredContact>(
   },
   { _id: false, versionKey: false, collection: "contacts" },
 );
+
+contactSchema.index({ createdAt: -1 });
 
 export const UserModel =
   (mongoose.models.User as mongoose.Model<StoredUser>) ??

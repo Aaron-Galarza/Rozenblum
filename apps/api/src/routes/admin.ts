@@ -9,6 +9,7 @@ import {
 } from "@rozenblum/shared";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { sendData, notFound } from "../lib/http.js";
+import { parsePagination } from "../lib/pagination.js";
 import {
   createAdminUser,
   deleteAdminUser,
@@ -35,15 +36,15 @@ adminRouter.get(
 
 adminRouter.get(
   "/enrollments",
-  asyncRoute(async (_req, res) => {
-    sendData(res, await listAdminEnrollments());
+  asyncRoute(async (req, res) => {
+    sendData(res, await listAdminEnrollments(parsePagination(req)));
   }),
 );
 
 adminRouter.get(
   "/contacts",
-  asyncRoute(async (_req, res) => {
-    sendData(res, await listContacts());
+  asyncRoute(async (req, res) => {
+    sendData(res, await listContacts(parsePagination(req)));
   }),
 );
 
@@ -54,7 +55,7 @@ adminRouter.get(
     if (role !== "alumno" && role !== "profesor") {
       throw notFound("Especificá role=alumno o role=profesor.");
     }
-    sendData(res, await listAdminUsers(role));
+    sendData(res, await listAdminUsers(role, parsePagination(req)));
   }),
 );
 

@@ -52,3 +52,15 @@ export async function disconnectDatabase(): Promise<void> {
 export function isDatabaseConnected(): boolean {
   return mongoose.connection.readyState === 1;
 }
+
+/** Readiness probe used by orchestrators. Mock mode is always ready. */
+export async function checkDatabaseHealth(): Promise<boolean> {
+  if (env.APP_MODE !== "atlas") return true;
+  if (mongoose.connection.readyState !== 1) return false;
+  try {
+    await mongoose.connection.db?.admin().ping();
+    return true;
+  } catch {
+    return false;
+  }
+}

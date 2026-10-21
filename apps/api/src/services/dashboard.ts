@@ -10,6 +10,7 @@ import type {
   TeacherStudentDTO,
 } from "@rozenblum/shared";
 import { formatArs } from "../lib/utils.js";
+import { paginate, type Pagination } from "../lib/pagination.js";
 import { env } from "../config/env.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredCourse, StoredEnrollment, StoredOrder, StoredUser } from "../types.js";
@@ -374,14 +375,15 @@ export async function getAdminOverview(): Promise<AdminOverviewDTO> {
   };
 }
 
-export async function listAdminEnrollments() {
+export async function listAdminEnrollments(page?: Pagination) {
   const repos = getRepositories();
   const courses = await repos.courses.list();
   const byId = new Map(courses.map((course) => [course.legacyId, course]));
-  return (await repos.enrollments.listAll())
+  const items = (await repos.enrollments.listAll())
     .map((enrollment) => {
       const course = byId.get(enrollment.courseId);
       return course ? enrollmentToDTO(enrollment, course) : null;
     })
     .filter((value) => value !== null);
+  return page ? paginate(items, page) : items;
 }

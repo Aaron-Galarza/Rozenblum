@@ -3,6 +3,7 @@ import { conflict, notFound, badRequest } from "../lib/http.js";
 import { hashPassword } from "../lib/password.js";
 import { initialsFromName } from "../lib/utils.js";
 import { env } from "../config/env.js";
+import { paginate, type Pagination } from "../lib/pagination.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredUser } from "../types.js";
 import { settingsToDTO, userToDTO } from "./mappers.js";
@@ -94,6 +95,10 @@ export async function updateSettings(input: {
   return settingsToDTO(settings, env.paymentsConfigured);
 }
 
-export async function listAdminUsers(role: "alumno" | "profesor"): Promise<StoredUser[]> {
-  return getRepositories().users.list(role);
+export async function listAdminUsers(
+  role: "alumno" | "profesor",
+  page?: Pagination,
+): Promise<StoredUser[]> {
+  const users = await getRepositories().users.list(role);
+  return page ? paginate(users, page) : users;
 }

@@ -9,7 +9,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "seed:atlas": "tsx src/seed/seedAtlas.ts",
-    "test": "tsx --test src/tests/auth.test.ts src/tests/courses.test.ts src/tests/progress.test.ts"
+    "test": "tsx --test src/tests/auth.test.ts src/tests/courses.test.ts src/tests/progress.test.ts src/tests/hardening.test.ts"
   },
   "dependencies": {
     "@rozenblum/shared": "*",

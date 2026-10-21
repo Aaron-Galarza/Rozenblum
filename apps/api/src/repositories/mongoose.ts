@@ -9,6 +9,7 @@ import {
   UserModel,
 } from "../models/index.js";
 import { formatArs, newId, nowIso, slugify } from "../lib/utils.js";
+import { LIST_HARD_LIMIT } from "../lib/pagination.js";
 import { SEED_SETTINGS } from "../seed/data.js";
 import type {
   CourseInput,
@@ -53,6 +54,7 @@ export function createMongooseRepositories(): Repositories {
     async list(role?: Role) {
       const docs = await UserModel.find(role ? { role } : {})
         .sort({ name: 1 })
+        .limit(LIST_HARD_LIMIT)
         .lean()
         .exec();
       return docs.map((doc) => clean<StoredUser>(doc));
@@ -165,7 +167,11 @@ export function createMongooseRepositories(): Repositories {
 
   const enrollments: EnrollmentRepository = {
     async listAll() {
-      const docs = await EnrollmentModel.find({}).sort({ startedAt: -1 }).lean().exec();
+      const docs = await EnrollmentModel.find({})
+        .sort({ startedAt: -1 })
+        .limit(LIST_HARD_LIMIT)
+        .lean()
+        .exec();
       return docs.map((doc) => clean<StoredEnrollment>(doc));
     },
     async listByStudent(email) {
@@ -230,7 +236,11 @@ export function createMongooseRepositories(): Repositories {
 
   const orders: OrderRepository = {
     async list() {
-      const docs = await OrderModel.find({}).sort({ createdAt: -1 }).lean().exec();
+      const docs = await OrderModel.find({})
+        .sort({ createdAt: -1 })
+        .limit(LIST_HARD_LIMIT)
+        .lean()
+        .exec();
       return docs.map((doc) => clean<StoredOrder>(doc));
     },
     async findByReference(reference) {
@@ -255,7 +265,7 @@ export function createMongooseRepositories(): Repositories {
 
   const conversations: ConversationRepository = {
     async listAll() {
-      const docs = await ConversationModel.find({}).lean().exec();
+      const docs = await ConversationModel.find({}).limit(LIST_HARD_LIMIT).lean().exec();
       return docs.map((doc) => clean<StoredConversation>(doc));
     },
     async listByTeacher(email) {
@@ -323,7 +333,11 @@ export function createMongooseRepositories(): Repositories {
 
   const contacts: ContactRepository = {
     async list() {
-      const docs = await ContactModel.find({}).sort({ createdAt: -1 }).lean().exec();
+      const docs = await ContactModel.find({})
+        .sort({ createdAt: -1 })
+        .limit(LIST_HARD_LIMIT)
+        .lean()
+        .exec();
       return docs.map((doc) => clean<StoredContact>(doc));
     },
     async create(input) {

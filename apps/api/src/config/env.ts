@@ -55,6 +55,22 @@ if (!raw.AUTH_SECRET && raw.NODE_ENV !== "test") {
   );
 }
 
+/**
+ * Demo accounts share a well-known password. In production they must not be
+ * reachable without a password, otherwise anyone could sign in as admin.
+ */
+if (raw.NODE_ENV === "production" && raw.ALLOW_DEMO_LOGIN) {
+  throw new Error(
+    "ALLOW_DEMO_LOGIN debe ser false en producción: el login demo permite iniciar sesión sin contraseña.",
+  );
+}
+
+if (raw.NODE_ENV === "production" && raw.DEMO_PASSWORD === "rozenblum-demo-2026") {
+  throw new Error(
+    "DEMO_PASSWORD no puede conservar el valor por defecto en producción. Definí una contraseña aleatoria.",
+  );
+}
+
 export const env = {
   ...raw,
   AUTH_SECRET:
