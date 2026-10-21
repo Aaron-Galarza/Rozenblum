@@ -67,6 +67,38 @@ const toContent = (blocks: Block[]): LessonBlockDTO[] =>
     toggleContent: block.toggleContent,
   }));
 
+const isListType = (type: BlockType) => type === "bullet" || type === "numbered";
+
+/**
+ * Converts a block to another type without discarding what the teacher already
+ * wrote (list items become paragraphs and vice versa).
+ */
+const convertBlock = (block: Block, type: BlockType): Partial<Block> => {
+  const targetIsList = isListType(type);
+  const sourceIsList = isListType(block.type);
+
+  const items = targetIsList
+    ? block.items && block.items.length > 0
+      ? block.items
+      : block.content.trim()
+        ? block.content.split("\n")
+        : [""]
+    : undefined;
+
+  const content =
+    !targetIsList && sourceIsList && block.content.trim() === ""
+      ? (block.items ?? []).filter(Boolean).join("\n")
+      : block.content;
+
+  return {
+    type,
+    content,
+    items,
+    expanded: type === "toggle" ? (block.type === "toggle" ? block.expanded : false) : undefined,
+    toggleContent: type === "toggle" ? (block.toggleContent ?? "") : undefined,
+  };
+};
+
 // ── Slash commands ─────────────────────────────────────────────────────────────
 const SLASH_CMDS = [
   { type: "h1" as BlockType, icon: "H1", label: "Heading 1", desc: "Título principal" },
@@ -116,15 +148,36 @@ function TBtn({ label, active, disabled, onClick, children }: {
 interface BlockProps {
   block: Block;
   isHovered: boolean;
+  isDragTarget: boolean;
   onHover: (id: string | null) => void;
   onFocus: (id: string) => void;
   onChange: (id: string, patch: Partial<Block>) => void;
   onKeyDown: (e: React.KeyboardEvent, id: string) => void;
   onDelete: (id: string) => void;
   onDuplicate: (id: string) => void;
+  onMove: (id: string, dir: "up" | "down") => void;
+  onDragStart: (id: string) => void;
+  onDragOverTarget: (id: string) => void;
+  onDragEnd: () => void;
+  onDropOn: (targetId: string) => void;
 }
 
-function BlockRow({ block, isHovered, onHover, onFocus, onChange, onKeyDown, onDelete, onDuplicate }: BlockProps) {
+function BlockRow({
+  block,
+  isHovered,
+  isDragTarget,
+  onHover,
+  onFocus,
+  onChange,
+  onKeyDown,
+  onDelete,
+  onDuplicate,
+  onMove,
+  onDragStart,
+  onDragOverTarget,
+  onDragEnd,
+  onDropOn,
+}: BlockProps) {
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -251,17 +304,26 @@ function BlockRow({ block, isHovered, onHover, onFocus, onChange, onKeyDown, onD
       case "toggle":
         return (
           <div>
-            <div
-              className="flex items-center gap-2 cursor-pointer select-none"
-              onClick={() => onChange(block.id, { expanded: !block.expanded })}
-            >
-              <svg
-                viewBox="0 0 24 24" fill="none" stroke="#173B6C" strokeWidth="2"
-                className={`w-4 h-4 flex-shrink-0 transition-transform duration-200 ${block.expanded ? "rotate-90" : ""}`}
+            <div className="flex items-start gap-2">
+              <button
+                type="button"
+                aria-expanded={Boolean(block.expanded)}
+                aria-label={block.expanded ? "Contraer bloque" : "Expandir bloque"}
+                onClick={() => onChange(block.id, { expanded: !block.expanded })}
+                className="flex-shrink-0 mt-1.5"
               >
-                <path d="M9 18l6-6-6-6" />
-              </svg>
-              <span className="text-sm font-medium" style={{ color: "#173B6C" }}>{block.content || "Toggle"}</span>
+                <svg
+                  viewBox="0 0 24 24" fill="none" stroke="#173B6C" strokeWidth="2"
+                  className={`w-4 h-4 transition-transform duration-200 ${block.expanded ? "rotate-90" : ""}`}
+                >
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+              </button>
+              <textarea
+                {...sharedTaProps("text-sm font-medium")}
+                placeholder="Título del toggle"
+                style={{ fontFamily: "'Roboto', sans-serif", color: "#173B6C", fontWeight: 500 }}
+              />
             </div>
             {block.expanded && (
               <div className="ml-6 mt-2 pl-3" style={{ borderLeft: "2px solid rgba(23,59,108,0.15)" }}>
@@ -291,22 +353,53 @@ function BlockRow({ block, isHovered, onHover, onFocus, onChange, onKeyDown, onD
   return (
     <div
       className="group relative flex items-start gap-2 rounded px-2 py-1 transition-colors duration-150"
-      style={{ backgroundColor: isHovered ? "#FAFAFA" : "transparent" }}
+      style={{
+        backgroundColor: isHovered ? "#FAFAFA" : "transparent",
+        boxShadow: isDragTarget ? "inset 0 2px 0 #B58A43" : undefined,
+      }}
       onMouseEnter={() => onHover(block.id)}
       onMouseLeave={() => onHover(null)}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        onDragOverTarget(block.id);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDropOn(block.id);
+      }}
     >
-      {/* Drag handle */}
-      <div
-        className="flex-shrink-0 flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-40 transition-opacity cursor-grab"
+      {/* Drag handle: drag with the mouse or press the arrow keys to reorder. */}
+      <button
+        type="button"
+        draggable
+        aria-label="Reordenar bloque"
+        title="Arrastrá o usá las flechas para reordenar"
+        className="flex-shrink-0 flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-40 focus:opacity-100 transition-opacity cursor-grab active:cursor-grabbing outline-none"
         style={{ color: "#173B6C" }}
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", block.id);
+          onDragStart(block.id);
+        }}
+        onDragEnd={onDragEnd}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowUp") {
+            e.preventDefault();
+            onMove(block.id, "up");
+          } else if (e.key === "ArrowDown") {
+            e.preventDefault();
+            onMove(block.id, "down");
+          }
+        }}
       >
-        <svg viewBox="0 0 8 16" fill="currentColor" className="w-3 h-4">
+        <svg aria-hidden="true" viewBox="0 0 8 16" fill="currentColor" className="w-3 h-4">
           <circle cx="2" cy="2" r="1.5" /><circle cx="6" cy="2" r="1.5" />
           <circle cx="2" cy="6" r="1.5" /><circle cx="6" cy="6" r="1.5" />
           <circle cx="2" cy="10" r="1.5" /><circle cx="6" cy="10" r="1.5" />
           <circle cx="2" cy="14" r="1.5" /><circle cx="6" cy="14" r="1.5" />
         </svg>
-      </div>
+      </button>
 
       {/* Content */}
       <div className="flex-1 min-w-0">{renderContent()}</div>
@@ -317,13 +410,13 @@ function BlockRow({ block, isHovered, onHover, onFocus, onChange, onKeyDown, onD
         <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ backgroundColor: "#F0F0F0", color: "rgba(23,59,108,0.5)" }}>
           {TYPE_LABELS[block.type]}
         </span>
-        <button title="Duplicar" onClick={() => onDuplicate(block.id)} className="w-6 h-6 flex items-center justify-center rounded hover:opacity-70 transition-opacity" style={{ color: "rgba(23,59,108,0.5)" }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
+        <button type="button" aria-label="Duplicar bloque" title="Duplicar" onClick={() => onDuplicate(block.id)} className="w-6 h-6 flex items-center justify-center rounded hover:opacity-70 transition-opacity" style={{ color: "rgba(23,59,108,0.5)" }}>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
             <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
           </svg>
         </button>
-        <button title="Eliminar" onClick={() => onDelete(block.id)} className="w-6 h-6 flex items-center justify-center rounded hover:opacity-70 transition-opacity" style={{ color: "rgba(114,19,44,0.6)" }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
+        <button type="button" aria-label="Eliminar bloque" title="Eliminar" onClick={() => onDelete(block.id)} className="w-6 h-6 flex items-center justify-center rounded hover:opacity-70 transition-opacity" style={{ color: "rgba(114,19,44,0.6)" }}>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
             <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
           </svg>
         </button>
@@ -335,30 +428,51 @@ function BlockRow({ block, isHovered, onHover, onFocus, onChange, onKeyDown, onD
 // ── Main modal ─────────────────────────────────────────────────────────────────
 export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleName, initialBlocks, initialType, onClose, onSave, onAutoSave }: LessonEditorModalProps) {
   const titleId = useId();
-  const dialogRef = useModalA11y<HTMLDivElement>(onClose, isOpen);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [title, setTitle] = useState(lessonTitle ?? "");
   const [lessonType, setLessonType] = useState<LessonType>(initialType ?? "video");
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
+  const [dragBlockId, setDragBlockId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveLabel, setSaveLabel] = useState("GUARDAR");
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashBlockId, setSlashBlockId] = useState<string | null>(null);
   const [slashFilter, setSlashFilter] = useState("");
+  const [slashIndex, setSlashIndex] = useState(0);
   const [slashAnchor, setSlashAnchor] = useState<{ top: number; left: number } | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [autoSaveText, setAutoSaveText] = useState("");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [autoSaveText, setAutoSaveText] = useState("");
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedFrameRef = useRef<number | null>(null);
   const lastSavedRef = useRef("");
   const autoSavePendingRef = useRef<LessonEditorPayload | null>(null);
   const autoSaveInFlightRef = useRef(false);
+  const autoSavePromiseRef = useRef<Promise<void> | null>(null);
+  const manualSavingRef = useRef(false);
+  const closingRef = useRef(false);
+  const initializedRef = useRef(false);
   const autoSaveHandlerRef = useRef(onAutoSave);
 
   useEffect(() => {
     autoSaveHandlerRef.current = onAutoSave;
   }, [onAutoSave]);
+
+  const buildPayload = useCallback(
+    (): LessonEditorPayload => ({ title: title.trim(), type: lessonType, content: toContent(blocks) }),
+    [title, lessonType, blocks],
+  );
+
+  // Latest committed values, used after async waits where the closure may be stale.
+  const latestRef = useRef({ title, lessonType, blocks });
+  latestRef.current = { title, lessonType, blocks };
+  const buildLatestPayload = useCallback((): LessonEditorPayload => {
+    const latest = latestRef.current;
+    return { title: latest.title.trim(), type: latest.lessonType, content: toContent(latest.blocks) };
+  }, []);
 
   const flushAutoSave = useCallback(async () => {
     if (autoSaveInFlightRef.current) return;
@@ -368,49 +482,84 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
     autoSavePendingRef.current = null;
     autoSaveInFlightRef.current = true;
     setAutoSaveText("Guardando...");
-    try {
-      await handler(payload);
-      lastSavedRef.current = JSON.stringify(payload);
-      setAutoSaveText("✓ Guardado hace unos segundos");
-      setTimeout(() => setAutoSaveText((current) => (current.startsWith("✓") ? "" : current)), 3000);
-    } catch {
-      setAutoSaveText("No se pudo guardar automáticamente");
-    } finally {
-      autoSaveInFlightRef.current = false;
-      if (autoSavePendingRef.current) void flushAutoSave();
-    }
+
+    const task = (async () => {
+      try {
+        await handler(payload);
+        lastSavedRef.current = JSON.stringify(payload);
+        setAutoSaveText("✓ Guardado hace unos segundos");
+        if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+        statusTimerRef.current = setTimeout(() => {
+          setAutoSaveText((current) => (current.startsWith("✓") ? "" : current));
+        }, 3000);
+      } catch {
+        setAutoSaveText("No se pudo guardar automáticamente");
+      } finally {
+        autoSaveInFlightRef.current = false;
+        if (autoSavePendingRef.current) void flushAutoSave();
+      }
+    })();
+
+    autoSavePromiseRef.current = task;
+    await task;
+    if (autoSavePromiseRef.current === task) autoSavePromiseRef.current = null;
   }, []);
 
-  // Init on open
+  // Init only when the modal opens. Autosave refreshes the parent's course tree,
+  // so re-running this on every prop change would wipe whatever is being typed.
   useEffect(() => {
-    if (isOpen) {
-      const nextTitle = lessonTitle ?? "";
-      const nextType = initialType ?? "video";
-      const nextBlocks =
-        mode === "edit" && initialBlocks && initialBlocks.length > 0
-          ? initialBlocks.map((b) => ({ ...b, items: b.items ? [...b.items] : undefined }))
-          : [EMPTY_BLOCK()];
-      setTitle(nextTitle);
-      setLessonType(nextType);
-      setBlocks(nextBlocks);
-      lastSavedRef.current =
-        mode === "edit" ? JSON.stringify({ title: nextTitle, type: nextType, content: toContent(nextBlocks) }) : "";
-      autoSavePendingRef.current = null;
-      setSaveLabel("GUARDAR");
-      setSaveState("idle");
-      setShowSlashMenu(false);
-      setSlashAnchor(null);
-      setAutoSaveText("");
-      requestAnimationFrame(() => setMounted(true));
-    } else {
+    if (!isOpen) {
+      initializedRef.current = false;
       setMounted(false);
+      return;
     }
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    const nextTitle = lessonTitle ?? "";
+    const nextType = initialType ?? "video";
+    const nextBlocks =
+      mode === "edit" && initialBlocks && initialBlocks.length > 0
+        ? initialBlocks.map((b) => ({ ...b, items: b.items ? [...b.items] : undefined }))
+        : [EMPTY_BLOCK()];
+
+    setTitle(nextTitle);
+    setLessonType(nextType);
+    setBlocks(nextBlocks);
+    setHoveredBlockId(null);
+    setActiveBlockId(null);
+    setDragBlockId(null);
+    setDragOverId(null);
+    lastSavedRef.current =
+      mode === "edit" ? JSON.stringify({ title: nextTitle, type: nextType, content: toContent(nextBlocks) }) : "";
+    autoSavePendingRef.current = null;
+    setSaveLabel("GUARDAR");
+    setSaveState("idle");
+    setShowSlashMenu(false);
+    setSlashBlockId(null);
+    setSlashFilter("");
+    setSlashIndex(0);
+    setSlashAnchor(null);
+    setAutoSaveText("");
+    if (mountedFrameRef.current !== null) cancelAnimationFrame(mountedFrameRef.current);
+    mountedFrameRef.current = requestAnimationFrame(() => setMounted(true));
   }, [isOpen, mode, lessonTitle, initialBlocks, initialType]);
+
+  // Clear every pending timer when the component goes away.
+  useEffect(
+    () => () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+      if (mountedFrameRef.current !== null) cancelAnimationFrame(mountedFrameRef.current);
+    },
+    [],
+  );
 
   // Debounced auto-save for existing lessons
   useEffect(() => {
-    if (!isOpen || mode !== "edit" || !onAutoSave) return;
-    const payload: LessonEditorPayload = { title: title.trim(), type: lessonType, content: toContent(blocks) };
+    if (!isOpen || mode !== "edit" || !onAutoSave || saveState === "saving") return;
+    const payload = buildPayload();
     const serialized = JSON.stringify(payload);
     if (!payload.title || serialized === lastSavedRef.current) return;
 
@@ -423,7 +572,51 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [isOpen, mode, onAutoSave, title, lessonType, blocks, flushAutoSave]);
+  }, [isOpen, mode, onAutoSave, buildPayload, saveState, flushAutoSave]);
+
+  /**
+   * Persists any debounced change before closing, so writing and immediately
+   * leaving the editor does not lose the last keystrokes.
+   */
+  const requestClose = useCallback(async () => {
+    if (manualSavingRef.current || closingRef.current) return;
+    closingRef.current = true;
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    autoSavePendingRef.current = null;
+    try {
+      if (autoSavePromiseRef.current) await autoSavePromiseRef.current;
+      if (mode === "edit" && onAutoSave) {
+        const payload = buildLatestPayload();
+        if (payload.title && JSON.stringify(payload) !== lastSavedRef.current) {
+          setAutoSaveText("Guardando...");
+          await onAutoSave(payload);
+          lastSavedRef.current = JSON.stringify(payload);
+        }
+      }
+      onClose();
+    } catch {
+      setAutoSaveText("No se pudo guardar. Intentá cerrar nuevamente.");
+    } finally {
+      closingRef.current = false;
+    }
+  }, [mode, onAutoSave, buildLatestPayload, onClose]);
+
+  const handleEscape = useCallback(() => {
+    if (showSlashMenu) {
+      setShowSlashMenu(false);
+      setSlashBlockId(null);
+      setSlashFilter("");
+      setSlashIndex(0);
+      setSlashAnchor(null);
+    } else {
+      void requestClose();
+    }
+  }, [showSlashMenu, requestClose]);
+
+  const dialogRef = useModalA11y<HTMLDivElement>(handleEscape, isOpen);
 
   const updateBlock = useCallback((id: string, patch: Partial<Block>) => {
     setBlocks((prev) => prev.map((b) => b.id === id ? { ...b, ...patch } : b));
@@ -450,96 +643,188 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
   const addBlockAfter = useCallback((id: string, type: BlockType = "paragraph") => {
     setBlocks((prev) => {
       const idx = prev.findIndex((b) => b.id === id);
-      const newBlock: Block = { id: genId(), type, content: "", items: (type === "bullet" || type === "numbered") ? [""] : undefined };
+      const newBlock: Block = { id: genId(), type, content: "", items: isListType(type) ? [""] : undefined };
       const next = [...prev];
       next.splice(idx + 1, 0, newBlock);
       return next;
     });
   }, []);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent, id: string) => {
-    const block = blocks.find((b) => b.id === id);
-    if (!block) return;
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      addBlockAfter(id);
-    } else if (e.key === "Backspace" && block.content === "") {
-      e.preventDefault();
-      deleteBlock(id);
-    }
-    if (showSlashMenu && (e.key === "Escape" || e.key === "Enter")) {
-      setShowSlashMenu(false);
-      setSlashAnchor(null);
-    }
-  }, [blocks, addBlockAfter, deleteBlock, showSlashMenu]);
+  const moveBlock = useCallback((id: string, dir: "up" | "down") => {
+    setBlocks((prev) => {
+      const index = prev.findIndex((b) => b.id === id);
+      const target = dir === "up" ? index - 1 : index + 1;
+      if (index === -1 || target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }, []);
 
-  const handleChange = useCallback((id: string, patch: Partial<Block>) => {
-    const content = patch.content;
-    if (typeof content === "string") {
-      if (content === "/") {
-        setShowSlashMenu(true);
-        setSlashBlockId(id);
-        setSlashFilter("");
-        const rect = document.activeElement?.getBoundingClientRect();
-        setSlashAnchor(
-          rect
-            ? {
-                top: Math.min(rect.bottom + 4, window.innerHeight - 320),
-                left: Math.min(rect.left, window.innerWidth - 272),
-              }
-            : null,
-        );
-      } else if (showSlashMenu && content.startsWith("/")) {
-        setSlashFilter(content.slice(1));
-      } else {
-        if (showSlashMenu && !content.startsWith("/")) {
-          setShowSlashMenu(false);
-          setSlashAnchor(null);
-        }
-      }
-    }
-    updateBlock(id, patch);
-  }, [updateBlock, showSlashMenu]);
+  const dropBlockOn = useCallback(
+    (targetId: string) => {
+      setBlocks((prev) => {
+        if (!dragBlockId) return prev;
+        const from = prev.findIndex((b) => b.id === dragBlockId);
+        const to = prev.findIndex((b) => b.id === targetId);
+        if (from === -1 || to === -1 || from === to) return prev;
+        const next = [...prev];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        return next;
+      });
+      setDragBlockId(null);
+      setDragOverId(null);
+    },
+    [dragBlockId],
+  );
+
+  const filteredSlash = SLASH_CMDS.filter((c) =>
+    !slashFilter || c.label.toLowerCase().includes(slashFilter.toLowerCase())
+  );
+
+  const closeSlashMenu = useCallback(() => {
+    setShowSlashMenu(false);
+    setSlashBlockId(null);
+    setSlashFilter("");
+    setSlashIndex(0);
+    setSlashAnchor(null);
+  }, []);
 
   const applySlashCommand = (type: BlockType) => {
     if (slashBlockId) {
       updateBlock(slashBlockId, {
         type,
         content: "",
-        items: (type === "bullet" || type === "numbered") ? [""] : undefined,
+        items: isListType(type) ? [""] : undefined,
         expanded: type === "toggle" ? false : undefined,
         toggleContent: type === "toggle" ? "" : undefined,
       });
     }
-    setShowSlashMenu(false);
-    setSlashBlockId(null);
-    setSlashFilter("");
-    setSlashAnchor(null);
+    closeSlashMenu();
   };
 
   const changeActiveType = (type: BlockType) => {
-    if (activeBlockId) {
-      updateBlock(activeBlockId, {
-        type,
-        items: (type === "bullet" || type === "numbered") ? (blocks.find(b => b.id === activeBlockId)?.items ?? [""]) : undefined,
-        expanded: type === "toggle" ? false : undefined,
-      });
-    }
+    if (!activeBlockId) return;
+    const block = blocks.find((b) => b.id === activeBlockId);
+    if (!block || block.type === type) return;
+    updateBlock(activeBlockId, convertBlock(block, type));
   };
 
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent, id: string) => {
+      const block = blocks.find((b) => b.id === id);
+      if (!block) return;
+
+      // The slash menu owns the arrow/Enter/Escape keys while it is open.
+      if (showSlashMenu) {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          const total = filteredSlash.length;
+          if (total > 0) {
+            setSlashIndex((prev) =>
+              e.key === "ArrowDown" ? (prev + 1) % total : (prev - 1 + total) % total,
+            );
+          }
+          return;
+        }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          const command = filteredSlash[Math.min(slashIndex, filteredSlash.length - 1)];
+          if (command) applySlashCommand(command.type);
+          else closeSlashMenu();
+          return;
+        }
+        if (e.key === "Escape") {
+          // Stop propagation so the dialog itself does not close.
+          e.preventDefault();
+          e.stopPropagation();
+          closeSlashMenu();
+          return;
+        }
+      }
+
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        addBlockAfter(id);
+      } else if (e.key === "Backspace" && block.content === "") {
+        e.preventDefault();
+        deleteBlock(id);
+      }
+    },
+    [
+      blocks,
+      addBlockAfter,
+      deleteBlock,
+      showSlashMenu,
+      filteredSlash,
+      slashIndex,
+      applySlashCommand,
+      closeSlashMenu,
+    ],
+  );
+
+  const handleChange = useCallback(
+    (id: string, patch: Partial<Block>) => {
+      const content = patch.content;
+      if (typeof content === "string") {
+        if (content === "/") {
+          setShowSlashMenu(true);
+          setSlashBlockId(id);
+          setSlashFilter("");
+          setSlashIndex(0);
+          const rect = document.activeElement?.getBoundingClientRect();
+          setSlashAnchor(
+            rect
+              ? {
+                  top: Math.min(rect.bottom + 4, window.innerHeight - 320),
+                  left: Math.min(rect.left, window.innerWidth - 272),
+                }
+              : null,
+          );
+        } else if (showSlashMenu && content.startsWith("/")) {
+          setSlashFilter(content.slice(1));
+          setSlashIndex(0);
+        } else if (showSlashMenu) {
+          closeSlashMenu();
+        }
+      }
+      updateBlock(id, patch);
+    },
+    [updateBlock, showSlashMenu, closeSlashMenu],
+  );
+
   const handleSave = async () => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
     if (!title.trim()) {
       setSaveLabel("FALTA TÍTULO");
-      setTimeout(() => setSaveLabel("GUARDAR"), 1600);
+      saveTimerRef.current = setTimeout(() => setSaveLabel("GUARDAR"), 1600);
       return;
     }
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    autoSavePendingRef.current = null;
+    manualSavingRef.current = true;
     setSaveLabel("GUARDANDO...");
     setSaveState("saving");
-    const payload: LessonEditorPayload = { title: title.trim(), type: lessonType, content: toContent(blocks) };
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    autoSavePendingRef.current = null;
+
     try {
+      // Never let a slower autosave land after the explicit save.
+      if (autoSavePromiseRef.current) {
+        try {
+          await autoSavePromiseRef.current;
+        } catch {
+          // The manual save below retries with the current content.
+        }
+      }
+      const payload = buildLatestPayload();
       await onSave(payload);
       lastSavedRef.current = JSON.stringify(payload);
       setSaveLabel("✓ GUARDADO");
@@ -548,16 +833,13 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
       setSaveLabel("ERROR AL GUARDAR");
       setSaveState("idle");
     } finally {
+      manualSavingRef.current = false;
       saveTimerRef.current = setTimeout(() => {
         setSaveLabel("GUARDAR");
         setSaveState("idle");
       }, 1800);
     }
   };
-
-  const filteredSlash = SLASH_CMDS.filter((c) =>
-    !slashFilter || c.label.toLowerCase().includes(slashFilter.toLowerCase())
-  );
 
   const { chars, words } = getWordCount(blocks);
 
@@ -569,7 +851,7 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
     <div
       className="fixed inset-0 z-[300] flex items-center justify-center"
       style={{ backgroundColor: "rgba(23,59,108,0.5)", backdropFilter: "blur(4px)" }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onClick={(e) => e.target === e.currentTarget && requestClose()}
     >
       <div
         ref={dialogRef}
@@ -617,7 +899,7 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
               {saveLabel}
             </button>
             <button
-              onClick={onClose}
+              onClick={() => void requestClose()}
               aria-label="Cerrar"
               className="w-9 h-9 flex items-center justify-center rounded-full transition-all duration-150 hover:opacity-60"
               style={{ color: "#173B6C" }}
@@ -710,12 +992,18 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
                 <BlockRow
                   block={blocks[0]}
                   isHovered={hoveredBlockId === blocks[0].id}
+                  isDragTarget={dragOverId === blocks[0].id && dragBlockId !== blocks[0].id}
                   onHover={setHoveredBlockId}
                   onFocus={setActiveBlockId}
                   onChange={handleChange}
                   onKeyDown={handleKeyDown}
                   onDelete={deleteBlock}
                   onDuplicate={duplicateBlock}
+                  onMove={moveBlock}
+                  onDragStart={setDragBlockId}
+                  onDragOverTarget={setDragOverId}
+                  onDragEnd={() => { setDragBlockId(null); setDragOverId(null); }}
+                  onDropOn={dropBlockOn}
                 />
                 {/* Empty state hint */}
                 <p
@@ -732,12 +1020,18 @@ export default function LessonEditorModal({ isOpen, mode, lessonTitle, moduleNam
                     key={block.id}
                     block={block}
                     isHovered={hoveredBlockId === block.id}
+                    isDragTarget={dragOverId === block.id && dragBlockId !== block.id}
                     onHover={setHoveredBlockId}
                     onFocus={setActiveBlockId}
                     onChange={handleChange}
                     onKeyDown={handleKeyDown}
                     onDelete={deleteBlock}
                     onDuplicate={duplicateBlock}
+                    onMove={moveBlock}
+                    onDragStart={setDragBlockId}
+                    onDragOverTarget={setDragOverId}
+                    onDragEnd={() => { setDragBlockId(null); setDragOverId(null); }}
+                    onDropOn={dropBlockOn}
                   />
                 ))}
                 {/* Add block button */}
