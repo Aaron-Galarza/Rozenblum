@@ -13,14 +13,13 @@
   },
   "files": ["dist"],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "tsup": "^8.5.0",
     "typescript": "5.9.3"
   }
 }

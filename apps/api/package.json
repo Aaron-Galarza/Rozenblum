@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsup src/server.ts --format esm --out-dir dist --clean",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --import ./src/tests/test-env.ts --test ./src/tests/api.test.ts"
@@ -23,7 +23,6 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/node": "^24.0.0",
-    "tsup": "^8.5.0",
     "tsx": "^4.20.6",
     "typescript": "5.9.3"
   }
