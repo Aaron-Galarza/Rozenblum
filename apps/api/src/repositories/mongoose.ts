@@ -75,7 +75,7 @@ export function createMongooseRepositories(): Repositories {
     async update(id, patch) {
       const update = { ...patch };
       if (update.email) update.email = update.email.toLowerCase();
-      const doc = await UserModel.findOneAndUpdate({ id }, { $set: update }, { new: true })
+      const doc = await UserModel.findOneAndUpdate({ id }, { $set: update }, { returnDocument: "after" })
         .lean()
         .exec();
       return doc ? clean<StoredUser>(doc) : null;
@@ -144,7 +144,7 @@ export function createMongooseRepositories(): Repositories {
       const doc = await CourseModel.findOneAndUpdate(
         { legacyId },
         { $set: update },
-        { new: true },
+        { returnDocument: "after" },
       )
         .lean()
         .exec();
@@ -154,7 +154,7 @@ export function createMongooseRepositories(): Repositories {
       const doc = await CourseModel.findOneAndUpdate(
         { legacyId },
         { $set: { modules, updatedAt: nowIso() } },
-        { new: true },
+        { returnDocument: "after" },
       )
         .lean()
         .exec();
@@ -212,7 +212,7 @@ export function createMongooseRepositories(): Repositories {
       const doc = await EnrollmentModel.findOneAndUpdate(
         { id },
         { $set: { completedLessonIds: [...new Set(lessonIds)] } },
-        { new: true },
+        { returnDocument: "after" },
       )
         .lean()
         .exec();
@@ -222,7 +222,7 @@ export function createMongooseRepositories(): Repositories {
       const doc = await EnrollmentModel.findOneAndUpdate(
         { id },
         { $set: { status } },
-        { new: true },
+        { returnDocument: "after" },
       )
         .lean()
         .exec();
@@ -258,7 +258,7 @@ export function createMongooseRepositories(): Repositories {
       return clean<StoredOrder>(doc.toObject());
     },
     async updateStatus(id, estado: OrderStatus) {
-      const doc = await OrderModel.findOneAndUpdate({ id }, { $set: { estado } }, { new: true })
+      const doc = await OrderModel.findOneAndUpdate({ id }, { $set: { estado } }, { returnDocument: "after" })
         .lean()
         .exec();
       return doc ? clean<StoredOrder>(doc) : null;
@@ -297,7 +297,7 @@ export function createMongooseRepositories(): Repositories {
       const doc = await ConversationModel.findOneAndUpdate(
         { id },
         { $push: { messages: message } },
-        { new: true },
+        { returnDocument: "after" },
       )
         .lean()
         .exec();
@@ -319,7 +319,7 @@ export function createMongooseRepositories(): Repositories {
       const doc = await SettingsModel.findOneAndUpdate(
         {},
         { $set: { ...patch, updatedAt: nowIso() } },
-        { new: true },
+        { returnDocument: "after" },
       )
         .lean()
         .exec();
