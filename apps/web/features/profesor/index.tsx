@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   ChatMessageDTO,
   ConversationDTO,
+  CourseDTO,
   LessonBlockDTO,
   LessonType,
   ModuleDTO,
@@ -19,7 +20,7 @@ import { apiFetch, errorMessage } from "../../lib/api";
 import { useSession } from "../../lib/use-session";
 import { EmptyState, ErrorPanel, LoadingScreen } from "../../components/ui/AsyncState";
 
-type Structure = { course: { id: number; title: string; status: "published" | "draft" }; modules: ModuleDTO[] };
+type Structure = { course: CourseDTO; modules: ModuleDTO[] };
 
 function toEditableModules(modules: ModuleDTO[]): EditableModule[] {
   return modules.map((mod) => ({
@@ -144,7 +145,6 @@ export default function ProfesorView() {
         notificationCount={dashboard?.notifications.length ?? 0}
         userInitials={session?.user.initials ?? ""}
         userName={`Profesor: ${session?.user.name ?? ""}`}
-        userMenuItems={["Mi Perfil", "Mis Cursos"]}
       />
 
       {/* ── BODY ── */}
@@ -200,6 +200,8 @@ export default function ProfesorView() {
             <CourseEditor
               courseId={selectedCourseId}
               courseTitle={structure.course.title}
+              courseDescription={structure.course.description}
+              courseImage={structure.course.img}
               published={structure.course.status === "published"}
               modules={toEditableModules(structure.modules)}
               students={sortedStudents}
@@ -211,12 +213,19 @@ export default function ProfesorView() {
               onSort={handleSort}
               onTogglePublish={async () => {
                 const nextStatus = structure.course.status === "published" ? "draft" : "published";
-                await apiFetch(`/api/teacher/courses/${selectedCourseId}`, {
+                const updated = await apiFetch<CourseDTO>(`/api/teacher/courses/${selectedCourseId}`, {
                   method: "PATCH",
                   auth: true,
                   body: { status: nextStatus },
                 });
-                setStructure({ ...structure, course: { ...structure.course, status: nextStatus } });
+                setStructure((prev) => prev ? { ...prev, course: updated } : prev);
+              }}
+              onUpdateCourse={async (patch) => {
+                const updated = await apiFetch<CourseDTO>(`/api/teacher/courses/${selectedCourseId}`, {
+                  method: "PATCH", auth: true, body: patch,
+                });
+                setStructure((prev) => prev ? { ...prev, course: updated } : prev);
+                await loadDashboard();
               }}
               onAddModule={async (title) => setModules(await moduleApi("/modules", "POST", { title }))}
               onRenameModule={async (id, title) => setModules(await moduleApi(`/modules/${id}`, "PATCH", { title }))}

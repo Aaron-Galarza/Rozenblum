@@ -12,6 +12,8 @@ type LessonPayload = { title: string; type: LessonType; content: LessonBlockDTO[
 type CourseEditorProps = {
   courseId: number;
   courseTitle: string;
+  courseDescription: string;
+  courseImage: string;
   published: boolean;
   modules: EditableModule[];
   students: ProfesorStudent[];
@@ -22,6 +24,7 @@ type CourseEditorProps = {
   onToggleModule: (id: number) => void;
   onSort: (col: string) => void;
   onTogglePublish: () => Promise<void>;
+  onUpdateCourse: (patch: { title: string; description: string; img: string }) => Promise<void>;
   onAddModule: (title: string) => Promise<void>;
   onRenameModule: (id: number, title: string) => Promise<void>;
   onDeleteModule: (id: number) => Promise<void>;
@@ -39,6 +42,8 @@ type StudentModal = { type: "ver" | "chat"; student: ProfesorStudent } | null;
 export default function CourseEditor({
   courseId,
   courseTitle,
+  courseDescription,
+  courseImage,
   published,
   modules,
   students,
@@ -49,6 +54,7 @@ export default function CourseEditor({
   onToggleModule,
   onSort,
   onTogglePublish,
+  onUpdateCourse,
   onAddModule,
   onRenameModule,
   onDeleteModule,
@@ -73,8 +79,8 @@ export default function CourseEditor({
   const [newModuleTitle, setNewModuleTitle] = useState("");
   const [renaming, setRenaming] = useState<{ id: number; title: string } | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
-  const [expiryOpen, setExpiryOpen] = useState(false);
-  const [expiryDate, setExpiryDate] = useState("");
+  const [courseEditOpen, setCourseEditOpen] = useState(false);
+  const [courseForm, setCourseForm] = useState({ title: courseTitle, description: courseDescription, img: courseImage });
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -152,7 +158,7 @@ export default function CourseEditor({
         <h2 className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{courseTitle}</h2>
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => showToast("Los datos generales del curso se editan desde el panel administrador.")}
+            onClick={() => { setCourseForm({ title: courseTitle, description: courseDescription, img: courseImage }); setCourseEditOpen(true); }}
             className="px-4 py-2 text-xs font-medium tracking-wide border transition-all hover:opacity-70"
             style={{ color: "#173B6C", borderColor: "#173B6C" }}
           >
@@ -168,9 +174,6 @@ export default function CourseEditor({
           </button>
           <button onClick={() => setStatsOpen(true)} className="px-4 py-2 text-xs font-medium tracking-wide border transition-all hover:opacity-70" style={{ color: "#173B6C", borderColor: "#173B6C" }}>
             VER ESTADÍSTICAS
-          </button>
-          <button onClick={() => setExpiryOpen(true)} className="px-4 py-2 text-xs font-medium tracking-wide border transition-all hover:opacity-70" style={{ color: "#173B6C", borderColor: "#173B6C" }}>
-            FIJAR EXPIRACIÓN
           </button>
         </div>
       </div>
@@ -501,25 +504,25 @@ export default function CourseEditor({
         </Modal>
       )}
 
-      {/* Expiry modal */}
-      {expiryOpen && (
-        <Modal title="Fijar Expiración del Acceso" onClose={() => setExpiryOpen(false)}>
-          <p className="text-xs mb-4" style={{ color: "rgba(23,59,108,0.65)" }}>Los alumnos inscritos perderán el acceso al curso en la fecha seleccionada.</p>
-          <div className="mb-4">
-            <label className="block text-xs font-medium mb-1.5 tracking-wide" style={{ color: "rgba(23,59,108,0.7)" }}>Fecha de expiración</label>
-            <input
-              type="date"
-              value={expiryDate}
-              onChange={(e) => setExpiryDate(e.target.value)}
-              className="w-full px-3 py-2.5 text-sm outline-none"
-              style={{ border: "1px solid rgba(23,59,108,0.2)", borderRadius: 4, color: "#173B6C", backgroundColor: "#FAF8F5" }}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "#B58A43")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(23,59,108,0.2)")}
-            />
+      {courseEditOpen && (
+        <Modal title="Editar Curso" onClose={() => setCourseEditOpen(false)}>
+          <div className="space-y-4 mb-5">
+            <label className="block text-xs font-medium" htmlFor="teacher-course-title">Título</label>
+            <input id="teacher-course-title" value={courseForm.title} maxLength={180} onChange={(e) => setCourseForm((prev) => ({ ...prev, title: e.target.value }))} className="w-full px-3 py-2 border text-sm" />
+            <label className="block text-xs font-medium" htmlFor="teacher-course-description">Descripción</label>
+            <textarea id="teacher-course-description" value={courseForm.description} maxLength={2000} onChange={(e) => setCourseForm((prev) => ({ ...prev, description: e.target.value }))} className="w-full px-3 py-2 border text-sm" rows={4} />
+            <label className="block text-xs font-medium" htmlFor="teacher-course-image">URL de imagen</label>
+            <input id="teacher-course-image" type="url" value={courseForm.img} onChange={(e) => setCourseForm((prev) => ({ ...prev, img: e.target.value }))} className="w-full px-3 py-2 border text-sm" />
           </div>
           <div className="flex gap-2">
-            <button onClick={() => { setExpiryOpen(false); showToast("La expiración de acceso todavía no está disponible en V0.1."); }} className="flex-1 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>GUARDAR</button>
-            <button onClick={() => setExpiryOpen(false)} className="flex-1 py-2.5 text-xs font-medium border hover:opacity-70 transition-opacity" style={{ color: "#173B6C", borderColor: "#173B6C" }}>CANCELAR</button>
+            <button disabled={busy} onClick={() => {
+              if (courseForm.title.trim().length < 3 || courseForm.description.trim().length < 3 || !/^https?:\/\//i.test(courseForm.img)) {
+                showToast("Ingresá un título y descripción válidos y una URL de imagen http(s).");
+                return;
+              }
+              void run(async () => { await onUpdateCourse({ title: courseForm.title.trim(), description: courseForm.description.trim(), img: courseForm.img.trim() }); setCourseEditOpen(false); }, "✓ Curso actualizado");
+            }} className="flex-1 py-2.5 text-xs font-bold" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>GUARDAR</button>
+            <button onClick={() => setCourseEditOpen(false)} className="flex-1 py-2.5 text-xs border">CANCELAR</button>
           </div>
         </Modal>
       )}
