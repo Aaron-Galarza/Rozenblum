@@ -1,6 +1,4 @@
 import type { OrderStatus, Role } from "@rozenblum/shared";
-import { env } from "../config/env.js";
-import { hashPassword } from "../lib/password.js";
 import { formatArs, newId, nowIso, slugify } from "../lib/utils.js";
 import type {
   CourseInput,
@@ -14,15 +12,6 @@ import type {
   StoredSettings,
   StoredUser,
 } from "../types.js";
-import {
-  SEED_CONTACTS,
-  SEED_CONVERSATIONS,
-  SEED_COURSES,
-  SEED_ENROLLMENTS,
-  SEED_ORDERS,
-  SEED_SETTINGS,
-  SEED_USERS,
-} from "../seed/data.js";
 import type {
   ContactRepository,
   ConversationRepository,
@@ -42,25 +31,25 @@ type Memory = {
   enrollments: StoredEnrollment[];
   orders: StoredOrder[];
   conversations: StoredConversation[];
-  settings: StoredSettings;
+  settings: StoredSettings | null;
   contacts: StoredContact[];
 };
 
-function createMemory(): Memory {
-  const passwordHash = hashPassword(env.DEMO_PASSWORD);
+function createMemory(initial: Partial<Memory>): Memory {
   return {
-    users: SEED_USERS.map((user) => ({ ...clone(user), passwordHash })),
-    courses: clone(SEED_COURSES),
-    enrollments: clone(SEED_ENROLLMENTS),
-    orders: clone(SEED_ORDERS),
-    conversations: clone(SEED_CONVERSATIONS),
-    settings: clone(SEED_SETTINGS),
-    contacts: clone(SEED_CONTACTS),
+    users: [],
+    courses: [],
+    enrollments: [],
+    orders: [],
+    conversations: [],
+    settings: null,
+    contacts: [],
+    ...clone(initial),
   };
 }
 
-export function createMockRepositories(): Repositories {
-  const db = createMemory();
+export function createMockRepositories(initial: Partial<Memory> = {}): Repositories {
+  const db = createMemory(initial);
 
   const users: UserRepository = {
     async findByEmail(email) {
@@ -281,9 +270,11 @@ export function createMockRepositories(): Repositories {
 
   const settings: SettingsRepository = {
     async get() {
+      if (!db.settings) throw new Error("Falta configuración de prueba.");
       return clone(db.settings);
     },
     async update(patch) {
+      if (!db.settings) throw new Error("Falta configuración de prueba.");
       db.settings = { ...db.settings, ...clone(patch), updatedAt: nowIso() };
       return clone(db.settings);
     },
@@ -301,7 +292,7 @@ export function createMockRepositories(): Repositories {
   };
 
   return {
-    mode: "mock",
+    mode: "test",
     users,
     courses,
     enrollments,

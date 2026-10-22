@@ -1,20 +1,9 @@
 import mongoose from "mongoose";
 import { env } from "./env.js";
 
-/**
- * MongoDB Atlas es la base definitiva de la plataforma.
- *
- * Reglas:
- * - El navegador nunca se conecta a Atlas: sólo la API lo hace.
- * - Las credenciales viven exclusivamente en el entorno del backend.
- * - Si APP_MODE=atlas y la conexión falla, la API falla de forma explícita.
- *   Nunca se degrada silenciosamente a datos mock.
- */
+/** Atlas is the only runtime data store; tests inject isolated repositories. */
 export async function connectDatabase(): Promise<void> {
-  if (env.APP_MODE !== "atlas") {
-    console.log("[db] APP_MODE=mock — no se abre conexión a MongoDB.");
-    return;
-  }
+  if (env.isTest) return;
 
   if (!env.MONGODB_URI) {
     throw new Error("MONGODB_URI no está definida.");
@@ -32,13 +21,10 @@ export async function connectDatabase(): Promise<void> {
       retryWrites: true,
     });
     console.log(`[db] Conectado a MongoDB Atlas — base "${env.MONGODB_DB}".`);
-  } catch (error) {
-    // No incluir la URI ni credenciales en el mensaje.
-    const reason = error instanceof Error ? error.message : "error desconocido";
+  } catch {
     throw new Error(
-      `No se pudo conectar a MongoDB Atlas (${reason}). ` +
-        "Verificá MONGODB_URI, el usuario con permisos mínimos y la lista de IP permitidas. " +
-        "La API no continuará en modo mock.",
+      "No se pudo conectar a MongoDB Atlas. " +
+        "Verificá la conexión, el usuario de base y la lista de IP permitidas.",
     );
   }
 }
@@ -53,9 +39,9 @@ export function isDatabaseConnected(): boolean {
   return mongoose.connection.readyState === 1;
 }
 
-/** Readiness probe used by orchestrators. Mock mode is always ready. */
+/** Readiness probe used by orchestrators. */
 export async function checkDatabaseHealth(): Promise<boolean> {
-  if (env.APP_MODE !== "atlas") return true;
+  if (env.isTest) return true;
   if (mongoose.connection.readyState !== 1) return false;
   try {
     await mongoose.connection.db?.admin().ping();

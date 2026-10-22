@@ -1,18 +1,18 @@
 import { Router } from "express";
-import { demoLoginSchema } from "@rozenblum/shared";
+import { loginSchema } from "@rozenblum/shared";
 import { requireAuth } from "../middleware/auth.js";
 import { sendData } from "../lib/http.js";
-import { demoLogin } from "../services/auth.js";
+import { login } from "../services/auth.js";
 import { userToDTO } from "../services/mappers.js";
 import { asyncRoute, parseBody } from "./helpers.js";
 
 export const authRouter = Router();
 
 authRouter.post(
-  "/demo-login",
+  "/login",
   asyncRoute(async (req, res) => {
-    const input = parseBody(demoLoginSchema, req.body);
-    const session = await demoLogin(input);
+    const input = parseBody(loginSchema, req.body);
+    const session = await login(input);
     sendData(res, session);
   }),
 );

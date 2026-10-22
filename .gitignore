@@ -16,6 +16,7 @@ build/
 
 # Environment / credentials (never commit Atlas URIs)
 .env
+.credentials.local
 .env.*
 !.env.example
 !.env.local.example

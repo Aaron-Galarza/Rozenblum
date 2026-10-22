@@ -102,6 +102,7 @@ export type StoredConversation = {
 export type StoredSettings = {
   companyName: string;
   supportEmail: string;
+  contactWhatsapp: string;
   logoUrl: string;
   privacyText: string;
   updatedAt: string;

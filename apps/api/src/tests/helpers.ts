@@ -38,17 +38,3 @@ export async function api<T = unknown>(
   const body = text ? (JSON.parse(text) as T) : (undefined as T);
   return { status: response.status, body };
 }
-
-export async function login(
-  baseUrl: string,
-  role: "alumno" | "profesor" | "admin",
-): Promise<string> {
-  const result = await api<{ data: { token: string } }>(baseUrl, "/api/auth/demo-login", {
-    method: "POST",
-    body: JSON.stringify({ role }),
-  });
-  if (result.status !== 200) {
-    throw new Error(`Login ${role} falló: ${result.status}`);
-  }
-  return result.body.data.token;
-}

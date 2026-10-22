@@ -10,7 +10,7 @@ Plataforma full-stack del Estudio Jurídico Rozenblum: sitio público, aula virt
 
 - Node.js 20+
 - npm 10+
-- MongoDB Atlas (solo para `APP_MODE=atlas`)
+- MongoDB Atlas con datos y usuarios configurados
 
 ## Puesta en marcha
 
@@ -25,7 +25,7 @@ npm run dev
 - API: http://localhost:4000
 - Health: http://localhost:4000/health
 
-Por defecto la API corre en `APP_MODE=mock` (datos en memoria). Para usar Atlas, completá `MONGODB_URI` y `AUTH_SECRET` en `apps/api/.env` y definí `APP_MODE=atlas`.
+Completá `MONGODB_URI` y `AUTH_SECRET` en `apps/api/.env`. La API usa Atlas y detiene el arranque si la conexión falla. El repositorio no incluye datos de ejemplo ni contraseñas.
 
 ## Scripts
 
@@ -35,7 +35,6 @@ Por defecto la API corre en `APP_MODE=mock` (datos en memoria). Para usar Atlas,
 | `npm run build` | Build de producción (shared + api + web) |
 | `npm run typecheck` | Chequeo de tipos en todos los paquetes |
 | `npm test` | Tests de integración de la API |
-| `npm run seed:atlas` | Siembra idempotente en MongoDB Atlas |
 
 ## Entorno
 

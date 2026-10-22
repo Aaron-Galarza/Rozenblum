@@ -11,7 +11,7 @@ async function main() {
   const server = app.listen(env.PORT, () => {
     logger.info("api_started", {
       port: env.PORT,
-      mode: env.APP_MODE,
+      mode: "atlas",
       corsOrigins: env.corsOrigins,
     });
   });

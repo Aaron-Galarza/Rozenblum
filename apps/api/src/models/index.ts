@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import type { HomeContentDTO } from "@rozenblum/shared";
 import type {
   StoredContact,
   StoredConversation,
@@ -63,7 +64,7 @@ const userSchema = new Schema<StoredUser>(
     passwordHash: { type: String, required: true },
     createdAt: { type: String, required: true },
   },
-  { _id: false, versionKey: false, collection: "users" },
+  { versionKey: false, collection: "users" },
 );
 
 const courseSchema = new Schema<StoredCourse>(
@@ -85,7 +86,7 @@ const courseSchema = new Schema<StoredCourse>(
     createdAt: { type: String, required: true },
     updatedAt: { type: String, required: true },
   },
-  { _id: false, versionKey: false, collection: "courses" },
+  { versionKey: false, collection: "courses" },
 );
 
 courseSchema.index({ status: 1, legacyId: 1 });
@@ -100,7 +101,7 @@ const enrollmentSchema = new Schema<StoredEnrollment>(
     startedAt: { type: String, required: true },
     completedLessonIds: { type: [String], default: [] },
   },
-  { _id: false, versionKey: false, collection: "enrollments" },
+  { versionKey: false, collection: "enrollments" },
 );
 
 enrollmentSchema.index({ studentEmail: 1, courseId: 1 }, { unique: true });
@@ -125,7 +126,7 @@ const orderSchema = new Schema<StoredOrder>(
     },
     createdAt: { type: String, required: true },
   },
-  { _id: false, versionKey: false, collection: "orders" },
+  { versionKey: false, collection: "orders" },
 );
 
 orderSchema.index({ estado: 1, createdAt: -1 });
@@ -151,7 +152,7 @@ const conversationSchema = new Schema<StoredConversation>(
     teacherName: { type: String, required: true },
     messages: { type: [messageSchema], default: [] },
   },
-  { _id: false, versionKey: false, collection: "conversations" },
+  { versionKey: false, collection: "conversations" },
 );
 
 conversationSchema.index({ studentEmail: 1, courseId: 1 });
@@ -160,11 +161,12 @@ const settingsSchema = new Schema<StoredSettings>(
   {
     companyName: { type: String, required: true },
     supportEmail: { type: String, required: true },
+    contactWhatsapp: { type: String, required: true },
     logoUrl: { type: String, default: "" },
     privacyText: { type: String, default: "" },
     updatedAt: { type: String, required: true },
   },
-  { _id: false, versionKey: false, collection: "settings" },
+  { versionKey: false, collection: "settings" },
 );
 
 const contactSchema = new Schema<StoredContact>(
@@ -175,7 +177,7 @@ const contactSchema = new Schema<StoredContact>(
     message: { type: String, required: true },
     createdAt: { type: String, required: true },
   },
-  { _id: false, versionKey: false, collection: "contacts" },
+  { versionKey: false, collection: "contacts" },
 );
 
 contactSchema.index({ createdAt: -1 });
@@ -207,3 +209,21 @@ export const SettingsModel =
 export const ContactModel =
   (mongoose.models.Contact as mongoose.Model<StoredContact>) ??
   mongoose.model<StoredContact>("Contact", contactSchema);
+
+const homeContentSchema = new Schema<HomeContentDTO>(
+  {
+    key: { type: String, required: true, unique: true },
+    team: [{ name: String, role: String, img: String }],
+    practiceAreas: [{
+      title: String,
+      desc: String,
+      icon: String,
+      casos: [{ q: String, a: String }],
+    }],
+  },
+  { versionKey: false, collection: "site_content" },
+);
+
+export const HomeContentModel =
+  (mongoose.models.HomeContent as mongoose.Model<HomeContentDTO>) ??
+  mongoose.model<HomeContentDTO>("HomeContent", homeContentSchema);

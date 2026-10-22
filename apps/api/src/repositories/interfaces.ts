@@ -13,7 +13,7 @@ import type {
   StoredUser,
 } from "../types.js";
 
-export type AppMode = "mock" | "atlas";
+export type AppMode = "test" | "atlas";
 
 export interface UserRepository {
   findByEmail(email: string): Promise<StoredUser | null>;

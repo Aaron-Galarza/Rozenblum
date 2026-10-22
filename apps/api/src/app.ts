@@ -65,7 +65,7 @@ export function createApp() {
     });
   });
 
-  app.use("/api/auth/demo-login", authLimiter);
+  app.use("/api/auth/login", authLimiter);
   app.use("/api/checkout", checkoutLimiter);
   app.use("/api/contact", contactLimiter);
 

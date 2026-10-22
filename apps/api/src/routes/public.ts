@@ -5,8 +5,18 @@ import { listPublishedCourses, getPublishedCourseDetail } from "../services/cour
 import { checkout, getOrderReceipt } from "../services/checkout.js";
 import { submitContact, getPublicSettings } from "../services/contact.js";
 import { asyncRoute, parseBody } from "./helpers.js";
+import { HomeContentModel } from "../models/index.js";
 
 export const publicRouter = Router();
+
+publicRouter.get(
+  "/content/home",
+  asyncRoute(async (_req, res) => {
+    const content = await HomeContentModel.findOne({ key: "home" }).select("-_id").lean().exec();
+    if (!content) throw new Error("El contenido de inicio no existe en Atlas.");
+    sendData(res, content);
+  }),
+);
 
 publicRouter.get(
   "/courses",

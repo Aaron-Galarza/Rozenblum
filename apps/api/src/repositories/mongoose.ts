@@ -10,7 +10,6 @@ import {
 } from "../models/index.js";
 import { formatArs, newId, nowIso, slugify } from "../lib/utils.js";
 import { LIST_HARD_LIMIT } from "../lib/pagination.js";
-import { SEED_SETTINGS } from "../seed/data.js";
 import type {
   CourseInput,
   StoredContact,
@@ -309,19 +308,13 @@ export function createMongooseRepositories(): Repositories {
   const settings: SettingsRepository = {
     async get() {
       const doc = await SettingsModel.findOne({}).lean().exec();
-      if (doc) return clean<StoredSettings>(doc);
-      const created = await SettingsModel.create({ ...SEED_SETTINGS, updatedAt: nowIso() });
-      return clean<StoredSettings>(created.toObject());
+      if (!doc) throw new Error("La configuración del sitio no existe en Atlas.");
+      return clean<StoredSettings>(doc);
     },
     async update(patch) {
       const current = await SettingsModel.findOne({}).lean().exec();
       if (!current) {
-        const created = await SettingsModel.create({
-          ...SEED_SETTINGS,
-          ...patch,
-          updatedAt: nowIso(),
-        });
-        return clean<StoredSettings>(created.toObject());
+        throw new Error("La configuración del sitio no existe en Atlas.");
       }
       const doc = await SettingsModel.findOneAndUpdate(
         {},

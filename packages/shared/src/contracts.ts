@@ -23,16 +23,16 @@ export type SessionDTO = {
   user: UserDTO;
 };
 
-export type DemoLoginInput = {
+export type LoginInput = {
   role: Role;
-  email?: string;
-  password?: string;
+  email: string;
+  password: string;
 };
 
-export const demoLoginSchema = z.object({
+export const loginSchema = z.object({
   role: roleSchema,
-  email: z.string().trim().email().optional(),
-  password: z.string().min(1).optional(),
+  email: z.string().trim().email(),
+  password: z.string().min(1),
 });
 
 /* ──────────────────────────────────────────────────────────────────────────────
@@ -230,6 +230,7 @@ export const messagePayloadSchema = z.object({
 export type SiteSettingsDTO = {
   companyName: string;
   supportEmail: string;
+  contactWhatsapp: string;
   logoUrl: string;
   privacyText: string;
   paymentProvider: "mercadopago";
@@ -237,9 +238,21 @@ export type SiteSettingsDTO = {
   paymentsConfigured: boolean;
 };
 
+export type HomeContentDTO = {
+  key: "home";
+  team: { name: string; role: string; img: string }[];
+  practiceAreas: {
+    title: string;
+    desc: string;
+    icon: "briefcase" | "family" | "shield" | "doc" | "building";
+    casos: { q: string; a: string }[];
+  }[];
+};
+
 export const siteSettingsSchema = z.object({
   companyName: z.string().trim().min(2).max(120),
   supportEmail: z.string().trim().email(),
+  contactWhatsapp: z.string().trim().regex(/^\d{8,18}$/),
   logoUrl: z.string().trim().max(500),
   privacyText: z.string().trim().min(10).max(10000),
 });
@@ -267,18 +280,21 @@ export type AdminUserInput = {
   role: "alumno" | "profesor";
   name: string;
   email: string;
+  password: string;
 };
 
 export const adminUserSchema = z.object({
   role: z.enum(["alumno", "profesor"]),
   name: z.string().trim().min(3).max(120),
   email: z.string().trim().email(),
+  password: z.string().min(12).max(128),
 });
 
 export const adminUserPatchSchema = z.object({
   name: z.string().trim().min(3).max(120).optional(),
   email: z.string().trim().email().optional(),
   status: z.enum(["Activo", "Suspendido"]).optional(),
+  password: z.string().min(12).max(128).optional(),
 });
 
 export const adminCoursePatchSchema = z.object({

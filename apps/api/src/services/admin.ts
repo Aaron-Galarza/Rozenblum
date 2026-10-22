@@ -13,6 +13,7 @@ export async function createAdminUser(input: {
   role: "alumno" | "profesor";
   name: string;
   email: string;
+  password: string;
 }): Promise<UserDTO> {
   const repos = getRepositories();
   const existing = await repos.users.findByEmail(input.email);
@@ -22,7 +23,7 @@ export async function createAdminUser(input: {
     name: input.name,
     email: input.email,
     role: input.role,
-    passwordHash: hashPassword(env.DEMO_PASSWORD),
+    passwordHash: hashPassword(input.password),
     initials: initialsFromName(input.name),
   });
   return userToDTO(user);
@@ -30,7 +31,7 @@ export async function createAdminUser(input: {
 
 export async function updateAdminUser(
   id: string,
-  patch: { name?: string; email?: string; status?: "Activo" | "Suspendido" },
+  patch: { name?: string; email?: string; status?: "Activo" | "Suspendido"; password?: string },
 ): Promise<UserDTO> {
   const repos = getRepositories();
   const user = await repos.users.findById(id);
@@ -42,8 +43,10 @@ export async function updateAdminUser(
     if (existing) throw conflict("Ese correo ya está en uso.");
   }
 
+  const { password, ...safePatch } = patch;
   const updated = await repos.users.update(id, {
-    ...patch,
+    ...safePatch,
+    ...(password ? { passwordHash: hashPassword(password) } : {}),
     initials: patch.name ? initialsFromName(patch.name) : undefined,
   });
   if (!updated) throw notFound("Usuario no encontrado.");

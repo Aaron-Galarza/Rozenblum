@@ -209,6 +209,7 @@ export function settingsToDTO(
   return {
     companyName: settings.companyName,
     supportEmail: settings.supportEmail,
+    contactWhatsapp: settings.contactWhatsapp,
     logoUrl: settings.logoUrl,
     privacyText: settings.privacyText,
     paymentProvider: "mercadopago",
