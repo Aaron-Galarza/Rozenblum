@@ -13,6 +13,7 @@ import { publicRouter } from "./routes/public.js";
 import { studentRouter } from "./routes/student.js";
 import { teacherRouter } from "./routes/teacher.js";
 import { adminRouter } from "./routes/admin.js";
+import { mediaRouter } from "./routes/media.js";
 
 export function createApp() {
   const app = express();
@@ -73,6 +74,7 @@ export function createApp() {
   app.use("/api/student", studentRouter);
   app.use("/api/teacher", teacherRouter);
   app.use("/api/admin", adminRouter);
+  app.use("/api/media", mediaRouter);
   app.use("/api", publicRouter);
 
   app.use(notFoundHandler);

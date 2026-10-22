@@ -95,3 +95,27 @@ export function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return "Ocurrió un error inesperado.";
 }
+
+export async function uploadLessonImage(file: File): Promise<string> {
+  if (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type) || file.size > 5 * 1024 * 1024) {
+    throw new ApiClientError(400, "INVALID_IMAGE", "Usá una imagen PNG, JPEG, GIF o WebP de hasta 5 MB.");
+  }
+  const session = getSession();
+  if (!session) throw new ApiClientError(401, "UNAUTHORIZED", "Tu sesión expiró. Volvé a ingresar.");
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/api/media/images`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${session.token}`, "content-type": file.type },
+      body: file,
+    });
+  } catch {
+    throw new ApiClientError(0, "NETWORK_ERROR", "No pudimos subir la imagen. Verificá la conexión.");
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as ApiFailure | null;
+    throw new ApiClientError(response.status, payload?.error?.code ?? "UPLOAD_ERROR", payload?.error?.message ?? "No pudimos subir la imagen.");
+  }
+  const payload = await response.json() as { data: { id: string } };
+  return `${API_URL}/api/media/images/${payload.data.id}`;
+}
