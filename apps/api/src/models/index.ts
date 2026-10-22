@@ -213,6 +213,14 @@ export const ContactModel =
 const homeContentSchema = new Schema<HomeContentDTO>(
   {
     key: { type: String, required: true, unique: true },
+    brand: {
+      locationLabel: String,
+      foundedYear: String,
+      heroImage: String,
+      metrics: [{ value: String, label: String }],
+      aboutParagraphs: [String],
+      footerTagline: String,
+    },
     team: [{ name: String, role: String, img: String }],
     practiceAreas: [{
       title: String,

@@ -240,6 +240,14 @@ export type SiteSettingsDTO = {
 
 export type HomeContentDTO = {
   key: "home";
+  brand: {
+    locationLabel: string;
+    foundedYear: string;
+    heroImage: string;
+    metrics: { value: string; label: string }[];
+    aboutParagraphs: string[];
+    footerTagline: string;
+  };
   team: { name: string; role: string; img: string }[];
   practiceAreas: {
     title: string;

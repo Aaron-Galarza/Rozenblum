@@ -191,7 +191,7 @@ export default function LandingPage() {
           <div className="space-y-8">
             <div className="flex items-center gap-3">
               <div className="h-px w-10" style={{ backgroundColor: "#B58A43" }} />
-              <span className="text-xs font-medium tracking-[0.2em] uppercase" style={{ color: "#B58A43" }}>Resistencia, Chaco · Desde 2004</span>
+              <span className="text-xs font-medium tracking-[0.2em] uppercase" style={{ color: "#B58A43" }}>{homeContent?.brand.locationLabel}</span>
             </div>
             <h1 className="text-5xl lg:text-6xl xl:text-[68px] leading-[1.08] font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>
               Excelencia Jurídica<br />
@@ -210,20 +210,20 @@ export default function LandingPage() {
               </button>
             </div>
             <div className="flex gap-10 pt-2">
-              {[["20+", "Años"], ["500+", "Casos"], ["98%", "Satisfacción"]].map(([n, l]) => (
-                <div key={l}>
-                  <p className="text-3xl font-light" style={{ color: "#B58A43", fontFamily: "'Cormorant Garamond', serif" }}>{n}</p>
-                  <p className="text-xs tracking-widest uppercase mt-0.5" style={{ color: "#173B6C", opacity: 0.5 }}>{l}</p>
+              {(homeContent?.brand.metrics ?? []).map(({ value, label }) => (
+                <div key={label}>
+                  <p className="text-3xl font-light" style={{ color: "#B58A43", fontFamily: "'Cormorant Garamond', serif" }}>{value}</p>
+                  <p className="text-xs tracking-widest uppercase mt-0.5" style={{ color: "#173B6C", opacity: 0.5 }}>{label}</p>
                 </div>
               ))}
             </div>
           </div>
           <div className="hidden lg:block relative">
-            <img src="https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=780&h=860&fit=crop&auto=format" alt="Despacho jurídico moderno" className="w-full object-cover" style={{ height: 560 }} />
+            {homeContent?.brand.heroImage && <img src={homeContent.brand.heroImage} alt="Despacho jurídico moderno" className="w-full object-cover" style={{ height: 560 }} />}
             <div className="absolute -bottom-4 -right-4 w-40 h-40 border-2 pointer-events-none" style={{ borderColor: "#B58A43" }} />
             <div className="absolute bottom-8 left-8 px-6 py-5" style={{ backgroundColor: "#173B6C" }}>
               <p className="text-xs tracking-widest uppercase" style={{ color: "#B58A43" }}>Fundado en</p>
-              <p className="text-4xl font-light mt-1" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>2004</p>
+              <p className="text-4xl font-light mt-1" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>{homeContent?.brand.foundedYear}</p>
             </div>
           </div>
         </div>
@@ -328,9 +328,7 @@ export default function LandingPage() {
             </div>
             <h2 className="text-5xl font-light leading-tight" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Más de Dos Décadas de Compromiso Jurídico</h2>
             <div className="space-y-5 text-sm leading-relaxed" style={{ color: "rgba(23,59,108,0.72)" }}>
-              <p>Fundado en 2004 por la Abg. Karin Rozenblum, nuestro estudio nació con la convicción de brindar asesoramiento jurídico riguroso, personalizado y accesible a individuos y empresas del Chaco y el norte de Argentina.</p>
-              <p>A lo largo de los años hemos construido una reputación sólida en Derecho Laboral, Familia y Penal, representando exitosamente a cientos de clientes ante los tribunales nacionales y provinciales.</p>
-              <p>Nuestra academia jurídica amplía esa misión: formamos a la próxima generación de abogados con cursos prácticos, actualizados y diseñados por profesionales en actividad.</p>
+              {(homeContent?.brand.aboutParagraphs ?? []).map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
             </div>
             <div className="grid grid-cols-2 gap-4">
               {[["Rigor","Precisión en cada caso"],["Ética","Transparencia ante todo"],["Proximidad","Trato personalizado"],["Resultados","Soluciones concretas"]].map(([v,d]) => (
@@ -448,7 +446,7 @@ export default function LandingPage() {
             </div>
           </div>
         </div>
-        <LandingFooter scrollTo={scrollTo} goToAula={goToAula} />
+        <LandingFooter scrollTo={scrollTo} goToAula={goToAula} tagline={homeContent?.brand.footerTagline} />
       </footer>
     </div>
   );
