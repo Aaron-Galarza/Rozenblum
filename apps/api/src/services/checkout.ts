@@ -3,8 +3,9 @@ import type {
   CheckoutResultDTO,
   OrderDTO,
 } from "@rozenblum/shared";
-import { badRequest, notFound } from "../lib/http.js";
-import { newId, nowIso } from "../lib/utils.js";
+import { badRequest, notFound, unauthorized } from "../lib/http.js";
+import { hashPassword, verifyPassword } from "../lib/password.js";
+import { initialsFromName, newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredOrder } from "../types.js";
 import { enrollmentToDTO, orderToDTO } from "./mappers.js";
@@ -24,6 +25,11 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResultDTO>
     throw notFound("El curso solicitado no está disponible.");
   }
 
+  const account = await repos.users.findByEmail(input.email);
+  if (account && (account.role !== "alumno" || account.status !== "Activo" || !verifyPassword(input.password, account.passwordHash))) {
+    throw unauthorized("No pudimos validar la cuenta. Revisá el correo, la contraseña o contactá al administrador.");
+  }
+
   const existingEnrollment = await repos.enrollments.findByStudentAndCourse(
     input.email,
     course.legacyId,
@@ -36,11 +42,21 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResultDTO>
     );
   }
 
+  if (!account) {
+    await repos.users.create({
+      name: input.nombre,
+      email: input.email,
+      role: "alumno",
+      passwordHash: hashPassword(input.password),
+      initials: initialsFromName(input.nombre),
+    });
+  }
+
   const reference = `RB-${new Date().getFullYear()}-${newId("ref").slice(4).toUpperCase()}`;
   const order: StoredOrder = {
     id: newId("ord"),
     externalReference: reference,
-    alumno: input.nombre,
+    alumno: account?.name ?? input.nombre,
     email: input.email.toLowerCase(),
     curso: course.title,
     courseSlug: course.slug,
@@ -48,7 +64,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResultDTO>
     monto: course.price,
     montoCents: course.priceCents,
     fecha: todayLabel(),
-    metodo: "MercadoPago",
+    metodo: "Pendiente de pago",
     estado: "Pendiente",
     createdAt: nowIso(),
   };
@@ -57,7 +73,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResultDTO>
 
   const enrollment = await repos.enrollments.create({
     studentEmail: input.email,
-    studentName: input.nombre,
+    studentName: account?.name ?? input.nombre,
     courseId: course.legacyId,
     status: "Pendiente",
     completedLessonIds: [],
@@ -75,7 +91,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResultDTO>
       id: newId("cnv"),
       courseId: course.legacyId,
       studentEmail: input.email.toLowerCase(),
-      studentName: input.nombre,
+      studentName: account?.name ?? input.nombre,
       teacherEmail: teacher?.email ?? course.professorEmail ?? "",
       teacherName: teacher?.name ?? course.professor,
       messages: [],
@@ -86,7 +102,7 @@ export async function checkout(input: CheckoutInput): Promise<CheckoutResultDTO>
     order: orderToDTO(createdOrder),
     enrollment: enrollmentToDTO(enrollment, course),
     message:
-      "Inscripción registrada. Un administrador validará el pago y habilitará el acceso al aula.",
+      "Solicitud registrada. Contactanos para coordinar el pago; un administrador confirmará el acceso al aula.",
   };
 }
 

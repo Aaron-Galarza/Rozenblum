@@ -19,6 +19,7 @@
     "start:web": "npm --workspace @rozenblum/web run start",
     "pretypecheck": "npm run build:shared",
     "typecheck": "npm --workspace @rozenblum/api run typecheck && npm --workspace @rozenblum/web run typecheck",
+    "pretest": "npm run build:shared",
     "test": "npm --workspace @rozenblum/api run test"
   },
   "devDependencies": {

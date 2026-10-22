@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { hashPassword } from "../lib/password.js";
+import { hashPassword, verifyPassword } from "../lib/password.js";
 import { createMockRepositories } from "../repositories/mock.js";
 import { setRepositoriesForTests } from "../repositories/index.js";
 import { api, startTestServer, type TestServer } from "./helpers.js";
@@ -145,7 +145,7 @@ test("checkout, receipt, and admin payment activation work together", async () =
   });
   const checkout = await api<{ data: { order: { id: string; externalReference: string }; enrollment: { id: string } } }>(
     server.baseUrl, "/api/checkout", { method: "POST", body: JSON.stringify({
-      courseSlug: otherCourse.slug, nombre: "Test alumno", email: studentEmail, dni: "12345678",
+      courseSlug: otherCourse.slug, nombre: "Test alumno", email: studentEmail, password,
     }) },
   );
   assert.equal(checkout.status, 201);
@@ -170,6 +170,12 @@ test("admin user creation requires an explicit password", async () => {
     role: "alumno", name: "Another Test", email: "another@example.test", password,
   }) });
   assert.equal(created.status, 201);
+  const student = await repositories.users.findByEmail(studentEmail);
+  assert.ok(student);
+  const emailChange = await api(server.baseUrl, `/api/admin/users/${student.id}`, {
+    method: "PATCH", token, body: JSON.stringify({ email: "renamed@example.test" }),
+  });
+  assert.equal(emailChange.status, 400);
 });
 
 test("contact form validates and stores messages", async () => {
@@ -250,16 +256,112 @@ test("payment reversal revokes course access", async () => {
   assert.ok(course);
   const created = await api<{ data: { order: { id: string }; enrollment: { id: string } } }>(
     server.baseUrl, "/api/checkout", { method: "POST", body: JSON.stringify({
-      courseSlug: course.slug, nombre: "Another buyer", email: "buyer@example.test", dni: "12345678",
+      courseSlug: course.slug, nombre: "Another buyer", email: "buyer@example.test", password,
     }) },
   );
   assert.equal(created.status, 201);
+  const newStudent = await repositories.users.findByEmail("buyer@example.test");
+  assert.equal(newStudent?.role, "alumno");
+  assert.ok(newStudent && verifyPassword(password, newStudent.passwordHash));
   for (const [estado, expected] of [["Pagado", "Activo"], ["Reembolsado", "Revocado"]] as const) {
     const result = await api(server.baseUrl, `/api/admin/orders/${created.body.data.order.id}`, {
       method: "PATCH", token, body: JSON.stringify({ estado }),
     });
     assert.equal(result.status, 200);
     assert.equal((await repositories.enrollments.findById(created.body.data.enrollment.id))?.status, expected);
+  }
+});
+
+test("roles and enrollment ownership are enforced on every private flow", async () => {
+  const studentToken = await login("alumno", studentEmail);
+  const teacherToken = await login("profesor", teacherEmail);
+  const adminToken = await login("admin", adminEmail);
+  assert.equal((await api(server.baseUrl, "/api/student/enrollments")).status, 401);
+  assert.equal((await api(server.baseUrl, "/api/admin/overview", { token: studentToken })).status, 403);
+  assert.equal((await api(server.baseUrl, "/api/admin/users?role=alumno", { token: teacherToken })).status, 403);
+  assert.equal((await api(server.baseUrl, "/api/student/enrollments", { token: adminToken })).status, 403);
+  assert.equal((await api(server.baseUrl, `/api/teacher/courses/${courseId}`, { token: studentToken })).status, 403);
+
+  const other = await repositories.users.create({
+    name: "Other Student", email: "other-student@example.test", role: "alumno",
+    initials: "OS", passwordHash: hashPassword(password),
+  });
+  const otherEnrollment = await repositories.enrollments.create({
+    studentEmail: other.email, studentName: other.name, courseId, status: "Activo",
+  });
+  assert.equal((await api(server.baseUrl, `/api/student/enrollments/${otherEnrollment.id}`, { token: studentToken })).status, 403);
+  assert.equal((await api(server.baseUrl, `/api/student/enrollments/${otherEnrollment.id}/messages`, { token: studentToken })).status, 403);
+  assert.equal((await api(server.baseUrl, `/api/student/enrollments/${otherEnrollment.id}/progress`, {
+    method: "PATCH", token: studentToken, body: JSON.stringify({ lessonId: "1.1", completed: true }),
+  })).status, 403);
+});
+
+test("text fields, prices, IDs and lesson blocks reject invalid boundaries", async () => {
+  const teacherToken = await login("profesor", teacherEmail);
+  const adminToken = await login("admin", adminEmail);
+  const cases: { path: string; method: string; body: unknown; token?: string }[] = [
+    { path: "/api/contact", method: "POST", body: { name: "Jo", email: "valid@example.test", message: "A complete message" } },
+    { path: "/api/contact", method: "POST", body: { name: "Valid Name", email: "bad-email", message: "A complete message" } },
+    { path: "/api/contact", method: "POST", body: { name: "Valid Name", email: "valid@example.test", message: "too short" } },
+    { path: "/api/checkout", method: "POST", body: { courseSlug: "test-course", nombre: "Jo", email: "buyer@example.test", password } },
+    { path: `/api/teacher/courses/${courseId}/modules`, method: "POST", token: teacherToken, body: { title: "x".repeat(181) } },
+    { path: `/api/teacher/courses/${courseId}/modules/1/lessons`, method: "POST", token: teacherToken, body: { title: " ", type: "doc" } },
+    { path: `/api/teacher/courses/${courseId}/modules/1/lessons`, method: "POST", token: teacherToken, body: { title: "Bad link", type: "doc", content: [{ id: "bad", type: "link", content: "javascript:alert(1)" }] } },
+    { path: `/api/teacher/courses/${courseId}/modules/1/lessons/reorder`, method: "PUT", token: teacherToken, body: { ids: [] } },
+    { path: "/api/admin/courses", method: "POST", token: adminToken, body: { title: "Valid title", description: "Valid description", priceCents: -1, professor: "Test profesor", duration: "Online", level: "Inicial" } },
+    { path: "/api/admin/users", method: "POST", token: adminToken, body: { role: "alumno", name: "New Student", email: "new@example.test", password: "short" } },
+    { path: "/api/admin/settings", method: "PUT", token: adminToken, body: { companyName: "Test Company", supportEmail: "support@example.test", contactWhatsapp: "abc", logoUrl: "", privacyText: "A complete privacy policy" } },
+    { path: "/api/admin/orders/unknown", method: "PATCH", token: adminToken, body: { estado: "Unknown" } },
+  ];
+  for (const item of cases) {
+    const response = await api(server.baseUrl, item.path, { method: item.method, token: item.token, body: JSON.stringify(item.body) });
+    assert.equal(response.status, 400, `${item.method} ${item.path}`);
+  }
+});
+
+test("empty courses cannot be published or sold, and related records block deletion", async () => {
+  const adminToken = await login("admin", adminEmail);
+  const teacherToken = await login("profesor", teacherEmail);
+  const created = await api<{ data: { id: number; slug: string } }>(server.baseUrl, "/api/admin/courses", {
+    method: "POST", token: adminToken, body: JSON.stringify({
+      title: "Boundary Course", description: "A course for publication boundaries", priceCents: 123_400,
+      professor: "Test profesor", duration: "Two weeks", level: "Inicial", status: "draft",
+    }),
+  });
+  assert.equal(created.status, 201);
+  const id = created.body.data.id;
+  assert.equal((await api(server.baseUrl, `/api/admin/courses/${id}`, { method: "PATCH", token: adminToken, body: JSON.stringify({ status: "published" }) })).status, 400);
+  assert.equal((await api(server.baseUrl, `/api/courses/${created.body.data.slug}`)).status, 404);
+  const modules = await api<{ data: { id: number }[] }>(server.baseUrl, `/api/teacher/courses/${id}/modules`, {
+    method: "POST", token: teacherToken, body: JSON.stringify({ title: "First module" }),
+  });
+  const moduleId = modules.body.data[0]?.id;
+  assert.ok(moduleId);
+  assert.equal((await api(server.baseUrl, `/api/teacher/courses/${id}/modules/${moduleId}/lessons`, {
+    method: "POST", token: teacherToken, body: JSON.stringify({ title: "First lesson", type: "doc" }),
+  })).status, 201);
+  assert.equal((await api(server.baseUrl, `/api/admin/courses/${id}`, { method: "PATCH", token: adminToken, body: JSON.stringify({ status: "published", priceCents: 250_000, duration: "Three weeks", level: "Intermedio" }) })).status, 200);
+  const updated = await repositories.courses.findById(id);
+  assert.equal(updated?.price.replaceAll("\u00a0", " "), "$ 2.500");
+  assert.equal(updated?.duration, "Three weeks");
+  assert.equal((await api(server.baseUrl, `/api/teacher/courses/${id}/modules/${moduleId}/lessons/1.1`, { method: "DELETE", token: teacherToken })).status, 400);
+  const order = await api(server.baseUrl, "/api/checkout", { method: "POST", body: JSON.stringify({
+    courseSlug: created.body.data.slug, nombre: "Boundary Buyer", email: "boundary-buyer@example.test", password,
+  }) });
+  assert.equal(order.status, 201);
+  assert.equal((await api(server.baseUrl, `/api/admin/courses/${id}`, { method: "DELETE", token: adminToken })).status, 400);
+  const teacher = await repositories.users.findByEmail(teacherEmail);
+  assert.ok(teacher);
+  assert.equal((await api(server.baseUrl, `/api/admin/users/${teacher.id}`, { method: "DELETE", token: adminToken })).status, 400);
+});
+
+test("order lookup protects other buyers and invalid pagination uses safe defaults", async () => {
+  const adminToken = await login("admin", adminEmail);
+  const order = (await repositories.orders.list()).find((item) => item.externalReference);
+  assert.ok(order);
+  assert.equal((await api(server.baseUrl, `/api/orders/${order.externalReference}?email=wrong@example.test`)).status, 404);
+  for (const query of ["limit=0", "limit=1001", "offset=-1", "offset=abc"]) {
+    assert.equal((await api(server.baseUrl, `/api/admin/enrollments?${query}`, { token: adminToken })).status, 200);
   }
 });
 

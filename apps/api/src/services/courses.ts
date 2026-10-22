@@ -112,6 +112,9 @@ export async function updateCourse(
   const course = await repos.courses.findById(courseId);
   if (!course) throw notFound("Curso no encontrado.");
   if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  if (patch.status === "published" && !course.modules.some((mod) => mod.lessons.length > 0)) {
+    throw badRequest("Agregá al menos una lección antes de publicar el curso.");
+  }
 
   const nextPatch = patch.professor
     ? { ...patch, professorEmail: (await resolveProfessor(patch.professor)).email }
@@ -125,6 +128,10 @@ export async function deleteCourse(courseId: number): Promise<void> {
   const repos = getRepositories();
   const course = await repos.courses.findById(courseId);
   if (!course) throw notFound("Curso no encontrado.");
+  if ((await repos.enrollments.listAll()).some((item) => item.courseId === courseId) ||
+      (await repos.orders.list()).some((item) => item.courseId === courseId)) {
+    throw badRequest("El curso tiene inscripciones u órdenes y no se puede eliminar.");
+  }
   await repos.courses.delete(courseId);
 }
 
@@ -201,6 +208,11 @@ export async function deleteModule(
   if (!course) throw notFound("Curso no encontrado.");
   if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
   findModule(course, moduleId);
+
+  if (course.status === "published" &&
+      course.modules.every((mod) => mod.id === moduleId || mod.lessons.length === 0)) {
+    throw badRequest("Un curso publicado debe conservar al menos una lección.");
+  }
 
   const modules = course.modules
     .filter((mod) => mod.id !== moduleId)
@@ -299,6 +311,11 @@ export async function deleteLesson(
   if (!course) throw notFound("Curso no encontrado.");
   if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
   const mod = findModule(course, moduleId);
+
+  if (course.status === "published" &&
+      course.modules.reduce((count, item) => count + item.lessons.length, 0) === 1) {
+    throw badRequest("Un curso publicado debe conservar al menos una lección.");
+  }
 
   const modules = course.modules.map((item) =>
     item.id === moduleId

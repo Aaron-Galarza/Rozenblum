@@ -39,8 +39,7 @@ export async function updateAdminUser(
   if (user.role === "admin") throw badRequest("La cuenta administradora no se edita desde este panel.");
 
   if (patch.email && patch.email.toLowerCase() !== user.email.toLowerCase()) {
-    const existing = await repos.users.findByEmail(patch.email);
-    if (existing) throw conflict("Ese correo ya está en uso.");
+    throw badRequest("El correo de una cuenta existente no se puede cambiar porque identifica sus cursos, órdenes y conversaciones.");
   }
 
   const { password, ...safePatch } = patch;
@@ -58,6 +57,11 @@ export async function deleteAdminUser(id: string): Promise<void> {
   const user = await repos.users.findById(id);
   if (!user) throw notFound("Usuario no encontrado.");
   if (user.role === "admin") throw badRequest("No se puede eliminar la cuenta administradora.");
+
+  if (user.role === "profesor" &&
+      (await repos.courses.list()).some((course) => course.professorEmail?.toLowerCase() === user.email.toLowerCase())) {
+    throw badRequest("Reasigná los cursos del profesor antes de eliminar su cuenta.");
+  }
 
   if (user.role === "alumno") {
     await repos.enrollments.deleteByStudent(user.email);

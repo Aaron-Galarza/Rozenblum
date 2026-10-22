@@ -146,6 +146,15 @@ export const lessonBlockSchema = z.object({
   items: z.array(z.string()).optional(),
   expanded: z.boolean().optional(),
   toggleContent: z.string().optional(),
+}).superRefine((block, ctx) => {
+  if (block.type !== "link") return;
+  try {
+    const url = new URL(block.content);
+    if (url.protocol === "http:" || url.protocol === "https:") return;
+  } catch {
+    // An invalid or relative URL cannot be used as a lesson link.
+  }
+  ctx.addIssue({ code: "custom", path: ["content"], message: "El enlace debe usar http o https." });
 });
 
 export const lessonPayloadSchema = z.object({
@@ -201,7 +210,7 @@ export const checkoutSchema = z.object({
   courseSlug: z.string().min(1),
   nombre: z.string().trim().min(3).max(120),
   email: z.string().trim().email(),
-  dni: z.string().trim().min(5).max(20),
+  password: z.string().min(12).max(128),
 });
 
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
@@ -310,6 +319,8 @@ export const adminCoursePatchSchema = z.object({
   description: z.string().trim().min(3).max(2000).optional(),
   professor: z.string().trim().min(1).max(120).optional(),
   priceCents: z.number().int().nonnegative().optional(),
+  duration: z.string().trim().min(1).max(60).optional(),
+  level: z.string().trim().min(1).max(60).optional(),
   status: z.enum(["published", "draft"]).optional(),
   img: z.string().trim().url().optional(),
 });
