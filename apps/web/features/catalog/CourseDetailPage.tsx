@@ -9,9 +9,11 @@ import CourseDetail from "./CourseDetail";
 import CheckoutModal from "./CheckoutModal";
 import { courseFromDTO } from "./index";
 import { apiFetch, errorMessage } from "../../lib/api";
+import { usePublicSettings } from "../../lib/use-public-settings";
 import { ErrorPanel, LoadingScreen } from "../../components/ui/AsyncState";
 
 export default function CourseDetailPage({ slug }: { slug: string }) {
+  const settings = usePublicSettings();
   const router = useRouter();
   const [course, setCourse] = useState<Course | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,7 +79,7 @@ export default function CourseDetailPage({ slug }: { slug: string }) {
 
       <footer className="py-5 px-6 text-center" style={{ backgroundColor: "#173B6C" }}>
         <p className="text-xs" style={{ color: "rgba(250,248,245,0.4)" }}>
-          © {new Date().getFullYear()} Estudio Jurídico Rozenblum · Términos de Servicio · Política de Privacidad · Soporte: soporte@estudio.com
+          © {new Date().getFullYear()} Estudio Jurídico Rozenblum · Términos de Servicio · Política de Privacidad {settings && <>· Soporte: {settings.supportEmail}</>}
         </p>
       </footer>
     </div>

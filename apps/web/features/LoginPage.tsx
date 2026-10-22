@@ -5,10 +5,7 @@ import { useRouter } from "next/navigation";
 import type { SessionDTO } from "@rozenblum/shared";
 import { apiFetch, errorMessage, saveSession } from "../lib/api";
 import { useModalA11y } from "../lib/use-modal-a11y";
-
-// Demo credentials are only prefilled outside production builds.
-const DEMO_MODE = process.env.NODE_ENV !== "production";
-const DEMO_PASSWORD = DEMO_MODE ? "rozenblum-demo-2026" : "";
+import { usePublicSettings } from "../lib/use-public-settings";
 
 const ROLES = [
   {
@@ -16,8 +13,6 @@ const ROLES = [
     title: "Alumno",
     desc: "Accede a tus cursos, visualiza tu progreso y descarga certificados.",
     cta: "INGRESAR COMO ALUMNO",
-    demoEmail: DEMO_MODE ? "alumno@rozenblum.com" : "",
-    demoPass: DEMO_PASSWORD,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7">
         <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
@@ -30,8 +25,6 @@ const ROLES = [
     title: "Profesor",
     desc: "Gestiona tus cursos, revisa el progreso de alumnos y responde dudas.",
     cta: "INGRESAR COMO PROFESOR",
-    demoEmail: DEMO_MODE ? "profesor@rozenblum.com" : "",
-    demoPass: DEMO_PASSWORD,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7">
         <rect x="2" y="3" width="20" height="14" rx="2" />
@@ -44,8 +37,6 @@ const ROLES = [
     title: "Administrador",
     desc: "Panel completo: gestiona profesores, alumnos, pagos y toda la plataforma.",
     cta: "INGRESAR COMO ADMIN",
-    demoEmail: DEMO_MODE ? "admin@rozenblum.com" : "",
-    demoPass: DEMO_PASSWORD,
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7">
         <circle cx="12" cy="12" r="3" />
@@ -60,8 +51,8 @@ type Role = typeof ROLES[number];
 function LoginModal({ role, onClose, onLogin }: { role: Role; onClose: () => void; onLogin: (session: SessionDTO) => void }) {
   const titleId = useId();
   const dialogRef = useModalA11y<HTMLDivElement>(onClose);
-  const [email, setEmail] = useState(role.demoEmail);
-  const [pass, setPass] = useState(role.demoPass);
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -71,7 +62,7 @@ function LoginModal({ role, onClose, onLogin }: { role: Role; onClose: () => voi
     setError("");
     setLoading(true);
     try {
-      const session = await apiFetch<SessionDTO>("/api/auth/demo-login", {
+      const session = await apiFetch<SessionDTO>("/api/auth/login", {
         method: "POST",
         body: { role: role.key, email, password: pass },
       });
@@ -160,14 +151,6 @@ function LoginModal({ role, onClose, onLogin }: { role: Role; onClose: () => voi
             />
           </div>
 
-          {/* Demo hint */}
-          <div className="flex items-start gap-2 px-3 py-2.5 rounded" style={{ backgroundColor: "rgba(181,138,67,0.08)", border: "1px solid rgba(181,138,67,0.2)" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="#B58A43" strokeWidth="1.5" className="w-4 h-4 flex-shrink-0 mt-0.5"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-            <p className="text-[11px] leading-relaxed" style={{ color: "rgba(23,59,108,0.65)" }}>
-              Credenciales de demo ya cargadas. Simplemente presioná <span className="font-semibold">Ingresar</span>.
-            </p>
-          </div>
-
           {error && <p role="alert" className="text-xs text-center" style={{ color: "#72132C" }}>{error}</p>}
 
           <button
@@ -190,6 +173,7 @@ function LoginModal({ role, onClose, onLogin }: { role: Role; onClose: () => voi
 }
 
 export default function LoginPage() {
+  const settings = usePublicSettings();
   const router = useRouter();
   const [activeRole, setActiveRole] = useState<Role | null>(null);
 
@@ -197,11 +181,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: "#FAF8F5", fontFamily: "'Roboto', sans-serif" }}>
       {/* Header */}
       <header className="flex items-center justify-between px-8 py-5" style={{ borderBottom: "1px solid rgba(23,59,108,0.1)" }}>
-        <img
-          src="https://res.cloudinary.com/dwqxdensk/image/upload/v1787947835/461451735_1057750859400196_1143453419980232675_n_nt27kp.png"
-          alt="Estudio Jurídico Rozenblum"
-          className="h-11 w-auto object-contain"
-        />
+        {settings?.logoUrl && <img src={settings.logoUrl} alt={settings.companyName} className="h-11 w-auto object-contain" />}
         <h1
           className="text-2xl font-light tracking-wide hidden sm:block"
           style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}
@@ -289,7 +269,7 @@ export default function LoginPage() {
       {/* Footer */}
       <footer className="py-5 px-8 text-center" style={{ backgroundColor: "#173B6C" }}>
         <p className="text-xs" style={{ color: "rgba(250,248,245,0.5)" }}>
-          Términos de Servicio · Política de Privacidad · Soporte: soporte@estudio.com
+          Términos de Servicio · Política de Privacidad {settings && <>· Soporte: {settings.supportEmail}</>}
         </p>
       </footer>
 

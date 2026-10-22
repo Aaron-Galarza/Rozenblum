@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AdminOverviewDTO, OrderStatus } from "@rozenblum/shared";
 import type { AdminSection } from "../../types";
-import { NAV_ITEMS } from "../../data/admin";
+import { NAV_ITEMS } from "./nav";
+import { usePublicSettings } from "../../lib/use-public-settings";
 import SimpleFooter from "../../components/layout/SimpleFooter";
 import { apiFetch, clearSession, errorMessage } from "../../lib/api";
 import { useSession } from "../../lib/use-session";
@@ -17,14 +18,8 @@ import PagosSection from "./sections/PagosSection";
 import ReportesSection from "./sections/ReportesSection";
 import ConfigSection from "./sections/ConfigSection";
 
-/** Defaults used when creating a course from this panel; the rest is edited in the course editor. */
-const NEW_COURSE_DEFAULTS = {
-  priceCents: 4000000,
-  level: "Intermedio",
-  duration: "8 semanas",
-};
-
 export default function AdminView() {
+  const settings = usePublicSettings();
   const router = useRouter();
   const { session, ready } = useSession("admin");
   const [section, setSection] = useState<AdminSection>("dashboard");
@@ -64,7 +59,7 @@ export default function AdminView() {
       {/* ── HEADER ── */}
       <header className="flex-shrink-0 flex items-center justify-between px-6 h-[70px] z-40" style={{ backgroundColor: "#FAF8F5", borderBottom: "2px solid #B58A43" }}>
         <button onClick={() => router.push("/")} className="flex items-center gap-3">
-          <img src="https://res.cloudinary.com/dwqxdensk/image/upload/v1787947835/461451735_1057750859400196_1143453419980232675_n_nt27kp.png" alt="Logo" className="h-9 w-auto object-contain" />
+          {settings?.logoUrl && <img src={settings.logoUrl} alt={settings.companyName} className="h-9 w-auto object-contain" />}
         </button>
         <h1 className="text-lg font-medium hidden sm:block" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{pageTitle}</h1>
         <div className="flex items-center gap-4">
@@ -137,8 +132,8 @@ export default function AdminView() {
               {section === "profesores" && (
                 <ProfesoresSection
                   profesores={overview.profesores}
-                  onCreate={async ({ name, email }) => {
-                    await apiFetch("/api/admin/users", { method: "POST", auth: true, body: { role: "profesor", name, email } });
+                  onCreate={async ({ name, email, password }) => {
+                    await apiFetch("/api/admin/users", { method: "POST", auth: true, body: { role: "profesor", name, email, password } });
                     await load();
                   }}
                   onUpdate={async (id, patch) => {
@@ -158,8 +153,8 @@ export default function AdminView() {
               {section === "alumnos" && (
                 <AlumnosSection
                   alumnos={overview.alumnos}
-                  onCreate={async ({ name, email }) => {
-                    await apiFetch("/api/admin/users", { method: "POST", auth: true, body: { role: "alumno", name, email } });
+                  onCreate={async ({ name, email, password }) => {
+                    await apiFetch("/api/admin/users", { method: "POST", auth: true, body: { role: "alumno", name, email, password } });
                     await load();
                   }}
                   onUpdate={async (id, patch) => {
@@ -179,16 +174,19 @@ export default function AdminView() {
               {section === "cursos" && (
                 <CursosSection
                   cursos={overview.cursos}
-                  onCreate={async ({ name, profesor }) => {
+                  onCreate={async ({ name, profesor, description, priceCents, duration, level, img }) => {
                     await apiFetch("/api/admin/courses", {
                       method: "POST",
                       auth: true,
                       body: {
                         title: name,
                         professor: profesor,
-                        description: `${name} — curso del Estudio Jurídico Rozenblum.`,
+                        description,
                         status: "draft",
-                        ...NEW_COURSE_DEFAULTS,
+                        priceCents,
+                        duration,
+                        level,
+                        ...(img ? { img } : {}),
                       },
                     });
                     await load();

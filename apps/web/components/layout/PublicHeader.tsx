@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { usePublicSettings } from "../../lib/use-public-settings";
 
 type PublicHeaderProps = {
   onLogoClick?: () => void;
@@ -9,6 +10,7 @@ type PublicHeaderProps = {
 
 export default function PublicHeader({ onLogoClick, rightSlot }: PublicHeaderProps) {
   const router = useRouter();
+  const settings = usePublicSettings();
 
   return (
     <header
@@ -16,13 +18,9 @@ export default function PublicHeader({ onLogoClick, rightSlot }: PublicHeaderPro
       style={{ backgroundColor: "#FAF8F5", borderBottom: "1px solid rgba(23,59,108,0.1)" }}
     >
       <button onClick={onLogoClick ?? (() => router.push("/"))} className="flex items-center gap-3">
-        <img
-          src="https://res.cloudinary.com/dwqxdensk/image/upload/v1787947835/461451735_1057750859400196_1143453419980232675_n_nt27kp.png"
-          alt="Estudio Jurídico Rozenblum"
-          className="h-10 w-auto object-contain"
-        />
+        {settings?.logoUrl && <img src={settings.logoUrl} alt={settings.companyName} className="h-10 w-auto object-contain" />}
         <span className="hidden sm:block text-sm font-medium" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>
-          Estudio Jurídico Rozenblum
+          {settings?.companyName ?? "Estudio Jurídico"}
         </span>
       </button>
 

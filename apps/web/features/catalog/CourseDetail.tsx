@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { HomeContentDTO } from "@rozenblum/shared";
 import type { Course, DetailTab } from "../../types";
+import { apiFetch } from "../../lib/api";
 
 type CourseDetailProps = {
   course: Course;
@@ -12,6 +14,12 @@ type CourseDetailProps = {
 export default function CourseDetail({ course, onBack, onBuy }: CourseDetailProps) {
   const [tab, setTab] = useState<DetailTab>("descripcion");
   const [expandedMods, setExpandedMods] = useState<number[]>([1]);
+  const [homeContent, setHomeContent] = useState<HomeContentDTO | null>(null);
+
+  useEffect(() => {
+    apiFetch<HomeContentDTO>("/api/content/home").then(setHomeContent).catch(() => setHomeContent(null));
+  }, []);
+  const teacher = homeContent?.team.find((member) => member.name === course.professor);
 
   const toggleMod = (id: number) =>
     setExpandedMods((prev) => prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]);
@@ -113,19 +121,13 @@ export default function CourseDetail({ course, onBack, onBuy }: CourseDetailProp
 
             {tab === "docente" && (
               <div className="flex gap-5 items-start">
-                <div className="w-20 h-20 rounded-full overflow-hidden flex-shrink-0" style={{ border: "3px solid #B58A43" }}>
-                  <img
-                    src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=120&h=120&fit=crop&auto=format"
-                    alt={course.professor}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
+                {teacher?.img && <div className="w-20 h-20 rounded-full overflow-hidden flex-shrink-0" style={{ border: "3px solid #B58A43" }}>
+                  <img src={teacher.img} alt={teacher.name} className="w-full h-full object-cover" />
+                </div>}
                 <div>
                   <h3 className="text-2xl font-medium mb-1" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{course.professor}</h3>
                   <p className="text-xs mb-3" style={{ color: "#B58A43" }}>Docente del curso</p>
-                  <p className="text-sm leading-relaxed" style={{ color: "rgba(23,59,108,0.7)" }}>
-                    Abogada matriculada con más de 15 años de ejercicio activo de la profesión en el Chaco. Especialista en litigación civil y laboral, con participación en cursos de actualización del Colegio de Abogados de Resistencia.
-                  </p>
+                  {teacher && <p className="text-sm leading-relaxed" style={{ color: "rgba(23,59,108,0.7)" }}>{teacher.role}</p>}
                 </div>
               </div>
             )}

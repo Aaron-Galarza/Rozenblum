@@ -74,7 +74,7 @@ export default function CourseEditor({
   const [renaming, setRenaming] = useState<{ id: number; title: string } | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
   const [expiryOpen, setExpiryOpen] = useState(false);
-  const [expiryDate, setExpiryDate] = useState("2026-03-31");
+  const [expiryDate, setExpiryDate] = useState("");
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
 

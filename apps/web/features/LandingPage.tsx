@@ -1,16 +1,24 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { CourseDTO, HomeContentDTO } from "@rozenblum/shared";
 import type { PracticeArea } from "../types";
-import { PRACTICE_AREAS } from "../data/practiceAreas";
-import { TEAM } from "../data/team";
-import { IconClose, IconExternal } from "../components/icons";
+import { IconBriefcase, IconBuilding, IconClose, IconDoc, IconExternal, IconFamily, IconShield } from "../components/icons";
 import LandingFooter from "../components/layout/LandingFooter";
 import { apiFetch, errorMessage } from "../lib/api";
 import { useModalA11y } from "../lib/use-modal-a11y";
+import { usePublicSettings } from "../lib/use-public-settings";
 
 const NAV_LINKS = ["Inicio", "Áreas", "Nosotros", "Equipo", "Cursos", "Contacto"];
+
+const AREA_ICONS = {
+  briefcase: <IconBriefcase />,
+  family: <IconFamily />,
+  shield: <IconShield />,
+  doc: <IconDoc />,
+  building: <IconBuilding />,
+};
 
 function Modal({ area, onClose, onContact }: { area: PracticeArea; onClose: () => void; onContact: () => void }) {
   const titleId = useId();
@@ -67,6 +75,10 @@ function Modal({ area, onClose, onContact }: { area: PracticeArea; onClose: () =
 
 export default function LandingPage() {
   const router = useRouter();
+  const settings = usePublicSettings();
+  const [homeContent, setHomeContent] = useState<HomeContentDTO | null>(null);
+  const [courses, setCourses] = useState<CourseDTO[]>([]);
+  const [contentError, setContentError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeModal, setActiveModal] = useState<PracticeArea | null>(null);
   const [formData, setFormData] = useState({ name: "", email: "", message: "" });
@@ -74,6 +86,22 @@ export default function LandingPage() {
     type: "idle" | "loading" | "success" | "error";
     message?: string;
   }>({ type: "idle" });
+
+  useEffect(() => {
+    apiFetch<HomeContentDTO>("/api/content/home")
+      .then(setHomeContent)
+      .catch((error) => setContentError(errorMessage(error)));
+    apiFetch<CourseDTO[]>("/api/courses")
+      .then(setCourses)
+      .catch((error) => setContentError(errorMessage(error)));
+  }, []);
+
+  const practiceAreas: PracticeArea[] = (homeContent?.practiceAreas ?? []).map((area) => ({
+    ...area,
+    icon: AREA_ICONS[area.icon],
+  }));
+  const team = homeContent?.team ?? [];
+  const featuredCourse = courses[0];
 
   const scrollTo = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
@@ -114,7 +142,7 @@ export default function LandingPage() {
       <nav className="fixed top-0 left-0 right-0 z-50" style={{ backgroundColor: "#FAF8F5", borderBottom: "1px solid rgba(23,59,108,0.1)" }}>
         <div className="max-w-7xl mx-auto px-6 flex items-center justify-between h-[72px]">
           <button onClick={() => scrollTo("inicio")} className="flex-shrink-0">
-            <img src="https://res.cloudinary.com/dwqxdensk/image/upload/v1787947835/461451735_1057750859400196_1143453419980232675_n_nt27kp.png" alt="Estudio Jurídico Rozenblum" className="h-11 w-auto object-contain" />
+            {settings?.logoUrl && <img src={settings.logoUrl} alt={settings.companyName} className="h-11 w-auto object-contain" />}
           </button>
           <ul className="hidden lg:flex items-center gap-7">
             {NAV_LINKS.map((link) => (
@@ -213,7 +241,8 @@ export default function LandingPage() {
             <p className="mt-3 text-sm leading-relaxed max-w-lg" style={{ color: "#173B6C", opacity: 0.65 }}>Equipos especializados con profundo conocimiento de la jurisprudencia nacional y provincial.</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            {PRACTICE_AREAS.map((area) => (
+            {contentError && <p role="alert" className="mb-6 text-sm" style={{ color: "#72132C" }}>No se pudo cargar el contenido: {contentError}</p>}
+            {practiceAreas.map((area) => (
               <div key={area.title} className="group flex flex-col p-7 gap-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl" style={{ backgroundColor: "#173B6C" }}>
                 <div style={{ color: "#B58A43" }} className="transition-transform duration-300 group-hover:scale-110">{area.icon}</div>
                 <div className="flex-1 space-y-2">
@@ -246,45 +275,44 @@ export default function LandingPage() {
               Llevá tu carrera al siguiente nivel con nuestros cursos especializados. Accedé a nuestra plataforma virtual para inscribirte y ver el material.
             </p>
           </div>
-          <div className="grid lg:grid-cols-5 overflow-hidden" style={{ border: "1px solid rgba(181,138,67,0.3)" }}>
+          {featuredCourse && <div className="grid lg:grid-cols-5 overflow-hidden" style={{ border: "1px solid rgba(181,138,67,0.3)" }}>
             <div className="lg:col-span-2 relative overflow-hidden" style={{ minHeight: 280 }}>
-              <img src="https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=620&h=420&fit=crop&auto=format" alt="Curso de Práctica Procesal" className="w-full h-full object-cover" />
+              <img src={featuredCourse.img} alt={featuredCourse.title} className="w-full h-full object-cover" />
               <div className="absolute inset-0" style={{ background: "linear-gradient(to right, transparent 50%, #173B6C)" }} />
               <div className="absolute top-5 left-5 px-3 py-1.5 text-xs font-medium tracking-widest" style={{ backgroundColor: "#B58A43", color: "#FAF8F5" }}>DESTACADO</div>
             </div>
             <div className="lg:col-span-3 p-10 lg:p-14 flex flex-col justify-center gap-6" style={{ backgroundColor: "rgba(250,248,245,0.04)" }}>
               <div>
                 <p className="text-xs tracking-widest uppercase mb-2" style={{ color: "#B58A43" }}>Curso Principal</p>
-                <h3 className="text-3xl lg:text-4xl font-light leading-snug" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>Práctica Procesal Básica</h3>
+                <h3 className="text-3xl lg:text-4xl font-light leading-snug" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>{featuredCourse.title}</h3>
                 <p className="mt-4 text-sm leading-relaxed" style={{ color: "rgba(250,248,245,0.65)" }}>
-                  Diseñado para abogados recién recibidos y estudiantes avanzados. Aprende a redactar escritos, gestionar expedientes y actuar con solvencia en el proceso civil y laboral.
+                  {featuredCourse.description}
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">
-                {["4 Módulos", "On-Demand", "Certificado Oficial", "Tutores en Vivo"].map((tag) => (
+                {[`${featuredCourse.modules} módulos`, featuredCourse.duration, featuredCourse.level].map((tag) => (
                   <span key={tag} className="px-4 py-1.5 text-xs font-medium tracking-wide" style={{ color: "#B58A43", border: "1px solid rgba(181,138,67,0.35)", backgroundColor: "rgba(181,138,67,0.08)" }}>{tag}</span>
                 ))}
               </div>
               <div>
                 <button
-                  onClick={goToAula}
+                  onClick={() => router.push(`/cursos/${featuredCourse.slug}`)}
                   className="inline-flex items-center gap-2.5 px-8 py-4 text-xs font-medium tracking-widest hover:brightness-110 active:scale-95 transition-all duration-200"
                   style={{ backgroundColor: "#B58A43", color: "#FAF8F5", letterSpacing: "0.12em" }}
                 >
                   IR AL AULA VIRTUAL
                   <IconExternal />
                 </button>
-                <p className="mt-3 text-xs" style={{ color: "rgba(250,248,245,0.35)" }}>Próxima cohorte: Septiembre 2026</p>
               </div>
             </div>
-          </div>
+          </div>}
           <div className="mt-6 grid sm:grid-cols-3 gap-4">
-            {[["Derecho Laboral Práctico","Liquidaciones, SECLO y conciliaciones"],["Actualización en Familia","Reforma CCyCN y nuevas figuras"],["Litigación Oral","Argumentación e interrogatorio"]].map(([t, s]) => (
-              <div key={t} className="p-6 flex flex-col gap-2" style={{ border: "1px solid rgba(181,138,67,0.15)", backgroundColor: "rgba(250,248,245,0.03)" }}>
-                <h4 className="text-lg font-medium" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>{t}</h4>
-                <p className="text-xs" style={{ color: "rgba(250,248,245,0.45)" }}>{s}</p>
-                <p className="text-xs font-medium mt-1" style={{ color: "#B58A43" }}>Próximamente →</p>
-              </div>
+            {courses.slice(1, 4).map((course) => (
+              <button key={course.id} onClick={() => router.push(`/cursos/${course.slug}`)} className="p-6 flex flex-col gap-2 text-left" style={{ border: "1px solid rgba(181,138,67,0.15)", backgroundColor: "rgba(250,248,245,0.03)" }}>
+                <h4 className="text-lg font-medium" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>{course.title}</h4>
+                <p className="text-xs" style={{ color: "rgba(250,248,245,0.45)" }}>{course.description}</p>
+                <p className="text-xs font-medium mt-1" style={{ color: "#B58A43" }}>Ver curso →</p>
+              </button>
             ))}
           </div>
         </div>
@@ -349,7 +377,7 @@ export default function LandingPage() {
             <p className="mt-4 text-sm max-w-md mx-auto" style={{ color: "rgba(23,59,108,0.65)" }}>Abogados con trayectoria comprobada, formación continua y vocación por la defensa de los derechos de nuestros clientes.</p>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
-            {TEAM.map((m) => (
+            {team.map((m) => (
               <div key={m.name} className="flex flex-col items-center text-center group">
                 <div className="relative mb-5">
                   <div className="w-36 h-36 lg:w-44 lg:h-44 rounded-full overflow-hidden border-4 transition-all duration-300" style={{ borderColor: "rgba(23,59,108,0.12)" }}>

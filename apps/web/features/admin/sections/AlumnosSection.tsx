@@ -10,8 +10,8 @@ const inputStyle: React.CSSProperties = { border: "1px solid rgba(23,59,108,0.2)
 
 type AlumnosSectionProps = {
   alumnos: AdminAlumnoDTO[];
-  onCreate: (input: { name: string; email: string }) => Promise<void>;
-  onUpdate: (id: string, patch: { name: string; email: string }) => Promise<void>;
+  onCreate: (input: { name: string; email: string; password: string }) => Promise<void>;
+  onUpdate: (id: string, patch: { name: string; email: string; password?: string }) => Promise<void>;
   onToggleStatus: (alumno: AdminAlumnoDTO) => Promise<void>;
   onDelete: (alumno: AdminAlumnoDTO) => Promise<void>;
 };
@@ -21,7 +21,7 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
   const [search, setSearch] = useState("");
   const [estadoFilter, setEstadoFilter] = useState("Todos");
   const [modal, setModal] = useState<ModalState>(null);
-  const [form, setForm] = useState({ name: "", email: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -51,9 +51,9 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
     });
 
   const createAlumno = () => {
-    if (!form.name.trim() || !form.email.trim()) return;
+    if (!form.name.trim() || !form.email.trim() || form.password.length < 12) return;
     void run(async () => {
-      await onCreate({ name: form.name.trim(), email: form.email.trim() });
+      await onCreate({ name: form.name.trim(), email: form.email.trim(), password: form.password });
       setModal(null);
       showToast("✓ Alumno creado correctamente");
     });
@@ -63,7 +63,7 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
     if (!modal?.item) return;
     const item = modal.item;
     void run(async () => {
-      await onUpdate(item.id, { name: form.name, email: form.email });
+      await onUpdate(item.id, { name: form.name, email: form.email, ...(form.password ? { password: form.password } : {}) });
       setModal(null);
       showToast("✓ Cambios guardados");
     });
@@ -74,7 +74,7 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <h2 className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Gestión de Alumnos</h2>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={() => { setForm({ name: "", email: "" }); setModal({ type: "crear" }); }} className="px-5 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
+          <button onClick={() => { setForm({ name: "", email: "", password: "" }); setModal({ type: "crear" }); }} className="px-5 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
             + CREAR NUEVO ALUMNO
           </button>
           <button onClick={() => showToast("Importación disponible en versión de producción")} className="px-5 py-2.5 text-xs font-medium border hover:opacity-70 transition-opacity" style={{ color: "#173B6C", borderColor: "#173B6C" }}>
@@ -139,7 +139,7 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
                     <button onClick={() => setModal({ type: "ver", item: a })} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity" style={{ color: "#173B6C" }}>Ver</button>
-                    <button disabled={busy} onClick={() => { setForm({ name: a.name, email: a.email }); setModal({ type: "editar", item: a }); }} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#173B6C" }}>Editar</button>
+                    <button disabled={busy} onClick={() => { setForm({ name: a.name, email: a.email, password: "" }); setModal({ type: "editar", item: a }); }} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#173B6C" }}>Editar</button>
                     <button disabled={busy} onClick={() => void toggleSuspend(a)} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#173B6C" }}>{a.estado === "Activo" ? "Suspender" : "Activar"}</button>
                     <button disabled={busy} onClick={() => void run(async () => { await onDelete(a); showToast("Alumno eliminado"); })} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#72132C" }}>Eliminar</button>
                   </div>
@@ -188,6 +188,10 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
                 />
               </div>
             ))}
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="alumno-password" className="text-xs font-medium tracking-wide uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>Contraseña {modal.type === "crear" ? "(mínimo 12 caracteres)" : "nueva (opcional)"}</label>
+              <input id="alumno-password" type="password" autoComplete="new-password" minLength={12} value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} className="px-3 py-2.5 text-sm outline-none" style={inputStyle} />
+            </div>
           </div>
           <div className="flex gap-2">
             <button disabled={busy} onClick={modal.type === "crear" ? createAlumno : saveEdit} className="flex-1 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all disabled:opacity-50" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>

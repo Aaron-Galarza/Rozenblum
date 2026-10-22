@@ -9,6 +9,7 @@ import Toast from "../../../components/ui/Toast";
 type SettingsPayload = {
   companyName: string;
   supportEmail: string;
+  contactWhatsapp: string;
   logoUrl: string;
   privacyText: string;
 };
@@ -24,6 +25,7 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
   const [company, setCompany] = useState({
     companyName: settings.companyName,
     supportEmail: settings.supportEmail,
+    contactWhatsapp: settings.contactWhatsapp,
     logoUrl: settings.logoUrl,
   });
   const [privacyText, setPrivacyText] = useState(settings.privacyText);
@@ -35,6 +37,7 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
     setCompany({
       companyName: settings.companyName,
       supportEmail: settings.supportEmail,
+      contactWhatsapp: settings.contactWhatsapp,
       logoUrl: settings.logoUrl,
     });
     setPrivacyText(settings.privacyText);
@@ -68,6 +71,7 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
               ["Nombre", "companyName", "text"],
               ["Logo URL", "logoUrl", "text"],
               ["Email de Soporte", "supportEmail", "email"],
+              ["WhatsApp de contacto (código de país y número)", "contactWhatsapp", "tel"],
             ] as const).map(([label, key, type]) => (
               <div key={key} className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium tracking-widest uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>{label}</label>

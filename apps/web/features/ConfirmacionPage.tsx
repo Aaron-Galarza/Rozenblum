@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { OrderDTO } from "@rozenblum/shared";
 import { apiFetch, errorMessage } from "../lib/api";
+import { usePublicSettings } from "../lib/use-public-settings";
 
 export default function ConfirmacionPage({
   reference,
@@ -13,6 +14,7 @@ export default function ConfirmacionPage({
   email?: string;
 }) {
   const router = useRouter();
+  const settings = usePublicSettings();
   const [order, setOrder] = useState<OrderDTO | null>(null);
   const [error, setError] = useState("");
 
@@ -32,11 +34,7 @@ export default function ConfirmacionPage({
         style={{ backgroundColor: "#FAF8F5", borderBottom: "1px solid rgba(23,59,108,0.1)" }}
       >
         <button onClick={() => router.push("/")} className="flex items-center gap-3">
-          <img
-            src="https://res.cloudinary.com/dwqxdensk/image/upload/v1787947835/461451735_1057750859400196_1143453419980232675_n_nt27kp.png"
-            alt="Estudio Jurídico Rozenblum"
-            className="h-10 w-auto object-contain"
-          />
+          {settings?.logoUrl && <img src={settings.logoUrl} alt={settings.companyName} className="h-10 w-auto object-contain" />}
         </button>
       </header>
 
@@ -126,7 +124,7 @@ export default function ConfirmacionPage({
 
           {/* WhatsApp CTA */}
           <a
-            href="https://wa.me/5493621466878?text=Hola%2C%20acabo%20de%20realizar%20el%20pago%20de%20mi%20inscripci%C3%B3n.%20Les%20env%C3%ADo%20el%20comprobante%20para%20que%20validen%20mi%20acceso."
+            href={settings?.contactWhatsapp ? `https://wa.me/${settings.contactWhatsapp}?text=${encodeURIComponent("Hola, quiero consultar por mi inscripción.")}` : undefined}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-center gap-3 w-full py-4 text-sm font-bold tracking-widest rounded transition-all duration-200 hover:brightness-110 active:scale-95 mb-5"

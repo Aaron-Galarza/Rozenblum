@@ -7,6 +7,7 @@ import type { Course } from "../../types";
 import PublicHeader from "../../components/layout/PublicHeader";
 import CourseCard from "./CourseCard";
 import { apiFetch, errorMessage } from "../../lib/api";
+import { usePublicSettings } from "../../lib/use-public-settings";
 import { ErrorPanel, LoadingScreen } from "../../components/ui/AsyncState";
 
 export function courseFromDTO(course: CourseDTO): Course {
@@ -27,6 +28,7 @@ export function courseFromDTO(course: CourseDTO): Course {
 }
 
 export default function CatalogPage() {
+  const settings = usePublicSettings();
   const router = useRouter();
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,7 +119,7 @@ export default function CatalogPage() {
       {/* ── FOOTER ── */}
       <footer className="py-5 px-6 text-center" style={{ backgroundColor: "#173B6C" }}>
         <p className="text-xs" style={{ color: "rgba(250,248,245,0.4)" }}>
-          © {new Date().getFullYear()} Estudio Jurídico Rozenblum · Términos de Servicio · Política de Privacidad · Soporte: soporte@estudio.com
+          © {new Date().getFullYear()} Estudio Jurídico Rozenblum · Términos de Servicio · Política de Privacidad {settings && <>· Soporte: {settings.supportEmail}</>}
         </p>
       </footer>
     </div>
