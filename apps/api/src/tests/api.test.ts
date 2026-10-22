@@ -207,9 +207,23 @@ test("teacher can create, update, and remove lesson content", async () => {
   const lessonId = lesson.body.data.find((module) => module.id === moduleId)?.lessons[0]?.id;
   assert.ok(lessonId);
   const edited = await api(server.baseUrl, `/api/teacher/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}`, {
-    method: "PATCH", token, body: JSON.stringify({ title: "Updated lesson" }),
+    method: "PATCH", token, body: JSON.stringify({ title: "Updated lesson", content: [], document: {
+      version: 1,
+      blocks: [
+        { id: "rich-1", type: "paragraph", props: {}, content: [{ type: "text", text: "Important", styles: { bold: true, textColor: "red" } }], children: [] },
+        { id: "rich-2", type: "youtube", props: { videoId: "dQw4w9WgXcQ" }, children: [] },
+      ],
+    } }),
   });
   assert.equal(edited.status, 200);
+  const stored = await repositories.courses.findById(courseId);
+  const richLesson = stored?.modules.find((module) => module.id === moduleId)?.lessons.find((item) => item.id === lessonId);
+  assert.equal(richLesson?.document?.blocks.length, 2);
+  assert.equal((richLesson?.document?.blocks[0]?.content as { styles: { bold: boolean } }[])[0]?.styles.bold, true);
+  const rejected = await api(server.baseUrl, `/api/teacher/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}`, {
+    method: "PATCH", token, body: JSON.stringify({ document: { version: 1, blocks: [{ id: "bad", type: "file", props: { url: "javascript:alert(1)" } }] } }),
+  });
+  assert.equal(rejected.status, 400);
   const removed = await api(server.baseUrl, `/api/teacher/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}`, {
     method: "DELETE", token,
   });

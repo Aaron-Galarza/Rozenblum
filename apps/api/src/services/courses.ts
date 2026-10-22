@@ -3,6 +3,7 @@ import type {
   CourseDetailDTO,
   LessonBlockDTO,
   LessonType,
+  RichLessonDocument,
   ModuleDTO,
 } from "@rozenblum/shared";
 import { badRequest, forbidden, notFound } from "../lib/http.js";
@@ -242,7 +243,7 @@ export async function reorderModules(
 export async function addLesson(
   courseId: number,
   moduleId: number,
-  input: { title: string; type: LessonType; content?: LessonBlockDTO[] },
+  input: { title: string; type: LessonType; content?: LessonBlockDTO[]; document?: RichLessonDocument },
   user: StoredUser,
 ): Promise<ModuleDTO[]> {
   const course = await getRepositories().courses.findById(courseId);
@@ -256,6 +257,7 @@ export async function addLesson(
     type: input.type,
     position: mod.lessons.length,
     content: input.content ?? [],
+    document: input.document,
   };
 
   const modules = course.modules.map((item) =>
@@ -269,7 +271,7 @@ export async function updateLesson(
   courseId: number,
   moduleId: number,
   lessonId: string,
-  patch: { title?: string; type?: LessonType; content?: LessonBlockDTO[] },
+  patch: { title?: string; type?: LessonType; content?: LessonBlockDTO[]; document?: RichLessonDocument },
   user: StoredUser,
 ): Promise<ModuleDTO[]> {
   const course = await getRepositories().courses.findById(courseId);
@@ -291,6 +293,7 @@ export async function updateLesson(
                   title: patch.title?.trim() || lesson.title,
                   type: patch.type ?? lesson.type,
                   content: patch.content ?? lesson.content,
+                  document: patch.document ?? lesson.document,
                 }
               : lesson,
           ),

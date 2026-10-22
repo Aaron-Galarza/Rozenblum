@@ -78,6 +78,7 @@ export type LessonDTO = {
   highlight?: boolean;
   position: number;
   content?: LessonBlockDTO[];
+  document?: RichLessonDocument;
 };
 
 export type ModuleDTO = {
@@ -139,6 +140,74 @@ export type LessonBlockDTO = {
   toggleContent?: string;
 };
 
+/** Versioned BlockNote JSON. Existing lessons keep their legacy `content` blocks. */
+export type RichLessonDocument = {
+  version: 1;
+  blocks: Record<string, unknown>[];
+};
+
+const safeDocumentUrl = (value: string) => {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+};
+
+export const richLessonDocumentSchema = z.object({
+  version: z.literal(1),
+  blocks: z.array(z.record(z.string(), z.unknown())).min(1).max(500),
+}).superRefine((document, ctx) => {
+  const allowedBlocks = new Set(["paragraph", "heading", "quote", "bulletListItem", "numberedListItem", "checkListItem", "toggleListItem", "codeBlock", "table", "file", "image", "video", "audio", "youtube", "bookmark"]);
+  const serialized = JSON.stringify(document);
+  if (serialized.length > 250_000) {
+    ctx.addIssue({ code: "custom", message: "El documento supera el tamaño permitido." });
+  }
+  let count = 0;
+  const visit = (value: unknown, depth: number): void => {
+    if (depth > 20) {
+      ctx.addIssue({ code: "custom", message: "El documento tiene demasiados niveles." });
+      return;
+    }
+    if (typeof value === "string" && value.length > 20_000) {
+      ctx.addIssue({ code: "custom", message: "Hay texto demasiado largo en el documento." });
+    }
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      if (value.length > 1000) ctx.addIssue({ code: "custom", message: "El documento contiene demasiados elementos." });
+      value.forEach((item) => visit(item, depth + 1));
+      return;
+    }
+    for (const [key, item] of Object.entries(value)) {
+      count += 1;
+      if (count > 20_000) {
+        ctx.addIssue({ code: "custom", message: "El documento contiene demasiados elementos." });
+        return;
+      }
+      if (key.startsWith("$") || key.includes(".") || key === "__proto__" || key === "constructor" || key === "prototype") {
+        ctx.addIssue({ code: "custom", message: "El documento contiene una propiedad inválida." });
+      }
+      if ((key === "href" || key === "url") && typeof item === "string" && item && !safeDocumentUrl(item)) {
+        ctx.addIssue({ code: "custom", message: "Los enlaces deben usar http o https." });
+      }
+      visit(item, depth + 1);
+    }
+  };
+  const checkBlocks = (blocks: Record<string, unknown>[], depth = 0) => {
+    if (depth > 20) return;
+    for (const block of blocks) {
+      if (!block || typeof block !== "object" || typeof block.id !== "string" || block.id.length > 100 || !allowedBlocks.has(String(block.type))) {
+        ctx.addIssue({ code: "custom", message: "El documento contiene un bloque inválido." });
+        continue;
+      }
+      if (Array.isArray(block.children)) checkBlocks(block.children as Record<string, unknown>[], depth + 1);
+    }
+  };
+  checkBlocks(document.blocks);
+  visit(document.blocks, 0);
+});
+
 export const lessonBlockSchema = z.object({
   id: z.string().min(1),
   type: z.enum(BLOCK_TYPES),
@@ -161,6 +230,7 @@ export const lessonPayloadSchema = z.object({
   title: z.string().trim().min(1).max(180),
   type: z.enum(LESSON_TYPES),
   content: z.array(lessonBlockSchema).optional(),
+  document: richLessonDocumentSchema.optional(),
 });
 
 /* ──────────────────────────────────────────────────────────────────────────────

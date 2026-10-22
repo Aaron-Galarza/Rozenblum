@@ -3,6 +3,7 @@ import type {
   CourseDTO,
   CourseSyllabusModule,
   LessonBlockDTO,
+  RichLessonDocument,
   LessonType,
   ModuleStatus,
   OrderStatus,
@@ -27,6 +28,7 @@ export type StoredLesson = {
   position: number;
   highlight?: boolean;
   content: LessonBlockDTO[];
+  document?: RichLessonDocument;
 };
 
 export type StoredModule = {

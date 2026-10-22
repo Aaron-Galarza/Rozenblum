@@ -50,6 +50,7 @@ export default function AlumnoView() {
           done: lesson.done,
           highlight: lesson.highlight,
           content: lesson.content,
+          document: lesson.document,
         })),
       })),
     [enrollment],

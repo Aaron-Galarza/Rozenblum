@@ -50,6 +50,7 @@ export type Lesson = {
   done: boolean;
   highlight?: boolean;
   content?: LessonBlockDTO[];
+  document?: import("@rozenblum/shared").RichLessonDocument;
 };
 
 export type CourseModuleView = {
@@ -93,6 +94,7 @@ export type EditableLesson = {
   title: string;
   type: string;
   content?: import("@rozenblum/shared").LessonBlockDTO[];
+  document?: import("@rozenblum/shared").RichLessonDocument;
 };
 
 export type EditableModule = {

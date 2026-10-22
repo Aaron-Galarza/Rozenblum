@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { ChatMessageDTO, ConversationDTO, LessonBlockDTO, LessonType } from "@rozenblum/shared";
+import dynamic from "next/dynamic";
+import type { ChatMessageDTO, ConversationDTO, LessonBlockDTO, LessonType, RichLessonDocument } from "@rozenblum/shared";
 import type { EditableModule, EditableLesson, ProfesorStudent, SortDir } from "../../types";
-import LessonEditorModal from "./LessonEditorModal";
+const LessonEditorModal = dynamic(() => import("./RichLessonEditorModal"), { ssr: false });
 import Modal from "../../components/ui/Modal";
 import Toast from "../../components/ui/Toast";
 
-type LessonPayload = { title: string; type: LessonType; content: LessonBlockDTO[] };
+type LessonPayload = { title: string; type: LessonType; content: LessonBlockDTO[]; document: RichLessonDocument };
 
 type CourseEditorProps = {
   courseId: number;
@@ -410,17 +411,17 @@ export default function CourseEditor({
       </div>
 
       {/* Lesson Editor Modal */}
-      <LessonEditorModal
-        isOpen={editorOpen}
+      {editorOpen && <LessonEditorModal
         mode={editorMode}
         lessonTitle={editing?.lesson?.title}
         moduleName={editing?.moduleName}
         initialBlocks={editing?.lesson?.content}
+        initialDocument={editing?.lesson?.document}
         initialType={(editing?.lesson?.type as LessonType | undefined) ?? "video"}
         onClose={() => setEditorOpen(false)}
         onSave={handleEditorSave}
         onAutoSave={handleAutoSave}
-      />
+      />}
 
       {/* Student "Ver" modal */}
       {studentModal?.type === "ver" && (

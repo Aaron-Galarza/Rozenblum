@@ -30,6 +30,7 @@ const lessonSchema = new Schema(
     position: { type: Number, required: true },
     highlight: { type: Boolean, default: undefined },
     content: { type: [blockSchema], default: [] },
+    document: { type: Schema.Types.Mixed, default: undefined },
   },
   { _id: false, versionKey: false },
 );

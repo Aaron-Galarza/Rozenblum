@@ -19,13 +19,16 @@ function focusableInside(root: HTMLElement | null): HTMLElement[] {
 export function useModalA11y<T extends HTMLElement = HTMLDivElement>(
   onClose: () => void,
   enabled = true,
+  onEscape?: (event: KeyboardEvent) => boolean,
 ) {
   const ref = useRef<T>(null);
   const onCloseRef = useRef(onClose);
+  const onEscapeRef = useRef(onEscape);
 
   useEffect(() => {
     onCloseRef.current = onClose;
-  }, [onClose]);
+    onEscapeRef.current = onEscape;
+  }, [onClose, onEscape]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -41,6 +44,7 @@ export function useModalA11y<T extends HTMLElement = HTMLDivElement>(
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (onEscapeRef.current?.(event)) return;
         event.preventDefault();
         onCloseRef.current();
         return;

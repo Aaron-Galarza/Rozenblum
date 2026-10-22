@@ -1,7 +1,10 @@
 "use client";
 
 import type { LessonBlockDTO } from "@rozenblum/shared";
+import dynamic from "next/dynamic";
 import type { Lesson } from "../../types";
+
+const RichLessonViewer = dynamic(() => import("./RichLessonViewer"), { ssr: false });
 
 type LessonViewerProps = {
   selectedLesson: Lesson;
@@ -81,6 +84,11 @@ export default function LessonViewer({
   hasPrev,
   hasNext,
 }: LessonViewerProps) {
+  const hasEmbeddedMedia = selectedLesson.document?.blocks.some((block) =>
+    selectedLesson.type === "video"
+      ? block.type === "youtube" || block.type === "video"
+      : block.type === "file" || block.type === "image",
+  );
   return (
     <main className="flex-1 overflow-y-auto">
       {/* Course header gradient */}
@@ -108,7 +116,7 @@ export default function LessonViewer({
           </div>
 
           {/* Media viewer */}
-          {selectedLesson.type === "video" ? (
+          {hasEmbeddedMedia ? null : selectedLesson.type === "video" ? (
             <div className="w-full rounded overflow-hidden bg-black" style={{ aspectRatio: "16/9" }}>
               <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: "#0f172a" }}>
                 <div className="text-center">
@@ -135,7 +143,9 @@ export default function LessonViewer({
           {/* Notes */}
           <div className="mt-8">
             <p className="text-base font-bold mb-3" style={{ color: "#173B6C" }}>Notas de la lección</p>
-            {selectedLesson.content && selectedLesson.content.length > 0 ? (
+            {selectedLesson.document?.blocks.length ? (
+              <RichLessonViewer key={selectedLesson.id} document={selectedLesson.document} />
+            ) : selectedLesson.content && selectedLesson.content.length > 0 ? (
               <div className="space-y-3">
                 {selectedLesson.content.map((block) => <Block key={block.id} block={block} />)}
               </div>

@@ -145,6 +145,7 @@ export function enrollmentToDTO(
           canAccess && statuses.get(mod.id) !== "locked"
             ? lesson.content
             : [],
+        document: canAccess && statuses.get(mod.id) !== "locked" ? lesson.document : undefined,
       })),
     })),
   };
@@ -173,6 +174,7 @@ export function courseStructure(
         highlight: lesson.highlight,
         position: lesson.position,
         content: includeContent ? lesson.content : undefined,
+        document: includeContent ? lesson.document : undefined,
       })),
     })),
   };

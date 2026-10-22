@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  agentRules: false,
   reactStrictMode: true,
   // The shared workspace package ships TypeScript source; Next compiles it.
   transpilePackages: ["@rozenblum/shared"],

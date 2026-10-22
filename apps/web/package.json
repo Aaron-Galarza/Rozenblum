@@ -9,8 +9,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@blocknote/core": "^0.50.0",
+    "@blocknote/mantine": "^0.50.0",
+    "@blocknote/react": "^0.50.0",
     "@rozenblum/shared": "*",
-    "next": "16.2.9",
+    "next": "^16.4.2",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },

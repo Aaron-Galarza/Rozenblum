@@ -50,3 +50,19 @@ body {
 .muted-navy {
   color: rgba(23, 59, 108, 0.65);
 }
+/* Rich lesson notes keep the site's typography and colors inside BlockNote. */
+.lesson-rich-editor .bn-editor,
+.lesson-rich-viewer .bn-editor {
+  background: transparent;
+  color: #173b6c;
+  font-family: "Roboto", sans-serif;
+}
+
+.lesson-rich-editor .bn-editor { min-height: 320px; }
+.lesson-rich-viewer .bn-editor { padding: 0; }
+.lesson-rich-editor .bn-editor h1,
+.lesson-rich-editor .bn-editor h2,
+.lesson-rich-viewer .bn-editor h1,
+.lesson-rich-viewer .bn-editor h2 {
+  font-family: "Cormorant Garamond", serif;
+}
