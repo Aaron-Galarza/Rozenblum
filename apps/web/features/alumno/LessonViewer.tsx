@@ -84,11 +84,6 @@ export default function LessonViewer({
   hasPrev,
   hasNext,
 }: LessonViewerProps) {
-  const hasEmbeddedMedia = selectedLesson.document?.blocks.some((block) =>
-    selectedLesson.type === "video"
-      ? block.type === "youtube" || block.type === "video"
-      : block.type === "file" || block.type === "image",
-  );
   return (
     <main className="flex-1 overflow-y-auto">
       {/* Course header gradient */}
@@ -110,35 +105,7 @@ export default function LessonViewer({
             <h3 className="text-2xl font-medium" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>
               Lección {selectedLesson.id}: {selectedLesson.title}
             </h3>
-            <span className="px-2.5 py-1 text-[10px] font-bold tracking-widest uppercase" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
-              {selectedLesson.type === "video" ? "Video" : selectedLesson.type === "pdf" ? "PDF" : selectedLesson.type === "ppt" ? "PowerPoint" : "Documento"}
-            </span>
           </div>
-
-          {/* Media viewer */}
-          {hasEmbeddedMedia ? null : selectedLesson.type === "video" ? (
-            <div className="w-full rounded overflow-hidden bg-black" style={{ aspectRatio: "16/9" }}>
-              <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: "#0f172a" }}>
-                <div className="text-center">
-                  <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3" style={{ backgroundColor: "#B58A43" }}>
-                    <svg viewBox="0 0 24 24" fill="#173B6C" className="w-7 h-7 ml-1"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                  </div>
-                  <p className="text-sm" style={{ color: "rgba(255,255,255,0.6)" }}>Video no adjunto a esta lección</p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="w-full h-64 rounded flex items-center justify-center" style={{ backgroundColor: "#F0F0F0" }}>
-              <div className="text-center">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#173B6C" strokeWidth="1.5" className="w-12 h-12 mx-auto mb-3" style={{ opacity: 0.4 }}>
-                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" />
-                </svg>
-                <p className="text-sm font-medium" style={{ color: "rgba(23,59,108,0.5)" }}>
-                  {selectedLesson.type === "pdf" ? "PDF" : selectedLesson.type === "ppt" ? "PowerPoint" : "Documento"} no adjunto a esta lección
-                </p>
-              </div>
-            </div>
-          )}
 
           {/* Notes */}
           <div className="mt-8">

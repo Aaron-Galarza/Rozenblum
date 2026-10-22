@@ -58,7 +58,19 @@ body {
   font-family: "Roboto", sans-serif;
 }
 
-.lesson-rich-editor .bn-editor { min-height: 320px; }
+.lesson-rich-editor .bn-container { overflow: visible; }
+.lesson-rich-editor .bn-editor {
+  min-height: 320px;
+  max-height: calc(90vh - 245px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.lesson-rich-editor .bn-suggestion-menu,
+.lesson-rich-editor .bn-formatting-toolbar,
+.lesson-rich-editor .bn-side-menu,
+.lesson-rich-editor .bn-drag-handle-menu { z-index: 400; }
+/* BlockNote 0.50 portals floating controls to body at z-index 80. The lesson dialog is z-300. */
+body > .bn-root { position: relative; z-index: 400; }
 .lesson-rich-viewer .bn-editor { padding: 0; }
 .lesson-rich-editor .bn-editor h1,
 .lesson-rich-editor .bn-editor h2,
