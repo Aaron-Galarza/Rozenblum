@@ -37,15 +37,12 @@ export default function CourseDetail({ course, onBack, onBuy }: CourseDetailProp
       <div className="max-w-6xl mx-auto px-6 pb-20 grid lg:grid-cols-[1fr_360px] gap-12 items-start">
         {/* ── Left column ── */}
         <div>
-          {/* Video preview */}
+          {/* Course cover */}
           <div
             className="w-full flex items-center justify-center mb-8 rounded-lg overflow-hidden"
             style={{ aspectRatio: "16/9", backgroundColor: "#0f172a", position: "relative" }}
           >
             <img src={course.img} alt={course.title} className="absolute inset-0 w-full h-full object-cover opacity-40" />
-            <div className="relative z-10 w-20 h-20 rounded-full flex items-center justify-center cursor-pointer hover:scale-110 transition-transform" style={{ backgroundColor: "#B58A43" }}>
-              <svg viewBox="0 0 24 24" fill="#173B6C" className="w-9 h-9 ml-1"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-            </div>
           </div>
 
           <h1 className="text-4xl lg:text-5xl font-light mb-2" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>
@@ -140,12 +137,12 @@ export default function CourseDetail({ course, onBack, onBuy }: CourseDetailProp
             <p className="text-center text-4xl font-light mb-2" style={{ color: "#B58A43", fontFamily: "'Cormorant Garamond', serif" }}>
               {course.price} ARS
             </p>
-            <p className="text-center text-xs mb-6" style={{ color: "rgba(23,59,108,0.5)" }}>Acceso de por vida · Certificado incluido</p>
+            <p className="text-center text-xs mb-6" style={{ color: "rgba(23,59,108,0.5)" }}>Acceso al aula tras la confirmación</p>
 
             {/* Info box */}
             <div className="p-4 rounded mb-6" style={{ backgroundColor: "#E8EDF3", border: "1px solid rgba(23,59,108,0.12)" }}>
               <p className="text-xs leading-relaxed" style={{ color: "#173B6C" }}>
-                <span className="font-bold">ℹ️ Importante:</span> Al inscribirte y realizar el pago, tu cuenta quedará en estado <strong>Pendiente</strong>. Deberás notificarnos por WhatsApp para que un administrador valide el pago y apruebe tu acceso inmediato al aula virtual.
+                <span className="font-bold">ℹ️ Importante:</span> Este formulario registra una solicitud pendiente y no realiza cobros. Al finalizar, comunicate por WhatsApp para coordinar el pago. Un administrador habilitará el acceso después de confirmarlo.
               </p>
             </div>
 
@@ -166,7 +163,7 @@ export default function CourseDetail({ course, onBack, onBuy }: CourseDetailProp
 
             {/* What's included */}
             <div className="mt-6 pt-5 space-y-2.5" style={{ borderTop: "1px solid rgba(23,59,108,0.08)" }}>
-              {[`${course.modules} módulos completos`, "Acceso On-Demand ilimitado", "Material descargable", "Certificado de aprobación", "Chat con el docente"].map((item) => (
+              {[`${course.modules} módulos`, "Clases a tu ritmo", "Seguimiento del progreso", "Chat con el docente"].map((item) => (
                 <div key={item} className="flex items-center gap-2.5 text-xs" style={{ color: "rgba(23,59,108,0.7)" }}>
                   <span className="font-bold text-sm" style={{ color: "#B58A43" }}>✓</span>
                   {item}

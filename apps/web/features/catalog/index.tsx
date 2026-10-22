@@ -81,15 +81,7 @@ export default function CatalogPage() {
           Capacitación Jurídica On-Demand
         </h1>
         <p className="text-base max-w-xl mx-auto leading-relaxed" style={{ color: "rgba(23,59,108,0.72)" }}>
-          Fórmate con expertos. Acceso inmediato tras validación y pagos 100% seguros a través de{" "}
-          <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: "#009EE3" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="#B58A43" strokeWidth="1.5" className="w-4 h-4">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0110 0v4" />
-            </svg>
-            Mercado Pago
-          </span>
-          .
+          Fórmate con expertos. Solicitá tu inscripción y consultá las instrucciones de pago; el acceso al aula se habilita después de la confirmación.
         </p>
       </div>
 

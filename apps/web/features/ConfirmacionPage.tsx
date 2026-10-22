@@ -72,8 +72,8 @@ export default function ConfirmacionPage({
               <div>
                 <p className="text-sm font-bold mb-1" style={{ color: "#173B6C" }}>Acceso Pendiente de Aprobación</p>
                 <p className="text-sm leading-relaxed" style={{ color: "rgba(23,59,108,0.75)" }}>
-                  Tu inscripción quedó registrada con estado{" "}
-                  <strong style={{ color: "#f59e0b" }}>Pendiente</strong>. Un administrador validará el pago y habilitará el acceso al aula.
+                  Tu solicitud quedó registrada con estado{" "}
+                  <strong style={{ color: "#f59e0b" }}>Pendiente</strong>. Contactanos para coordinar el pago; un administrador confirmará el acceso al aula.
                 </p>
               </div>
             </div>
@@ -105,9 +105,9 @@ export default function ConfirmacionPage({
             <div className="h-px my-4" style={{ backgroundColor: "rgba(23,59,108,0.08)" }} />
             <div className="space-y-2">
               {[
-                "Recibirás un email con los datos de tu cuenta",
-                "Un administrador validará tu pago en el día",
-                "Acceso al aula habilitado tras la confirmación",
+                "Consultá por WhatsApp las instrucciones de pago",
+                "Conservá el número de orden para identificar tu solicitud",
+                "Iniciá sesión con la contraseña elegida cuando el pago esté confirmado",
               ].map((step, i) => (
                 <div key={step} className="flex items-center gap-3 text-xs" style={{ color: "rgba(23,59,108,0.65)" }}>
                   <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#B58A43" }}>{i + 1}</div>
@@ -119,12 +119,12 @@ export default function ConfirmacionPage({
 
           {/* Next steps */}
           <p className="text-sm mb-6" style={{ color: "rgba(23,59,108,0.7)" }}>
-            Para habilitar tus cursos <strong>inmediatamente</strong>, envíanos un mensaje con tu comprobante de pago.
+            Escribinos por WhatsApp con tu número de orden para continuar con la inscripción.
           </p>
 
           {/* WhatsApp CTA */}
           <a
-            href={settings?.contactWhatsapp ? `https://wa.me/${settings.contactWhatsapp}?text=${encodeURIComponent("Hola, quiero consultar por mi inscripción.")}` : undefined}
+            href={settings?.contactWhatsapp ? `https://wa.me/${settings.contactWhatsapp}?text=${encodeURIComponent(`Hola, quiero consultar por mi inscripción${order ? ` ${order.externalReference ?? order.id}` : ""}.`)}` : undefined}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-center gap-3 w-full py-4 text-sm font-bold tracking-widest rounded transition-all duration-200 hover:brightness-110 active:scale-95 mb-5"

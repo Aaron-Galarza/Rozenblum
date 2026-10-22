@@ -59,8 +59,7 @@ export default function AlumnoView() {
     .filter((mod) => mod.status !== "locked")
     .flatMap((mod) => mod.lessons);
 
-  const allLessons: Lesson[] = modules.flatMap((mod) => mod.lessons);
-  const selectedLesson = allLessons.find((lesson) => lesson.id === selectedLessonId) ?? availableLessons[0] ?? null;
+  const selectedLesson = availableLessons.find((lesson) => lesson.id === selectedLessonId) ?? availableLessons[0] ?? null;
 
   const load = async () => {
     setLoading(true);
@@ -93,16 +92,17 @@ export default function AlumnoView() {
       .filter((mod) => mod.status !== "locked")
       .flatMap((mod) => mod.lessons)[0];
     setSelectedLessonId((current) =>
-      enrollment.modules.some((mod) => mod.lessons.some((lesson) => lesson.id === current))
+      enrollment.modules.some((mod) => mod.status !== "locked" && mod.lessons.some((lesson) => lesson.id === current))
         ? current
         : firstAvailable?.id ?? "",
     );
 
+    setMessages([]);
+    let active = true;
     apiFetch<ChatMessageDTO[]>(`/api/student/enrollments/${enrollment.id}/messages`, { auth: true })
-      .then((data) =>
-        setMessages(data.map((message) => ({ ...message, from: message.from }))),
-      )
-      .catch(() => setMessages([]));
+      .then((data) => { if (active) setMessages(data.map((message) => ({ ...message, from: message.from }))); })
+      .catch(() => { if (active) setMessages([]); });
+    return () => { active = false; };
   }, [enrollment?.id]);
 
   const toggleModule = (id: number) =>
@@ -111,13 +111,13 @@ export default function AlumnoView() {
   const selectLesson = (lesson: Lesson) => setSelectedLessonId(lesson.id);
 
   const currentIdx = selectedLesson
-    ? allLessons.findIndex((lesson) => lesson.id === selectedLesson.id)
+    ? availableLessons.findIndex((lesson) => lesson.id === selectedLesson.id)
     : -1;
   const hasPrev = currentIdx > 0;
-  const hasNext = currentIdx >= 0 && currentIdx < allLessons.length - 1;
+  const hasNext = currentIdx >= 0 && currentIdx < availableLessons.length - 1;
 
-  const goNext = () => { if (hasNext) setSelectedLessonId(allLessons[currentIdx + 1].id); };
-  const goPrev = () => { if (hasPrev) setSelectedLessonId(allLessons[currentIdx - 1].id); };
+  const goNext = () => { if (hasNext) setSelectedLessonId(availableLessons[currentIdx + 1].id); };
+  const goPrev = () => { if (hasPrev) setSelectedLessonId(availableLessons[currentIdx - 1].id); };
 
   const handleComplete = async () => {
     if (!enrollment || !selectedLesson || saving) return;
@@ -140,7 +140,7 @@ export default function AlumnoView() {
       }
       showToast(
         updated.progress >= 100
-          ? "🎓 Curso completado — certificado disponible"
+          ? "🎓 Curso completado"
           : `✓ Lección completada · ${updated.progress}% del curso`,
       );
     } catch (err) {
@@ -185,7 +185,6 @@ export default function AlumnoView() {
         notificationCount={messages.filter((m) => m.from === "prof").length}
         userInitials={session?.user.initials ?? ""}
         userName={`Alumno: ${session?.user.name ?? ""}`}
-        userMenuItems={["Mi Perfil", "Mis Cursos", "Certificados"]}
       />
 
       {loading ? (
@@ -239,7 +238,6 @@ export default function AlumnoView() {
               onNextLesson={goNext}
               hasPrev={hasPrev}
               hasNext={hasNext}
-              onDownload={() => showToast("Esta lección todavía no tiene un archivo adjunto.")}
             />
 
             <ChatSidebar
@@ -251,16 +249,9 @@ export default function AlumnoView() {
           </div>
 
           {enrollment.progress >= 100 && (
-            <button
-              onClick={() => showToast("🎓 Certificado en preparación — te lo enviamos por email")}
-              className="fixed bottom-6 right-6 w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-all duration-200 hover:scale-110 z-50"
-              style={{ backgroundColor: "#B58A43", color: "#173B6C" }}
-              title="Descargar Certificado"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-7 h-7">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-            </button>
+            <p className="px-6 py-2 text-xs text-center" style={{ color: "#173B6C", backgroundColor: "#F5EBD8" }}>
+              Curso completado. La emisión de certificados estará disponible próximamente.
+            </p>
           )}
         </>
       )}

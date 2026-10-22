@@ -10,10 +10,9 @@ type ClassroomHeaderProps = {
   notificationCount?: number;
   userInitials: string;
   userName: string;
-  userMenuItems?: string[];
 };
 
-export default function ClassroomHeader({ breadcrumb, notificationCount = 0, userInitials, userName, userMenuItems = [] }: ClassroomHeaderProps) {
+export default function ClassroomHeader({ breadcrumb, notificationCount = 0, userInitials, userName }: ClassroomHeaderProps) {
   const router = useRouter();
   const settings = usePublicSettings();
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -36,7 +35,7 @@ export default function ClassroomHeader({ breadcrumb, notificationCount = 0, use
       )}
       <div className="flex items-center gap-4">
         <div className="relative">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#173B6C" strokeWidth="1.5" className="w-6 h-6 cursor-pointer"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 01-3.46 0" /></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="#173B6C" strokeWidth="1.5" className="w-6 h-6" aria-hidden="true"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 01-3.46 0" /></svg>
           {notificationCount > 0 && (
             <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold" style={{ backgroundColor: "#B58A43", color: "#FAF8F5" }}>{notificationCount}</div>
           )}
@@ -49,10 +48,6 @@ export default function ClassroomHeader({ breadcrumb, notificationCount = 0, use
           </button>
           {showUserMenu && (
             <div className="absolute right-0 top-12 w-48 z-50 shadow-xl" style={{ backgroundColor: "#FAF8F5", border: "1px solid rgba(23,59,108,0.15)" }}>
-              {userMenuItems.map((item) => (
-                <button key={item} className="block w-full text-left px-4 py-2.5 text-xs hover:opacity-70 transition-opacity" style={{ color: "#173B6C" }}>{item}</button>
-              ))}
-              <div className="h-px" style={{ backgroundColor: "rgba(23,59,108,0.1)" }} />
               <button onClick={logout} className="block w-full text-left px-4 py-2.5 text-xs font-medium" style={{ color: "#B58A43" }}>Logout</button>
             </div>
           )}

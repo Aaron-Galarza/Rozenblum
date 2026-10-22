@@ -15,13 +15,13 @@ type CheckoutModalProps = {
 export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutModalProps) {
   const titleId = useId();
   const dialogRef = useModalA11y<HTMLDivElement>(onClose);
-  const [form, setForm] = useState({ nombre: "", email: "", dni: "" });
+  const [form, setForm] = useState({ nombre: "", email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.nombre || !form.email || !form.dni) return;
+    if (!form.nombre || !form.email || !form.password) return;
     setLoading(true);
     setError("");
     try {
@@ -31,7 +31,7 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
           courseSlug: course.slug ?? String(course.id),
           nombre: form.nombre,
           email: form.email,
-          dni: form.dni,
+          password: form.password,
         },
       });
       onSuccess(result.order.externalReference ?? result.order.id, form.email);
@@ -88,13 +88,15 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
           {[
             { id: "nombre", label: "Nombre y Apellido *", type: "text", placeholder: "Juan García" },
             { id: "email", label: "Correo Electrónico *", type: "email", placeholder: "juan@email.com" },
-            { id: "dni", label: "DNI / Documento de Identidad *", type: "text", placeholder: "28.123.456" },
+            { id: "password", label: "Contraseña de tu cuenta o nueva contraseña *", type: "password", placeholder: "Mínimo 12 caracteres" },
           ].map(({ id, label, type, placeholder }) => (
             <div key={id} className="flex flex-col gap-1.5">
               <label htmlFor={id} className="text-xs font-medium tracking-widest uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>{label}</label>
               <input
                 id={id}
                 required
+                maxLength={id === "nombre" ? 120 : id === "password" ? 128 : undefined}
+                minLength={id === "password" ? 12 : id === "nombre" ? 3 : undefined}
                 type={type}
                 placeholder={placeholder}
                 value={form[id as keyof typeof form]}
@@ -107,19 +109,10 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
             </div>
           ))}
 
-          {/* Payment method */}
+          {/* Registration status */}
           <div className="p-4 rounded" style={{ backgroundColor: "#F5F5F5" }}>
-            <p className="text-xs font-bold tracking-widest uppercase mb-3" style={{ color: "#173B6C" }}>Medio de Pago</p>
-            <div className="flex items-center gap-3 p-3 rounded" style={{ backgroundColor: "#FFFFFF", border: "1px solid #E0E0E0" }}>
-              {/* MercadoPago logo placeholder */}
-              <div className="flex items-center gap-2 px-3 py-2 rounded" style={{ backgroundColor: "#009EE3" }}>
-                <svg viewBox="0 0 24 24" fill="white" className="w-4 h-4">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
-                </svg>
-                <span className="text-xs font-bold text-white tracking-wide">Mercado Pago</span>
-              </div>
-              <p className="text-xs" style={{ color: "rgba(23,59,108,0.6)" }}>Pago seguro · Tarjetas y transferencias</p>
-            </div>
+            <p className="text-xs font-bold tracking-widest uppercase mb-2" style={{ color: "#173B6C" }}>Solicitud de inscripción</p>
+            <p className="text-xs leading-relaxed" style={{ color: "rgba(23,59,108,0.7)" }}>Si ya tenés cuenta, ingresá su contraseña. Si es tu primera inscripción, se creará una cuenta con la contraseña que elijas. No se realiza ningún cobro en este sitio; consultá las instrucciones de pago por WhatsApp al finalizar.</p>
           </div>
 
           {error && (
@@ -133,11 +126,11 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
             className="w-full py-4 text-sm font-bold tracking-widest transition-all duration-200 hover:brightness-110 active:scale-95 rounded disabled:opacity-70"
             style={{ backgroundColor: "#009EE3", color: "#FFFFFF", letterSpacing: "0.1em" }}
           >
-            {loading ? "PROCESANDO..." : "PAGAR CON MERCADO PAGO"}
+            {loading ? "REGISTRANDO..." : "SOLICITAR INSCRIPCIÓN"}
           </button>
 
           <p className="text-[11px] leading-relaxed text-center" style={{ color: "rgba(23,59,108,0.55)" }}>
-            El acceso se habilita cuando un administrador valida el pago. No se cobra en esta versión demo.
+            El acceso se habilita cuando un administrador confirma tu inscripción.
           </p>
         </form>
       </div>

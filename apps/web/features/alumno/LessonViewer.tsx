@@ -15,7 +15,6 @@ type LessonViewerProps = {
   onNextLesson: () => void;
   hasPrev: boolean;
   hasNext: boolean;
-  onDownload: () => void;
 };
 
 function Block({ block }: { block: LessonBlockDTO }) {
@@ -81,7 +80,6 @@ export default function LessonViewer({
   onNextLesson,
   hasPrev,
   hasNext,
-  onDownload,
 }: LessonViewerProps) {
   return (
     <main className="flex-1 overflow-y-auto">
@@ -117,7 +115,7 @@ export default function LessonViewer({
                   <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3" style={{ backgroundColor: "#B58A43" }}>
                     <svg viewBox="0 0 24 24" fill="#173B6C" className="w-7 h-7 ml-1"><polygon points="5 3 19 12 5 21 5 3" /></svg>
                   </div>
-                  <p className="text-sm" style={{ color: "rgba(255,255,255,0.6)" }}>Reproductor de Video</p>
+                  <p className="text-sm" style={{ color: "rgba(255,255,255,0.6)" }}>Video no adjunto a esta lección</p>
                 </div>
               </div>
             </div>
@@ -128,21 +126,11 @@ export default function LessonViewer({
                   <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" />
                 </svg>
                 <p className="text-sm font-medium" style={{ color: "rgba(23,59,108,0.5)" }}>
-                  Visor de {selectedLesson.type === "pdf" ? "PDF" : selectedLesson.type === "ppt" ? "PowerPoint" : "Documento"}
+                  {selectedLesson.type === "pdf" ? "PDF" : selectedLesson.type === "ppt" ? "PowerPoint" : "Documento"} no adjunto a esta lección
                 </p>
               </div>
             </div>
           )}
-
-          {/* Download */}
-          <button
-            onClick={onDownload}
-            className="mt-5 px-5 py-2.5 text-xs font-bold tracking-widest rounded transition-all duration-200 hover:brightness-110 active:scale-95 flex items-center gap-2"
-            style={{ backgroundColor: "#B58A43", color: "#173B6C" }}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-            DESCARGAR MATERIAL
-          </button>
 
           {/* Notes */}
           <div className="mt-8">
@@ -153,7 +141,7 @@ export default function LessonViewer({
               </div>
             ) : (
               <p className="text-sm leading-relaxed" style={{ color: "rgba(23,59,108,0.75)" }}>
-                Esta lección todavía no tiene notas cargadas. Consultá el material descargable o escribile al profesor desde el panel de mensajes.
+                Esta lección todavía no tiene notas cargadas. Escribile al profesor desde el panel de mensajes si necesitás ayuda.
               </p>
             )}
           </div>

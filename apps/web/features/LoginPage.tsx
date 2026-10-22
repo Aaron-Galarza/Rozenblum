@@ -11,7 +11,7 @@ const ROLES = [
   {
     key: "alumno",
     title: "Alumno",
-    desc: "Accede a tus cursos, visualiza tu progreso y descarga certificados.",
+    desc: "Accede a tus cursos, visualiza tu progreso y contacta a tus docentes.",
     cta: "INGRESAR COMO ALUMNO",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7">
