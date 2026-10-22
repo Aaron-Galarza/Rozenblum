@@ -44,6 +44,10 @@ export default function ProfesoresSection({ profesores, onCreate, onUpdate, onTo
 
   const saveEdit = () => {
     if (!modal?.item) return;
+    if (form.name.trim().length < 3 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || (form.password && form.password.length < 12)) {
+      showToast("Revisá nombre, correo y contraseña (mínimo 12 caracteres si la cambiás).", true);
+      return;
+    }
     const item = modal.item;
     void run(async () => {
       await onUpdate(item.id, { name: form.name, email: form.email, ...(form.password ? { password: form.password } : {}) });
@@ -53,7 +57,10 @@ export default function ProfesoresSection({ profesores, onCreate, onUpdate, onTo
   };
 
   const createProfesor = () => {
-    if (!form.name.trim() || !form.email.trim() || form.password.length < 12) return;
+    if (form.name.trim().length < 3 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.password.length < 12) {
+      showToast("Ingresá nombre, correo válido y una contraseña de al menos 12 caracteres.", true);
+      return;
+    }
     void run(async () => {
       await onCreate({ name: form.name.trim(), email: form.email.trim(), password: form.password });
       setModal(null);
@@ -95,7 +102,7 @@ export default function ProfesoresSection({ profesores, onCreate, onUpdate, onTo
                     <button onClick={() => setModal({ type: "ver", item: p })} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity" style={{ color: "#173B6C" }}>Ver</button>
                     <button disabled={busy} onClick={() => { setForm({ name: p.name, email: p.email, password: "" }); setModal({ type: "editar", item: p }); }} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#173B6C" }}>Editar</button>
                     <button disabled={busy} onClick={() => void toggleSuspend(p)} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#173B6C" }}>{p.estado === "Activo" ? "Suspender" : "Activar"}</button>
-                    <button disabled={busy} onClick={() => void run(async () => { await onDelete(p); showToast("Profesor eliminado"); })} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#72132C" }}>Eliminar</button>
+                    <button disabled={busy} onClick={() => { if (window.confirm(`¿Eliminar a ${p.name}? Sus cursos deben estar reasignados.`)) void run(async () => { await onDelete(p); showToast("Profesor eliminado"); }); }} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#72132C" }}>Eliminar</button>
                   </div>
                 </td>
               </tr>
@@ -123,10 +130,12 @@ export default function ProfesoresSection({ profesores, onCreate, onUpdate, onTo
           <div className="space-y-4 mb-5">
             {[["Nombre completo", "name", "text"], ["Email", "email", "email"]].map(([label, key, type]) => (
               <div key={key} className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium tracking-wide uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>{label}</label>
+                <label htmlFor={`profesor-${key}`} className="text-xs font-medium tracking-wide uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>{label}</label>
                 <input
+                  id={`profesor-${key}`}
                   autoFocus={key === "name"}
                   type={type}
+                  readOnly={modal.type === "editar" && key === "email"}
                   value={form[key as "name" | "email"]}
                   onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
                   className="px-3 py-2.5 text-sm outline-none"
@@ -134,6 +143,7 @@ export default function ProfesoresSection({ profesores, onCreate, onUpdate, onTo
                   onFocus={(e) => (e.currentTarget.style.borderColor = "#B58A43")}
                   onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(23,59,108,0.2)")}
                 />
+                {modal.type === "editar" && key === "email" && <p className="text-xs" style={{ color: "rgba(23,59,108,0.55)" }}>El correo identifica los cursos asignados y no se puede cambiar.</p>}
               </div>
             ))}
             <div className="flex flex-col gap-1.5">

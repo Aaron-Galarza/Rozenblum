@@ -92,21 +92,15 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
           </div>
         </div>
 
-        {/* Payment integration — read-only: secrets live only in the API environment */}
+        {/* Payment status */}
         <div className="p-6 rounded-lg" style={{ backgroundColor: "#FFFFFF", border: "1px solid rgba(23,59,108,0.08)" }}>
-          <h3 className="text-lg font-medium mb-5" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Integración de Pagos</h3>
-          <div className="flex items-center justify-between py-2" style={{ borderBottom: "1px solid rgba(23,59,108,0.06)" }}>
-            <span className="text-xs" style={{ color: "rgba(23,59,108,0.55)" }}>Proveedor</span>
-            <span className="text-xs font-semibold" style={{ color: "#173B6C" }}>MercadoPago</span>
-          </div>
+          <h3 className="text-lg font-medium mb-5" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Estado de Cobros</h3>
           <div className="flex items-center justify-between py-2">
-            <span className="text-xs" style={{ color: "rgba(23,59,108,0.55)" }}>Credenciales</span>
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold" style={settings.paymentsConfigured ? { backgroundColor: "#dcfce7", color: "#166534" } : { backgroundColor: "#fef3c7", color: "#92400e" }}>
-              {settings.paymentsConfigured ? "Configuradas" : "Sin configurar"}
-            </span>
+            <span className="text-xs" style={{ color: "rgba(23,59,108,0.55)" }}>Modalidad</span>
+            <span className="text-xs font-semibold" style={{ color: "#173B6C" }}>Confirmación manual</span>
           </div>
           <p className="text-[11px] leading-relaxed mt-3" style={{ color: "rgba(23,59,108,0.5)" }}>
-            Las credenciales de pago se administran únicamente en las variables de entorno del servidor y nunca se exponen al navegador.
+            El formulario registra solicitudes pendientes. Coordiná el pago por fuera del sitio y confirmá la orden en la sección Pagos para habilitar el acceso.
           </p>
         </div>
 

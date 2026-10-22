@@ -1,24 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import type { AdminCursoDTO } from "@rozenblum/shared";
+import type { AdminCursoDTO, AdminProfesorDTO, CourseDTO } from "@rozenblum/shared";
 import { errorMessage } from "../../../lib/api";
 import Modal from "../../../components/ui/Modal";
 import Toast from "../../../components/ui/Toast";
 
 type CursosSectionProps = {
   cursos: AdminCursoDTO[];
+  profesores: AdminProfesorDTO[];
   onCreate: (input: { name: string; profesor: string; description: string; priceCents: number; duration: string; level: string; img?: string }) => Promise<void>;
+  onLoadCourse: (id: number) => Promise<CourseDTO>;
+  onUpdate: (id: number, patch: { title: string; professor: string; description: string; priceCents: number; duration: string; level: string; img?: string }) => Promise<void>;
   onToggleStatus: (curso: AdminCursoDTO) => Promise<void>;
   onDelete: (curso: AdminCursoDTO) => Promise<void>;
 };
-type ModalState = { type: "ver" | "crear"; item?: AdminCursoDTO } | null;
+type ModalState = { type: "ver" | "crear" | "editar"; item?: AdminCursoDTO } | null;
 
-export default function CursosSection({ cursos, onCreate, onToggleStatus, onDelete }: CursosSectionProps) {
+export default function CursosSection({ cursos, profesores, onCreate, onLoadCourse, onUpdate, onToggleStatus, onDelete }: CursosSectionProps) {
   const [modal, setModal] = useState<ModalState>(null);
   const [form, setForm] = useState({ name: "", profesor: "", description: "", price: "", duration: "", level: "", img: "" });
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState("");
 
   const showToast = (text: string, error = false) => { setToast({ text, error }); setTimeout(() => setToast(null), 2500); };
 
@@ -39,16 +43,47 @@ export default function CursosSection({ cursos, onCreate, onToggleStatus, onDele
       showToast(c.estado === "Publicado" ? "Curso despublicado" : "✓ Curso publicado");
     });
 
-  const createCurso = () => {
-    if (!form.name.trim() || !form.profesor.trim() || !form.description.trim() || !form.duration.trim() || !form.level.trim() || !form.price.trim() || Number(form.price) < 0) return;
+  const saveCurso = () => {
+    const price = Number(form.price);
+    if (form.name.trim().length < 3 || form.description.trim().length < 3 || !form.profesor || !form.duration.trim() || !form.level.trim() || !Number.isFinite(price) || price < 0 || !Number.isInteger(price * 100)) {
+      setFormError("Completá todos los campos con datos válidos. El precio debe ser positivo y tener hasta dos decimales.");
+      return;
+    }
+    if (form.img.trim() && !/^https?:\/\//i.test(form.img.trim())) {
+      setFormError("La imagen debe tener una URL http(s) válida.");
+      return;
+    }
+    setFormError("");
     void run(async () => {
-      await onCreate({
+      const input = {
         name: form.name.trim(), profesor: form.profesor.trim(), description: form.description.trim(),
-        priceCents: Math.round(Number(form.price) * 100), duration: form.duration.trim(),
+        priceCents: Math.round(price * 100), duration: form.duration.trim(),
         level: form.level.trim(), ...(form.img.trim() ? { img: form.img.trim() } : {}),
-      });
+      };
+      if (modal?.type === "editar" && modal.item) {
+        await onUpdate(modal.item.id, { title: input.name, professor: input.profesor, description: input.description, priceCents: input.priceCents, duration: input.duration, level: input.level, ...(input.img ? { img: input.img } : {}) });
+      } else {
+        await onCreate(input);
+      }
       setModal(null);
-      showToast("✓ Curso creado en borrador");
+      showToast(modal?.type === "editar" ? "✓ Curso actualizado" : "✓ Curso creado en borrador");
+    });
+  };
+
+  const editCurso = (curso: AdminCursoDTO) => {
+    void run(async () => {
+      const full = await onLoadCourse(curso.id);
+      setForm({
+        name: full.title,
+        profesor: profesores.find((p) => p.email === full.professorId)?.name ?? "",
+        description: full.description,
+        price: String(full.priceCents / 100),
+        duration: full.duration,
+        level: full.level,
+        img: full.img,
+      });
+      setFormError("");
+      setModal({ type: "editar", item: curso });
     });
   };
 
@@ -56,7 +91,7 @@ export default function CursosSection({ cursos, onCreate, onToggleStatus, onDele
     <>
       <div className="flex items-center justify-between mb-8">
         <h2 className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Gestión de Cursos</h2>
-        <button onClick={() => { setForm({ name: "", profesor: "", description: "", price: "", duration: "", level: "", img: "" }); setModal({ type: "crear" }); }} className="px-5 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
+        <button onClick={() => { setForm({ name: "", profesor: "", description: "", price: "", duration: "", level: "", img: "" }); setFormError(""); setModal({ type: "crear" }); }} className="px-5 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
           + CREAR NUEVO CURSO
         </button>
       </div>
@@ -90,9 +125,9 @@ export default function CursosSection({ cursos, onCreate, onToggleStatus, onDele
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
-                    <button onClick={() => showToast("Edición de curso disponible en producción")} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity" style={{ color: "#173B6C" }}>Editar</button>
+                    <button disabled={busy} onClick={() => editCurso(c)} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#173B6C" }}>Editar</button>
                     <button onClick={() => setModal({ type: "ver", item: c })} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity" style={{ color: "#173B6C" }}>Ver</button>
-                    <button disabled={busy} onClick={() => void run(async () => { await onDelete(c); showToast("Curso eliminado"); })} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#72132C" }}>Eliminar</button>
+                    <button disabled={busy} onClick={() => { if (window.confirm(`¿Eliminar el curso ${c.name}? Esta acción no se puede deshacer.`)) void run(async () => { await onDelete(c); showToast("Curso eliminado"); }); }} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#72132C" }}>Eliminar</button>
                   </div>
                 </td>
               </tr>
@@ -115,15 +150,18 @@ export default function CursosSection({ cursos, onCreate, onToggleStatus, onDele
         </Modal>
       )}
 
-      {modal?.type === "crear" && (
-        <Modal title="Crear Nuevo Curso" onClose={() => setModal(null)}>
+      {(modal?.type === "crear" || modal?.type === "editar") && (
+        <Modal title={modal.type === "crear" ? "Crear Nuevo Curso" : "Editar Curso"} onClose={() => setModal(null)}>
           <div className="space-y-4 mb-5">
-            {[["Nombre del curso", "name", "text"], ["Profesor asignado", "profesor", "text"], ["Descripción", "description", "text"], ["Precio en ARS", "price", "number"], ["Duración", "duration", "text"], ["Nivel", "level", "text"], ["URL de imagen (opcional)", "img", "url"]].map(([label, key, type]) => (
+            {[["Nombre del curso", "name", "text"], ["Descripción", "description", "text"], ["Precio en ARS", "price", "number"], ["Duración", "duration", "text"], ["Nivel", "level", "text"], ["URL de imagen (opcional)", "img", "url"]].map(([label, key, type]) => (
               <div key={key} className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium tracking-wide uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>{label}</label>
+                <label htmlFor={`course-${key}`} className="text-xs font-medium tracking-wide uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>{label}</label>
                 <input
+                  id={`course-${key}`}
                   autoFocus={key === "name"}
                   type={type}
+                  min={key === "price" ? 0 : undefined}
+                  step={key === "price" ? "0.01" : undefined}
                   value={form[key as keyof typeof form]}
                   onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
                   className="px-3 py-2.5 text-sm outline-none"
@@ -133,12 +171,20 @@ export default function CursosSection({ cursos, onCreate, onToggleStatus, onDele
                 />
               </div>
             ))}
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="course-profesor" className="text-xs font-medium tracking-wide uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>Profesor asignado</label>
+              <select id="course-profesor" value={form.profesor} onChange={(e) => setForm((prev) => ({ ...prev, profesor: e.target.value }))} className="px-3 py-2.5 text-sm border" style={{ color: "#173B6C", backgroundColor: "#FAF8F5" }}>
+                <option value="">Seleccioná un profesor</option>
+                {profesores.filter((p) => p.estado === "Activo" || p.name === form.profesor).map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+              </select>
+            </div>
+            {formError && <p role="alert" className="text-xs" style={{ color: "#991b1b" }}>{formError}</p>}
             <p className="text-[11px] leading-relaxed" style={{ color: "rgba(23,59,108,0.5)" }}>
-              Se crea como borrador. Revisá los datos antes de publicarlo.
+              {modal.type === "crear" ? "Se crea como borrador. Agregá lecciones antes de publicarlo." : "Los cambios se aplicarán al curso existente."}
             </p>
           </div>
           <div className="flex gap-2">
-            <button disabled={busy} onClick={createCurso} className="flex-1 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all disabled:opacity-50" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>{busy ? "CREANDO..." : "CREAR"}</button>
+            <button disabled={busy} onClick={saveCurso} className="flex-1 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all disabled:opacity-50" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>{busy ? "GUARDANDO..." : modal.type === "crear" ? "CREAR" : "GUARDAR"}</button>
             <button onClick={() => setModal(null)} className="flex-1 py-2.5 text-xs font-medium border hover:opacity-70 transition-opacity" style={{ color: "#173B6C", borderColor: "#173B6C" }}>CANCELAR</button>
           </div>
         </Modal>

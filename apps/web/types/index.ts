@@ -104,7 +104,7 @@ export type EditableModule = {
 export type ProfesorTab = "dashboard" | "course";
 export type SortDir = "asc" | "desc";
 
-export type AdminSection = "dashboard" | "profesores" | "alumnos" | "cursos" | "pagos" | "reportes" | "config";
+export type AdminSection = "dashboard" | "profesores" | "alumnos" | "cursos" | "pagos" | "consultas" | "reportes" | "config";
 
 export type Order = {
   id: string;

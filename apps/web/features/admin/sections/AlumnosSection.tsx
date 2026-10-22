@@ -51,7 +51,10 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
     });
 
   const createAlumno = () => {
-    if (!form.name.trim() || !form.email.trim() || form.password.length < 12) return;
+    if (form.name.trim().length < 3 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.password.length < 12) {
+      showToast("Ingresá nombre, correo válido y una contraseña de al menos 12 caracteres.", true);
+      return;
+    }
     void run(async () => {
       await onCreate({ name: form.name.trim(), email: form.email.trim(), password: form.password });
       setModal(null);
@@ -61,6 +64,10 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
 
   const saveEdit = () => {
     if (!modal?.item) return;
+    if (form.name.trim().length < 3 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || (form.password && form.password.length < 12)) {
+      showToast("Revisá nombre, correo y contraseña (mínimo 12 caracteres si la cambiás).", true);
+      return;
+    }
     const item = modal.item;
     void run(async () => {
       await onUpdate(item.id, { name: form.name, email: form.email, ...(form.password ? { password: form.password } : {}) });
@@ -77,15 +84,12 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
           <button onClick={() => { setForm({ name: "", email: "", password: "" }); setModal({ type: "crear" }); }} className="px-5 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
             + CREAR NUEVO ALUMNO
           </button>
-          <button onClick={() => showToast("Importación disponible en versión de producción")} className="px-5 py-2.5 text-xs font-medium border hover:opacity-70 transition-opacity" style={{ color: "#173B6C", borderColor: "#173B6C" }}>
-            Importar CSV/Excel
-          </button>
         </div>
       </div>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-6">
-        <select value={estadoFilter} onChange={(e) => setEstadoFilter(e.target.value)} className="px-3 py-2 text-xs outline-none" style={{ border: "1px solid rgba(23,59,108,0.2)", color: "#173B6C", backgroundColor: "#FAF8F5" }}>
+        <select aria-label="Filtrar alumnos por estado" value={estadoFilter} onChange={(e) => setEstadoFilter(e.target.value)} className="px-3 py-2 text-xs outline-none" style={{ border: "1px solid rgba(23,59,108,0.2)", color: "#173B6C", backgroundColor: "#FAF8F5" }}>
           <option value="Todos">Por Estado ▼</option>
           <option value="Activo">Activo</option>
           <option value="Suspendido">Suspendido</option>
@@ -141,7 +145,7 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
                     <button onClick={() => setModal({ type: "ver", item: a })} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity" style={{ color: "#173B6C" }}>Ver</button>
                     <button disabled={busy} onClick={() => { setForm({ name: a.name, email: a.email, password: "" }); setModal({ type: "editar", item: a }); }} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#173B6C" }}>Editar</button>
                     <button disabled={busy} onClick={() => void toggleSuspend(a)} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#173B6C" }}>{a.estado === "Activo" ? "Suspender" : "Activar"}</button>
-                    <button disabled={busy} onClick={() => void run(async () => { await onDelete(a); showToast("Alumno eliminado"); })} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#72132C" }}>Eliminar</button>
+                    <button disabled={busy} onClick={() => { if (window.confirm(`¿Eliminar a ${a.name} y sus inscripciones?`)) void run(async () => { await onDelete(a); showToast("Alumno eliminado"); }); }} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#72132C" }}>Eliminar</button>
                   </div>
                 </td>
               </tr>
@@ -175,10 +179,12 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
           <div className="space-y-4 mb-5">
             {[["Nombre completo", "name", "text"], ["Email", "email", "email"]].map(([label, key, type]) => (
               <div key={key} className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium tracking-wide uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>{label}</label>
+                <label htmlFor={`alumno-${key}`} className="text-xs font-medium tracking-wide uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>{label}</label>
                 <input
+                  id={`alumno-${key}`}
                   autoFocus={key === "name"}
                   type={type}
+                  readOnly={modal.type === "editar" && key === "email"}
                   value={form[key as "name" | "email"]}
                   onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
                   className="px-3 py-2.5 text-sm outline-none"
@@ -186,6 +192,7 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
                   onFocus={(e) => (e.currentTarget.style.borderColor = "#B58A43")}
                   onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(23,59,108,0.2)")}
                 />
+                {modal.type === "editar" && key === "email" && <p className="text-xs" style={{ color: "rgba(23,59,108,0.55)" }}>El correo identifica las inscripciones y no se puede cambiar.</p>}
               </div>
             ))}
             <div className="flex flex-col gap-1.5">

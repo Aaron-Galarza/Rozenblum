@@ -105,7 +105,7 @@ export default function DashboardSection({ dashboard, tableTab, onTableTabChange
                   <tr><td colSpan={7} className="px-4 py-8 text-center text-xs" style={{ color: "rgba(23,59,108,0.4)" }}>Todavía no hay órdenes registradas</td></tr>
                 ) : orders.map((o, i) => (
                   <tr key={o.id} style={{ backgroundColor: i % 2 === 0 ? "#FFFFFF" : "#F5F5F5" }}>
-                    <td className="px-4 py-3 font-mono font-medium" style={{ color: "#173B6C" }}>{o.id}</td>
+                    <td className="px-4 py-3 font-mono font-medium" style={{ color: "#173B6C" }}>{o.externalReference ?? o.id}</td>
                     <td className="px-4 py-3" style={{ color: "#173B6C" }}>{o.alumno}</td>
                     <td className="px-4 py-3" style={{ color: "rgba(23,59,108,0.7)" }}>{o.curso}</td>
                     <td className="px-4 py-3 font-medium" style={{ color: "#B58A43" }}>{o.monto}</td>

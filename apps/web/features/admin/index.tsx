@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { AdminOverviewDTO, OrderStatus } from "@rozenblum/shared";
+import type { AdminOverviewDTO, CourseDTO, CourseDetailDTO, OrderStatus } from "@rozenblum/shared";
 import type { AdminSection } from "../../types";
 import { NAV_ITEMS } from "./nav";
 import { usePublicSettings } from "../../lib/use-public-settings";
@@ -15,6 +15,7 @@ import ProfesoresSection from "./sections/ProfesoresSection";
 import AlumnosSection from "./sections/AlumnosSection";
 import CursosSection from "./sections/CursosSection";
 import PagosSection from "./sections/PagosSection";
+import ConsultasSection from "./sections/ConsultasSection";
 import ReportesSection from "./sections/ReportesSection";
 import ConfigSection from "./sections/ConfigSection";
 
@@ -64,7 +65,7 @@ export default function AdminView() {
         <h1 className="text-lg font-medium hidden sm:block" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{pageTitle}</h1>
         <div className="flex items-center gap-4">
           <div className="relative">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#173B6C" strokeWidth="1.5" className="w-6 h-6 cursor-pointer"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 01-3.46 0" /></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#173B6C" strokeWidth="1.5" className="w-6 h-6" aria-hidden="true"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 01-3.46 0" /></svg>
             {notificationCount > 0 && (
               <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold" style={{ backgroundColor: "#B58A43", color: "#FAF8F5" }}>{notificationCount}</div>
             )}
@@ -77,8 +78,6 @@ export default function AdminView() {
             </button>
             {showUserMenu && (
               <div className="absolute right-0 top-12 w-40 z-50 shadow-xl" style={{ backgroundColor: "#FAF8F5", border: "1px solid rgba(23,59,108,0.15)" }}>
-                <button className="block w-full text-left px-4 py-2.5 text-xs hover:opacity-70" style={{ color: "#173B6C" }}>Mi Perfil</button>
-                <div className="h-px" style={{ backgroundColor: "rgba(23,59,108,0.1)" }} />
                 <button onClick={logout} className="block w-full text-left px-4 py-2.5 text-xs font-medium" style={{ color: "#B58A43" }}>Logout</button>
               </div>
             )}
@@ -174,6 +173,7 @@ export default function AdminView() {
               {section === "cursos" && (
                 <CursosSection
                   cursos={overview.cursos}
+                  profesores={overview.profesores}
                   onCreate={async ({ name, profesor, description, priceCents, duration, level, img }) => {
                     await apiFetch("/api/admin/courses", {
                       method: "POST",
@@ -195,6 +195,11 @@ export default function AdminView() {
                     await apiFetch(`/api/admin/courses/${curso.id}`, { method: "PATCH", auth: true, body: { status: curso.estado === "Publicado" ? "draft" : "published" } });
                     await load();
                   }}
+                  onLoadCourse={async (id) => (await apiFetch<CourseDetailDTO>(`/api/teacher/courses/${id}`, { auth: true })).course}
+                  onUpdate={async (id, patch) => {
+                    await apiFetch<CourseDTO>(`/api/admin/courses/${id}`, { method: "PATCH", auth: true, body: patch });
+                    await load();
+                  }}
                   onDelete={async (curso) => {
                     await apiFetch(`/api/admin/courses/${curso.id}`, { method: "DELETE", auth: true });
                     await load();
@@ -210,6 +215,7 @@ export default function AdminView() {
                   }}
                 />
               )}
+              {section === "consultas" && <ConsultasSection />}
               {section === "reportes" && <ReportesSection reportes={overview.reportes} />}
               {section === "config" && (
                 <ConfigSection
