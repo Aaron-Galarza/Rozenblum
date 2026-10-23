@@ -30,7 +30,6 @@ type Props = {
   initialType?: LessonType;
   onClose: () => void;
   onSave: (payload: LessonEditorPayload) => Promise<void> | void;
-  onAutoSave?: (payload: LessonEditorPayload) => Promise<void> | void;
 };
 
 const isWebUrl = (value: string) => {
@@ -77,7 +76,7 @@ const LessonDragMenu = () => <DragHandleMenu>
 </DragHandleMenu>;
 const LessonSideMenu = (props: SideMenuProps) => <SideMenu {...props} dragHandleMenu={LessonDragMenu} />;
 
-export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, initialBlocks, initialDocument, initialType, onClose, onSave, onAutoSave }: Props) {
+export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, initialBlocks, initialDocument, initialType, onClose, onSave }: Props) {
   const titleId = useId();
   const [title, setTitle] = useState(lessonTitle ?? "");
   const type: LessonType = initialType ?? "doc";
@@ -112,89 +111,60 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
       return defaultPasteHandler();
     },
   });
-  const [document, setDocument] = useState<RichLessonDocument>(() => serializeNote(editor.document));
-  const latestRef = useRef({ title, type, document });
-  latestRef.current = { title, type, document };
-  const savedRef = useRef(JSON.stringify({ title: lessonTitle?.trim() ?? "", type: initialType ?? "doc", document: serializeNote(editor.document) }));
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const queueRef = useRef<Promise<void>>(Promise.resolve());
-  const saveIdRef = useRef(0);
-  const changedRef = useRef(false);
-  const autoSaveRef = useRef(onAutoSave);
-  autoSaveRef.current = onAutoSave;
+  const [, renderChange] = useState(0);
+  const titleRef = useRef(title);
+  titleRef.current = title;
+  const getSnapshot = useCallback(() => JSON.stringify({
+    title: titleRef.current.trim(),
+    type,
+    document: serializeNote(editor.document),
+    pendingUrl,
+  }), [editor, pendingUrl, type]);
+  const savedRef = useRef(getSnapshot());
+  const savingRef = useRef(false);
   const initiallyHadContent = useRef(hasContent(serializeNote(editor.document)));
+  const dirty = getSnapshot() !== savedRef.current;
   const closeDialog = useCallback(() => {
-    const dirty = changedRef.current;
-    if (dirty && !window.confirm("Hay cambios sin guardar. ¿Cerrar el editor?")) return;
+    if (savingRef.current) return;
+    if (getSnapshot() !== savedRef.current && !window.confirm("Hay cambios sin guardar. Si cerrás el editor, se descartarán. ¿Cerrar igualmente?")) return;
     onClose();
-  }, [onClose]);
+  }, [getSnapshot, onClose]);
   const dialogRef = useModalA11y<HTMLDivElement>(closeDialog, true, (event) => {
     if (pendingUrl) { event.preventDefault(); setPendingUrl(""); return true; }
     return Boolean(window.document.querySelector(".bn-suggestion-menu"));
   });
 
   const payload = useCallback((): LessonEditorPayload => {
-    const current = latestRef.current;
-    return { title: current.title.trim(), type: current.type, content: initialBlocks ?? [], document: current.document };
-  }, [initialBlocks]);
+    return { title: titleRef.current.trim(), type, content: initialBlocks ?? [], document: serializeNote(editor.document) };
+  }, [editor, initialBlocks, type]);
 
-  const scheduleSave = useCallback((next: LessonEditorPayload) => {
-    if (mode !== "edit" || !autoSaveRef.current || !next.title) return;
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (initiallyHadContent.current && !hasContent(next.document)) {
-      setStatus("La lección quedó vacía. Confirmá con GUARDAR si querés borrar su contenido.");
-      return;
-    }
-    timerRef.current = setTimeout(() => {
-      const id = ++saveIdRef.current;
-      setStatus("Guardando...");
-      queueRef.current = queueRef.current.catch(() => undefined).then(async () => {
-        if (id !== saveIdRef.current) return;
-        await autoSaveRef.current?.(next);
-        savedRef.current = JSON.stringify({ title: next.title, type: next.type, document: next.document });
-        changedRef.current = JSON.stringify({ title: latestRef.current.title.trim(), type: latestRef.current.type, document: latestRef.current.document }) !== savedRef.current;
-        setStatus(changedRef.current ? "Hay cambios sin guardar" : "✓ Guardado");
-      }).catch(() => { setStatus("No se pudo guardar automáticamente"); });
-    }, 1200);
-  }, [mode]);
-
-  useEffect(() => {
-    const current = payload();
-    changedRef.current = JSON.stringify({ title: current.title, type: current.type, document: current.document }) !== savedRef.current;
-    if (changedRef.current) {
-      setStatus("Hay cambios sin guardar");
-      scheduleSave(current);
-    }
-  }, [title, document, payload, scheduleSave]);
-
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
-      if (!changedRef.current) return;
+      if (getSnapshot() === savedRef.current) return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, []);
+  }, [getSnapshot]);
 
   const save = async () => {
-    if (!title.trim()) { setStatus("Escribí un título para la lección."); return; }
-    if (initiallyHadContent.current && !hasContent(latestRef.current.document) && !window.confirm("Esta lección quedará vacía. ¿Querés borrar todo su contenido?")) return;
-    if (timerRef.current) clearTimeout(timerRef.current);
-    ++saveIdRef.current;
+    if (savingRef.current) return;
+    if (pendingUrl) { setStatus("Elegí cómo insertar la URL o cancelala antes de guardar."); return; }
+    const next = payload();
+    if (!next.title) { setStatus("Escribí un título para la lección."); return; }
+    if (initiallyHadContent.current && !hasContent(next.document) && !window.confirm("Esta lección quedará vacía. ¿Querés borrar todo su contenido?")) return;
+    savingRef.current = true;
     setSaving(true);
     setStatus("Guardando...");
     try {
-      await queueRef.current;
-      const next = payload();
       await onSave(next);
-      savedRef.current = JSON.stringify({ title: next.title, type: next.type, document: next.document });
-      changedRef.current = false;
+      savedRef.current = getSnapshot();
       setStatus("✓ Guardado");
     } catch {
       setStatus("No se pudo guardar. Intentá de nuevo.");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -258,13 +228,13 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
     <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="flex h-[90vh] w-full max-w-4xl flex-col rounded-xl bg-[#FAF8F5] shadow-2xl outline-none">
       <div className="flex items-center justify-between border-b-2 border-[#B58A43] bg-white px-6 py-4">
         <div><h2 id={titleId} className="text-xl text-[#173B6C]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{mode === "new" ? "Nueva lección" : "Editar lección"}</h2><p className="text-xs text-[#6c7b90]">{moduleName}</p></div>
-        <div className="flex items-center gap-3"><button type="button" onClick={() => void save()} disabled={saving} className="rounded bg-[#B58A43] px-5 py-2 text-xs font-bold text-[#173B6C] disabled:opacity-50">{saving ? "GUARDANDO..." : "GUARDAR"}</button><button type="button" onClick={closeDialog} aria-label="Cerrar editor" className="text-2xl text-[#173B6C]">×</button></div>
+        <div className="flex items-center gap-3"><button type="button" onClick={() => void save()} disabled={saving} className="rounded bg-[#B58A43] px-5 py-2 text-xs font-bold text-[#173B6C] disabled:opacity-50">{saving ? "GUARDANDO..." : "GUARDAR"}</button><button type="button" onClick={closeDialog} disabled={saving} aria-label="Cerrar editor" className="text-2xl text-[#173B6C] disabled:opacity-50">×</button></div>
       </div>
       <div className="flex flex-wrap items-center gap-3 border-b border-[#e5ded2] px-6 py-3">
         <label htmlFor="rich-lesson-title" className="text-xs font-bold text-[#173B6C]">Título</label>
-        <input id="rich-lesson-title" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={180} placeholder="Título de la lección" className="min-w-48 flex-1 rounded border border-[#d6d6d6] bg-white px-3 py-2 text-sm text-[#173B6C] outline-[#B58A43]" />
+        <input id="rich-lesson-title" value={title} disabled={saving} onChange={(event) => { setTitle(event.target.value); setStatus(""); }} maxLength={180} placeholder="Título de la lección" className="min-w-48 flex-1 rounded border border-[#d6d6d6] bg-white px-3 py-2 text-sm text-[#173B6C] outline-[#B58A43]" />
       </div>
-      <div role="toolbar" aria-label="Formato e inserción" className="lesson-top-toolbar flex flex-wrap items-center gap-1 border-b border-[#e5ded2] bg-white px-5 py-2">
+      <div role="toolbar" aria-label="Formato e inserción" inert={saving} className="lesson-top-toolbar flex flex-wrap items-center gap-1 border-b border-[#e5ded2] bg-white px-5 py-2">
         {toolbarButton("Texto", () => changeBlock("paragraph"))}
         {toolbarButton("H1", () => changeBlock("heading", 1), "Título principal")}
         {toolbarButton("H2", () => changeBlock("heading", 2), "Título secundario")}
@@ -282,7 +252,7 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
         {toolbarButton("S", () => editor.toggleStyles({ strike: true }), "Tachado")}
       </div>
       <p className="px-6 py-2 text-xs text-[#6c7b90]">Enter crea un bloque · / muestra todos los bloques · + añade debajo · ⋮⋮ permite mover y editar el bloque · pegá una URL para elegir cómo insertarla.</p>
-      {pendingUrl && <div role="dialog" aria-label="Opciones para la URL pegada" className="fixed z-[450] w-[min(320px,calc(100vw-24px))] rounded-lg border border-[#B58A43] bg-white p-3 shadow-xl" style={{ top: Math.max(12, urlMenuPosition.top), left: urlMenuPosition.left }}><input autoFocus aria-label="URL para insertar" value={pendingUrl} onChange={(event) => setPendingUrl(event.target.value)} className="mb-2 w-full rounded border border-[#e5ded2] px-2 py-1 text-xs text-[#173B6C]" /><div className="flex flex-wrap gap-2">
+      {pendingUrl && !saving && <div role="dialog" aria-label="Opciones para la URL pegada" className="fixed z-[450] w-[min(320px,calc(100vw-24px))] rounded-lg border border-[#B58A43] bg-white p-3 shadow-xl" style={{ top: Math.max(12, urlMenuPosition.top), left: urlMenuPosition.left }}><input autoFocus aria-label="URL para insertar" value={pendingUrl} onChange={(event) => setPendingUrl(event.target.value)} className="mb-2 w-full rounded border border-[#e5ded2] px-2 py-1 text-xs text-[#173B6C]" /><div className="flex flex-wrap gap-2">
         <button type="button" disabled={fetchingPreview} onClick={() => void insertUrl("link")} className="rounded bg-[#173B6C] px-3 py-1.5 text-xs text-white">URL</button>
         <button type="button" disabled={fetchingPreview} onClick={() => void insertUrl("mention")} className="rounded border px-3 py-1.5 text-xs">Mencionar</button>
         <button type="button" disabled={fetchingPreview} onClick={() => void insertUrl("bookmark")} className="rounded border px-3 py-1.5 text-xs">Marcador</button>
@@ -291,7 +261,7 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
         <button type="button" onClick={() => setPendingUrl("")} className="px-3 py-1.5 text-xs text-[#72132C]">Cancelar</button>
       </div></div>}
       <div className="lesson-rich-editor min-h-0 flex-1 px-5 py-4" onKeyDownCapture={handleSpaceShortcut} onDropCapture={(event) => { if (Array.from(event.dataTransfer.files).some((file) => file.type.startsWith("image/"))) { event.preventDefault(); event.stopPropagation(); setStatus("Las imágenes no están permitidas por ahora."); } }}>
-        <BlockNoteView editor={editor} theme="light" sideMenu={false} slashMenu={false} onChange={() => setDocument(serializeNote(editor.document))}>
+        <BlockNoteView editor={editor} editable={!saving} theme="light" sideMenu={false} slashMenu={false} onChange={() => { setStatus(""); renderChange((value) => value + 1); }}>
           <SideMenuController sideMenu={LessonSideMenu} />
           <SuggestionMenuController triggerCharacter="/" getItems={async (query) => filterSuggestionItems([
             ...getDefaultReactSlashMenuItems(editor).filter((item) => !["Video", "Audio", "File", "Image", es.slash_menu.image.title, es.slash_menu.video.title, es.slash_menu.audio.title, es.slash_menu.file.title].includes(item.title)),
@@ -301,7 +271,7 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
           ], query)} />
         </BlockNoteView>
       </div>
-      <div className="border-t border-[#e5ded2] bg-white px-6 py-2 text-xs text-[#6c7b90]" role="status" aria-live="polite">{status || (mode === "edit" ? "Guardado automático activado" : "Guardá para crear la lección")} · Las imágenes no están permitidas por ahora.</div>
+      <div className="border-t border-[#e5ded2] bg-white px-6 py-2 text-xs text-[#6c7b90]" role="status" aria-live="polite">{status || (dirty ? "Hay cambios sin guardar. Solo se aplican al pulsar GUARDAR." : mode === "edit" ? "Sin cambios pendientes." : "Guardá para crear la lección.")} · Las imágenes no están permitidas por ahora.</div>
     </div>
   </div>;
 }

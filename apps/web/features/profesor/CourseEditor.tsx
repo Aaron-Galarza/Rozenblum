@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import type { ChatMessageDTO, ConversationDTO, LessonBlockDTO, LessonType, RichLessonDocument } from "@rozenblum/shared";
 import type { EditableModule, EditableLesson, ProfesorStudent, SortDir } from "../../types";
@@ -121,15 +121,6 @@ export default function CourseEditor({
     }
     setEditorOpen(false);
   };
-
-  const handleAutoSave = useCallback(
-    async (payload: LessonPayload) => {
-      if (editing?.lesson?.id) {
-        await onUpdateLesson(editing.moduleId, editing.lesson.id, payload);
-      }
-    },
-    [editing, onUpdateLesson],
-  );
 
   const sendChat = async () => {
     if (!chatInput.trim() || !studentModal) return;
@@ -420,7 +411,6 @@ export default function CourseEditor({
         initialType={(editing?.lesson?.type as LessonType | undefined) ?? "doc"}
         onClose={() => setEditorOpen(false)}
         onSave={handleEditorSave}
-        onAutoSave={handleAutoSave}
       />}
 
       {/* Student "Ver" modal */}
