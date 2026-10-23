@@ -39,6 +39,7 @@ export function createApp() {
   const authLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 20 });
   const checkoutLimiter = createRateLimiter({ windowMs: 10 * 60_000, max: 15 });
   const contactLimiter = createRateLimiter({ windowMs: 10 * 60_000, max: 10 });
+  const youtubePreviewLimiter = createRateLimiter({ windowMs: 10 * 60_000, max: 30 });
 
   /** Liveness: the process is up. */
   app.get("/health", (_req, res) => {
@@ -68,6 +69,7 @@ export function createApp() {
   app.use("/api/auth/login", authLimiter);
   app.use("/api/checkout", checkoutLimiter);
   app.use("/api/contact", contactLimiter);
+  app.use("/api/teacher/youtube-preview", youtubePreviewLimiter);
 
   app.use("/api/auth", authRouter);
   app.use("/api/student", studentRouter);

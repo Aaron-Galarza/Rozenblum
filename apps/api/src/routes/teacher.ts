@@ -29,10 +29,16 @@ import {
   sendTeacherMessage,
 } from "../services/classroom.js";
 import { asyncRoute, numericParam, parseBody } from "./helpers.js";
+import { getYouTubePreview } from "../services/youtube.js";
 
 export const teacherRouter = Router();
 
 teacherRouter.use(requireAuth, requireRole("profesor", "admin"));
+
+teacherRouter.get("/youtube-preview", asyncRoute(async (req, res) => {
+  const url = z.string().url().max(2048).parse(req.query.url);
+  sendData(res, await getYouTubePreview(url));
+}));
 
 const moduleTitleSchema = z.object({
   title: z.string().trim().min(1).max(180),

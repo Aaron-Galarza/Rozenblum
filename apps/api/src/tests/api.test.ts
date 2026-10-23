@@ -3,6 +3,7 @@ import { after, before, test } from "node:test";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { createMockRepositories } from "../repositories/mock.js";
 import { setRepositoriesForTests } from "../repositories/index.js";
+import { parseYouTubeId } from "../services/youtube.js";
 import { api, startTestServer, type TestServer } from "./helpers.js";
 
 const password = "test-password-12345";
@@ -188,6 +189,8 @@ test("contact form validates and stores messages", async () => {
 
 test("teacher can create, update, and remove lesson content", async () => {
   const token = await login("profesor", teacherEmail);
+  const invalidPreview = await api(server.baseUrl, "/api/teacher/youtube-preview?url=https%3A%2F%2Fexample.test%2Fwatch%3Fv%3DjPTpya17tI0", { token });
+  assert.equal(invalidPreview.status, 400);
   const added = await api<{ data: { id: number; lessons: { id: string }[] }[] }>(
     server.baseUrl, `/api/teacher/courses/${courseId}/modules`, {
       method: "POST", token, body: JSON.stringify({ title: "Editable module" }),
@@ -231,6 +234,13 @@ test("teacher can create, update, and remove lesson content", async () => {
     method: "DELETE", token,
   });
   assert.equal(removed.status, 200);
+});
+
+test("YouTube URL parsing only accepts known video hosts and IDs", () => {
+  assert.equal(parseYouTubeId("https://youtu.be/jPTpya17tI0"), "jPTpya17tI0");
+  assert.equal(parseYouTubeId("https://www.youtube.com/watch?v=jPTpya17tI0"), "jPTpya17tI0");
+  assert.equal(parseYouTubeId("https://youtube.com.evil.test/watch?v=jPTpya17tI0"), null);
+  assert.equal(parseYouTubeId("file:///watch?v=jPTpya17tI0"), null);
 });
 
 test("student and teacher can exchange messages on an active enrollment", async () => {
