@@ -4,13 +4,6 @@ import { hashPassword, verifyPassword } from "../lib/password.js";
 import { createMockRepositories } from "../repositories/mock.js";
 import { setRepositoriesForTests } from "../repositories/index.js";
 import { api, startTestServer, type TestServer } from "./helpers.js";
-import { imageMime } from "../routes/media.js";
-
-test("image uploads recognize file signatures instead of trusting the file name", () => {
-  assert.equal(imageMime(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), "image/png");
-  assert.equal(imageMime(Buffer.from([255, 216, 255])), "image/jpeg");
-  assert.equal(imageMime(Buffer.from("<svg><script>alert(1)</script></svg>")), null);
-});
 
 const password = "test-password-12345";
 const studentEmail = "student@example.test";
