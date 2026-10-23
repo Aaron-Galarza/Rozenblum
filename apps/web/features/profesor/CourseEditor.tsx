@@ -417,7 +417,7 @@ export default function CourseEditor({
         moduleName={editing?.moduleName}
         initialBlocks={editing?.lesson?.content}
         initialDocument={editing?.lesson?.document}
-        initialType={(editing?.lesson?.type as LessonType | undefined) ?? "video"}
+        initialType={(editing?.lesson?.type as LessonType | undefined) ?? "doc"}
         onClose={() => setEditorOpen(false)}
         onSave={handleEditorSave}
         onAutoSave={handleAutoSave}

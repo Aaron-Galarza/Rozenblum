@@ -24,30 +24,33 @@ export function youtubeId(value: string): string | null {
 const YouTubeBlock = createReactBlockSpec(
   {
     type: "youtube",
-    propSchema: { videoId: { default: "" } },
+    propSchema: { videoId: { default: "" }, title: { default: "" }, channel: { default: "" } },
     content: "none",
   },
   {
     render: ({ block }) => {
       const id = block.props.videoId;
-      return <div contentEditable={false} className="my-3 aspect-video max-w-2xl overflow-hidden rounded-lg bg-slate-900">
+      return <div contentEditable={false} className="my-3 w-full min-w-0 overflow-hidden rounded-lg bg-slate-900">
         {/^[A-Za-z0-9_-]{11}$/.test(id)
-          ? <iframe className="h-full w-full" src={`https://www.youtube-nocookie.com/embed/${id}`} title="Video de YouTube" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
+          ? <div className="aspect-video w-full"><iframe className="h-full w-full" src={`https://www.youtube-nocookie.com/embed/${id}`} title={block.props.title || "Video de YouTube"} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" loading="lazy" /></div>
           : <p className="p-5 text-white">Video inválido</p>}
+        {block.props.title && <div className="px-4 py-3 text-sm text-white"><p className="font-semibold">{block.props.title}</p>{block.props.channel && <p className="text-xs text-slate-300">{block.props.channel}</p>}</div>}
       </div>;
     },
   },
 );
 
 const BookmarkBlock = createReactBlockSpec(
-  { type: "bookmark", propSchema: { url: { default: "" }, title: { default: "" } }, content: "none" },
+  { type: "bookmark", propSchema: { url: { default: "" }, title: { default: "" }, channel: { default: "" }, videoId: { default: "" } }, content: "none" },
   { render: ({ block }) => {
     const { url, title } = block.props;
     let safe = false;
     try { safe = ["https:", "http:"].includes(new URL(url).protocol); } catch { /* invalid URL */ }
-    return <div contentEditable={false} className="my-3 max-w-2xl rounded-lg border border-[#d8c6aa] bg-white p-4">
-      {safe ? <a href={url} target="_blank" rel="noopener noreferrer" className="block truncate font-medium text-[#173B6C] underline underline-offset-2">{title || url}</a> : <span>Enlace inválido</span>}
-      {safe && <span className="mt-1 block truncate text-xs text-[#7a8493]">{url}</span>}
+    return <div contentEditable={false} className="my-3 w-full min-w-0 overflow-hidden rounded-lg border border-[#d8c6aa] bg-white">
+      {safe ? <a href={url} target="_blank" rel="noopener noreferrer" className="flex min-w-0 flex-col gap-4 p-3 text-[#173B6C] no-underline hover:bg-[#faf8f5] sm:flex-row">
+        {/^[A-Za-z0-9_-]{11}$/.test(block.props.videoId) && <img src={`https://i.ytimg.com/vi/${block.props.videoId}/hqdefault.jpg`} alt="" loading="lazy" className="aspect-video w-full shrink-0 rounded object-cover sm:w-44" />}
+        <span className="min-w-0 self-center"><strong className="block break-words text-sm leading-snug">{title || url}</strong>{block.props.channel && <span className="mt-1 block text-xs text-[#64748b]">{block.props.channel}</span>}<span className="mt-2 block break-all text-[11px] text-[#7a8493]">{url}</span></span>
+      </a> : <span className="block p-4">Enlace inválido</span>}
     </div>;
   } },
 );

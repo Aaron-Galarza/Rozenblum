@@ -4,10 +4,13 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { BlockColorsItem, DragHandleMenu, RemoveBlockItem, SideMenu, SideMenuController, SuggestionMenuController, getDefaultReactSlashMenuItems, useBlockNoteEditor, useComponentsContext, useCreateBlockNote, useExtensionState, type SideMenuProps } from "@blocknote/react";
 import { filterSuggestionItems, SideMenuExtension } from "@blocknote/core/extensions";
 import { BlockNoteView } from "@blocknote/mantine";
+import { es } from "@blocknote/core/locales";
 import "@blocknote/core/fonts/inter.css";
+import "@blocknote/core/style.css";
+import "@blocknote/react/style.css";
 import "@blocknote/mantine/style.css";
 import type { LessonBlockDTO, LessonType, RichLessonDocument } from "@rozenblum/shared";
-import { uploadLessonImage, errorMessage } from "../../lib/api";
+import { apiFetch, errorMessage } from "../../lib/api";
 import { useModalA11y } from "../../lib/use-modal-a11y";
 import { lessonSchema, noteBlocks, serializeNote, youtubeId, type LessonNoteBlock, type LessonPartialBlock } from "../../lib/lesson-document";
 
@@ -33,6 +36,16 @@ type Props = {
 const isWebUrl = (value: string) => {
   try { return ["https:", "http:"].includes(new URL(value).protocol); }
   catch { return false; }
+};
+type YouTubePreview = { videoId: string; title: string; channel: string };
+const hasContent = (doc: RichLessonDocument) => {
+  const populated = (item: unknown): boolean => {
+    if (!item || typeof item !== "object") return false;
+    const part = item as { type?: string; text?: string; content?: unknown[]; children?: unknown[] };
+    if (["youtube", "bookmark", "file", "image"].includes(part.type ?? "")) return true;
+    return Boolean(part.text?.trim()) || Boolean(part.content?.some(populated)) || Boolean(part.children?.some(populated));
+  };
+  return doc.blocks.some(populated);
 };
 
 function copyBlockWithoutIds(block: LessonNoteBlock): LessonPartialBlock {
@@ -73,17 +86,16 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
   const urlAnchorRef = useRef<string | null>(null);
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
+  const [fetchingPreview, setFetchingPreview] = useState(false);
   const initialContent = useMemo(() => noteBlocks(initialDocument, initialBlocks), []);
   const editor = useCreateBlockNote({
     schema: lessonSchema,
     initialContent,
-    uploadFile: async (file) => {
-      try { return await uploadLessonImage(file); }
-      catch (error) { setStatus(errorMessage(error)); throw error; }
-    },
+    dictionary: es,
     pasteHandler: ({ event, defaultPasteHandler }) => {
       if (Array.from(event.clipboardData?.files ?? []).some((file) => file.type.startsWith("image/"))) {
-        return defaultPasteHandler();
+        setStatus("Las imágenes no están permitidas por ahora.");
+        return true;
       }
       const value = event.clipboardData?.getData("text/plain")?.trim() ?? "";
       if (isWebUrl(value) && !/\s/.test(value)) {
@@ -91,6 +103,10 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
         const rect = window.getSelection()?.getRangeAt(0).getBoundingClientRect();
         if (rect) setUrlMenuPosition({ top: Math.min(window.innerHeight - 230, rect.bottom + 12), left: Math.max(12, Math.min(window.innerWidth - 320, rect.left)) });
         setPendingUrl(value);
+        return true;
+      }
+      if (/<img\b/i.test(event.clipboardData?.getData("text/html") ?? "")) {
+        setStatus("Las imágenes no están permitidas por ahora.");
         return true;
       }
       return defaultPasteHandler();
@@ -104,6 +120,9 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const saveIdRef = useRef(0);
   const changedRef = useRef(false);
+  const autoSaveRef = useRef(onAutoSave);
+  autoSaveRef.current = onAutoSave;
+  const initiallyHadContent = useRef(hasContent(serializeNote(editor.document)));
   const closeDialog = useCallback(() => {
     const dirty = changedRef.current;
     if (dirty && !window.confirm("Hay cambios sin guardar. ¿Cerrar el editor?")) return;
@@ -116,35 +135,52 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
 
   const payload = useCallback((): LessonEditorPayload => {
     const current = latestRef.current;
-    return { title: current.title.trim(), type: current.type, content: [], document: current.document };
-  }, []);
+    return { title: current.title.trim(), type: current.type, content: initialBlocks ?? [], document: current.document };
+  }, [initialBlocks]);
 
   const scheduleSave = useCallback((next: LessonEditorPayload) => {
-    if (mode !== "edit" || !onAutoSave || !next.title) return;
+    if (mode !== "edit" || !autoSaveRef.current || !next.title) return;
     if (timerRef.current) clearTimeout(timerRef.current);
+    if (initiallyHadContent.current && !hasContent(next.document)) {
+      setStatus("La lección quedó vacía. Confirmá con GUARDAR si querés borrar su contenido.");
+      return;
+    }
     timerRef.current = setTimeout(() => {
       const id = ++saveIdRef.current;
       setStatus("Guardando...");
       queueRef.current = queueRef.current.catch(() => undefined).then(async () => {
         if (id !== saveIdRef.current) return;
-        await onAutoSave(next);
+        await autoSaveRef.current?.(next);
         savedRef.current = JSON.stringify({ title: next.title, type: next.type, document: next.document });
         changedRef.current = JSON.stringify({ title: latestRef.current.title.trim(), type: latestRef.current.type, document: latestRef.current.document }) !== savedRef.current;
-        setStatus("✓ Guardado");
+        setStatus(changedRef.current ? "Hay cambios sin guardar" : "✓ Guardado");
       }).catch(() => { setStatus("No se pudo guardar automáticamente"); });
     }, 1200);
-  }, [mode, onAutoSave]);
+  }, [mode]);
 
   useEffect(() => {
     const current = payload();
     changedRef.current = JSON.stringify({ title: current.title, type: current.type, document: current.document }) !== savedRef.current;
-    if (changedRef.current) scheduleSave(current);
+    if (changedRef.current) {
+      setStatus("Hay cambios sin guardar");
+      scheduleSave(current);
+    }
   }, [title, document, payload, scheduleSave]);
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!changedRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
 
   const save = async () => {
     if (!title.trim()) { setStatus("Escribí un título para la lección."); return; }
+    if (initiallyHadContent.current && !hasContent(latestRef.current.document) && !window.confirm("Esta lección quedará vacía. ¿Querés borrar todo su contenido?")) return;
     if (timerRef.current) clearTimeout(timerRef.current);
     ++saveIdRef.current;
     setSaving(true);
@@ -163,15 +199,25 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
     }
   };
 
-  const insertUrl = (kind: "link" | "mention" | "bookmark" | "video" | "file") => {
+  const insertUrl = async (kind: "link" | "mention" | "bookmark" | "video" | "file") => {
     const url = pendingUrl;
     if (!isWebUrl(url)) { setPendingUrl(""); return; }
+    let preview: YouTubePreview | null = null;
+    const id = youtubeId(url);
+    if (kind === "video" && !id) { setStatus("Para insertar video, pegá una URL de YouTube válida."); return; }
+    if (id && ["mention", "bookmark", "video"].includes(kind)) {
+      setFetchingPreview(true);
+      setStatus("Obteniendo información del video...");
+      try { preview = await apiFetch<YouTubePreview>(`/api/teacher/youtube-preview?url=${encodeURIComponent(url)}`, { auth: true }); }
+      catch (error) { setStatus(errorMessage(error)); setFetchingPreview(false); return; }
+      setFetchingPreview(false);
+    }
     const anchor = urlAnchorRef.current ? editor.getBlock(urlAnchorRef.current) : undefined;
     editor.focus();
     if (kind === "link") editor.insertInlineContent([{ type: "link", content: url, href: url }]);
-    if (kind === "mention") editor.insertInlineContent([{ type: "link", content: `@${new URL(url).hostname}`, href: url }]);
+    if (kind === "mention") editor.insertInlineContent([{ type: "link", content: preview ? `▶ ${preview.title} · ${preview.channel}` : `@${new URL(url).hostname}`, href: url }]);
     if (kind === "bookmark") {
-      editor.insertBlocks([{ type: "bookmark", props: { url, title: new URL(url).hostname } }], anchor ?? editor.getTextCursorPosition().block, "after");
+      editor.insertBlocks([{ type: "bookmark", props: { url, title: preview?.title ?? new URL(url).hostname, channel: preview?.channel ?? "", videoId: preview?.videoId ?? "" } }], anchor ?? editor.getTextCursorPosition().block, "after");
     }
     if (kind === "file") {
       const rawName = new URL(url).pathname.split("/").pop() || "Archivo";
@@ -180,9 +226,7 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
       editor.insertBlocks([{ type: "file", props: { url, name } }], anchor ?? editor.getTextCursorPosition().block, "after");
     }
     if (kind === "video") {
-      const id = youtubeId(url);
-      if (!id) { setStatus("Para insertar video, pegá una URL de YouTube válida."); return; }
-      editor.insertBlocks([{ type: "youtube", props: { videoId: id } }], anchor ?? editor.getTextCursorPosition().block, "after");
+      editor.insertBlocks([{ type: "youtube", props: { videoId: id!, title: preview?.title ?? "", channel: preview?.channel ?? "" } }], anchor ?? editor.getTextCursorPosition().block, "after");
     }
     setPendingUrl("");
     urlAnchorRef.current = null;
@@ -220,7 +264,7 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
         <label htmlFor="rich-lesson-title" className="text-xs font-bold text-[#173B6C]">Título</label>
         <input id="rich-lesson-title" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={180} placeholder="Título de la lección" className="min-w-48 flex-1 rounded border border-[#d6d6d6] bg-white px-3 py-2 text-sm text-[#173B6C] outline-[#B58A43]" />
       </div>
-      <div role="toolbar" aria-label="Formato e inserción" className="flex flex-wrap items-center gap-1 border-b border-[#e5ded2] bg-white px-5 py-2">
+      <div role="toolbar" aria-label="Formato e inserción" className="lesson-top-toolbar flex flex-wrap items-center gap-1 border-b border-[#e5ded2] bg-white px-5 py-2">
         {toolbarButton("Texto", () => changeBlock("paragraph"))}
         {toolbarButton("H1", () => changeBlock("heading", 1), "Título principal")}
         {toolbarButton("H2", () => changeBlock("heading", 2), "Título secundario")}
@@ -236,31 +280,28 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
         {toolbarButton("I", () => editor.toggleStyles({ italic: true }), "Cursiva")}
         {toolbarButton("U", () => editor.toggleStyles({ underline: true }), "Subrayado")}
         {toolbarButton("S", () => editor.toggleStyles({ strike: true }), "Tachado")}
-        <label className="flex items-center gap-1 px-2 text-xs text-[#173B6C]">Texto <input aria-label="Color de texto" type="color" defaultValue="#173B6C" onChange={(event) => editor.addStyles({ textColor: event.target.value })} className="h-6 w-7 cursor-pointer" /></label>
-        <label className="flex items-center gap-1 px-2 text-xs text-[#173B6C]">Fondo <input aria-label="Color de fondo" type="color" defaultValue="#ffffff" onChange={(event) => editor.addStyles({ backgroundColor: event.target.value })} className="h-6 w-7 cursor-pointer" /></label>
-        {toolbarButton("Video", () => { urlAnchorRef.current = editor.getTextCursorPosition().block.id; setPendingUrl("https://"); setUrlMenuPosition({ top: 200, left: Math.max(12, window.innerWidth / 2 - 160) }); }, "Insertar video de YouTube")}
       </div>
       <p className="px-6 py-2 text-xs text-[#6c7b90]">Enter crea un bloque · / muestra todos los bloques · + añade debajo · ⋮⋮ permite mover y editar el bloque · pegá una URL para elegir cómo insertarla.</p>
       {pendingUrl && <div role="dialog" aria-label="Opciones para la URL pegada" className="fixed z-[450] w-[min(320px,calc(100vw-24px))] rounded-lg border border-[#B58A43] bg-white p-3 shadow-xl" style={{ top: Math.max(12, urlMenuPosition.top), left: urlMenuPosition.left }}><input autoFocus aria-label="URL para insertar" value={pendingUrl} onChange={(event) => setPendingUrl(event.target.value)} className="mb-2 w-full rounded border border-[#e5ded2] px-2 py-1 text-xs text-[#173B6C]" /><div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => insertUrl("link")} className="rounded bg-[#173B6C] px-3 py-1.5 text-xs text-white">URL</button>
-        <button type="button" onClick={() => insertUrl("mention")} className="rounded border px-3 py-1.5 text-xs">Mencionar</button>
-        <button type="button" onClick={() => insertUrl("bookmark")} className="rounded border px-3 py-1.5 text-xs">Marcador</button>
-        <button type="button" onClick={() => insertUrl("video")} className="rounded border px-3 py-1.5 text-xs">Insertar video</button>
-        <button type="button" onClick={() => insertUrl("file")} className="rounded border px-3 py-1.5 text-xs">Archivo externo</button>
+        <button type="button" disabled={fetchingPreview} onClick={() => void insertUrl("link")} className="rounded bg-[#173B6C] px-3 py-1.5 text-xs text-white">URL</button>
+        <button type="button" disabled={fetchingPreview} onClick={() => void insertUrl("mention")} className="rounded border px-3 py-1.5 text-xs">Mencionar</button>
+        <button type="button" disabled={fetchingPreview} onClick={() => void insertUrl("bookmark")} className="rounded border px-3 py-1.5 text-xs">Marcador</button>
+        <button type="button" disabled={fetchingPreview} onClick={() => void insertUrl("video")} className="rounded border px-3 py-1.5 text-xs">Insertar video</button>
+        <button type="button" disabled={fetchingPreview} onClick={() => void insertUrl("file")} className="rounded border px-3 py-1.5 text-xs">Archivo externo</button>
         <button type="button" onClick={() => setPendingUrl("")} className="px-3 py-1.5 text-xs text-[#72132C]">Cancelar</button>
       </div></div>}
-      <div className="lesson-rich-editor min-h-0 flex-1 px-5 py-4" onKeyDownCapture={handleSpaceShortcut}>
+      <div className="lesson-rich-editor min-h-0 flex-1 px-5 py-4" onKeyDownCapture={handleSpaceShortcut} onDropCapture={(event) => { if (Array.from(event.dataTransfer.files).some((file) => file.type.startsWith("image/"))) { event.preventDefault(); event.stopPropagation(); setStatus("Las imágenes no están permitidas por ahora."); } }}>
         <BlockNoteView editor={editor} theme="light" sideMenu={false} slashMenu={false} onChange={() => setDocument(serializeNote(editor.document))}>
           <SideMenuController sideMenu={LessonSideMenu} />
           <SuggestionMenuController triggerCharacter="/" getItems={async (query) => filterSuggestionItems([
-            ...getDefaultReactSlashMenuItems(editor).filter((item) => !["Video", "Audio", "File"].includes(item.title)),
+            ...getDefaultReactSlashMenuItems(editor).filter((item) => !["Video", "Audio", "File", "Image", es.slash_menu.image.title, es.slash_menu.video.title, es.slash_menu.audio.title, es.slash_menu.file.title].includes(item.title)),
             { title: "Video de YouTube", subtext: "Insertar video no listado", group: "Multimedia", aliases: ["youtube", "video"], onItemClick: () => { urlAnchorRef.current = editor.getTextCursorPosition().block.id; setPendingUrl("https://"); setUrlMenuPosition({ top: 200, left: Math.max(12, window.innerWidth / 2 - 160) }); } },
             { title: "Marcador web", subtext: "Insertar enlace como tarjeta", group: "Multimedia", aliases: ["bookmark", "enlace"], onItemClick: () => { urlAnchorRef.current = editor.getTextCursorPosition().block.id; setPendingUrl("https://"); setUrlMenuPosition({ top: 200, left: Math.max(12, window.innerWidth / 2 - 160) }); } },
             { title: "Archivo externo", subtext: "Enlazar PDF o documento por URL", group: "Multimedia", aliases: ["pdf", "documento", "powerpoint"], onItemClick: () => { urlAnchorRef.current = editor.getTextCursorPosition().block.id; setPendingUrl("https://"); setUrlMenuPosition({ top: 200, left: Math.max(12, window.innerWidth / 2 - 160) }); } },
           ], query)} />
         </BlockNoteView>
       </div>
-      <div className="border-t border-[#e5ded2] bg-white px-6 py-2 text-xs text-[#6c7b90]" role="status" aria-live="polite">{status || (mode === "edit" ? "Guardado automático activado" : "Guardá para crear la lección")}</div>
+      <div className="border-t border-[#e5ded2] bg-white px-6 py-2 text-xs text-[#6c7b90]" role="status" aria-live="polite">{status || (mode === "edit" ? "Guardado automático activado" : "Guardá para crear la lección")} · Las imágenes no están permitidas por ahora.</div>
     </div>
   </div>;
 }

@@ -72,6 +72,54 @@ body {
 /* BlockNote 0.50 portals floating controls to body at z-index 80. The lesson dialog is z-300. */
 body > .bn-root { position: relative; z-index: 400; }
 .lesson-rich-viewer .bn-editor { padding: 0; }
+.lesson-rich-editor .bn-block-content[data-content-type="youtube"],
+.lesson-rich-editor .bn-block-content[data-content-type="bookmark"],
+.lesson-rich-viewer .bn-block-content[data-content-type="youtube"],
+.lesson-rich-viewer .bn-block-content[data-content-type="bookmark"] { width: 100%; min-width: 0; }
+.lesson-rich-editor .bn-block-content[data-content-type="youtube"] > *,
+.lesson-rich-editor .bn-block-content[data-content-type="bookmark"] > *,
+.lesson-rich-viewer .bn-block-content[data-content-type="youtube"] > *,
+.lesson-rich-viewer .bn-block-content[data-content-type="bookmark"] > * { width: 100%; min-width: 0; }
+.lesson-top-toolbar [aria-label="Negrita"] { font-weight: 900; }
+.lesson-top-toolbar [aria-label="Cursiva"] { font-style: italic; font-family: Georgia, serif; font-size: 16px; }
+.lesson-top-toolbar [aria-label="Subrayado"] { text-decoration: underline; text-underline-offset: 3px; }
+.lesson-top-toolbar [aria-label="Tachado"] { text-decoration: line-through; }
+/* BlockNote portals its floating menus outside the dialog. Brand those controls there too. */
+body > .bn-root.bn-mantine .bn-suggestion-menu,
+body > .bn-root.bn-mantine .bn-menu-dropdown,
+body > .bn-root.bn-mantine .bn-toolbar {
+  background: #fff;
+  color: #173b6c;
+  border: 1px solid #d8c6aa;
+  border-radius: 10px;
+  box-shadow: 0 14px 36px rgba(23, 59, 108, .18);
+}
+body > .bn-root.bn-mantine .bn-suggestion-menu-item[aria-selected="true"],
+body > .bn-root.bn-mantine .bn-suggestion-menu-item:hover,
+body > .bn-root.bn-mantine .mantine-Menu-item:hover,
+body > .bn-root.bn-mantine .bn-toolbar button:hover { background: #f4ead8; color: #173b6c; }
+body > .bn-root.bn-mantine .bn-suggestion-menu-label { color: #9a7435; font-weight: 700; letter-spacing: .04em; }
+body > .bn-root.bn-mantine .bn-suggestion-menu-item svg { color: #b58a43; }
+body > .bn-root.bn-mantine .bn-toolbar button[data-selected] { background: #173b6c; color: white; }
+/* BlockNote's color-picker icons carry data attributes but no swatch paint in v0.50. */
+.bn-root .bn-color-icon[data-text-color="gray"] { color: var(--bn-colors-highlights-gray-text); }
+.bn-root .bn-color-icon[data-text-color="brown"] { color: var(--bn-colors-highlights-brown-text); }
+.bn-root .bn-color-icon[data-text-color="red"] { color: var(--bn-colors-highlights-red-text); }
+.bn-root .bn-color-icon[data-text-color="orange"] { color: var(--bn-colors-highlights-orange-text); }
+.bn-root .bn-color-icon[data-text-color="yellow"] { color: var(--bn-colors-highlights-yellow-text); }
+.bn-root .bn-color-icon[data-text-color="green"] { color: var(--bn-colors-highlights-green-text); }
+.bn-root .bn-color-icon[data-text-color="blue"] { color: var(--bn-colors-highlights-blue-text); }
+.bn-root .bn-color-icon[data-text-color="purple"] { color: var(--bn-colors-highlights-purple-text); }
+.bn-root .bn-color-icon[data-text-color="pink"] { color: var(--bn-colors-highlights-pink-text); }
+.bn-root .bn-color-icon[data-background-color="gray"] { background: var(--bn-colors-highlights-gray-background); }
+.bn-root .bn-color-icon[data-background-color="brown"] { background: var(--bn-colors-highlights-brown-background); }
+.bn-root .bn-color-icon[data-background-color="red"] { background: var(--bn-colors-highlights-red-background); }
+.bn-root .bn-color-icon[data-background-color="orange"] { background: var(--bn-colors-highlights-orange-background); }
+.bn-root .bn-color-icon[data-background-color="yellow"] { background: var(--bn-colors-highlights-yellow-background); }
+.bn-root .bn-color-icon[data-background-color="green"] { background: var(--bn-colors-highlights-green-background); }
+.bn-root .bn-color-icon[data-background-color="blue"] { background: var(--bn-colors-highlights-blue-background); }
+.bn-root .bn-color-icon[data-background-color="purple"] { background: var(--bn-colors-highlights-purple-background); }
+.bn-root .bn-color-icon[data-background-color="pink"] { background: var(--bn-colors-highlights-pink-background); }
 .lesson-rich-editor .bn-editor h1,
 .lesson-rich-editor .bn-editor h2,
 .lesson-rich-viewer .bn-editor h1,
