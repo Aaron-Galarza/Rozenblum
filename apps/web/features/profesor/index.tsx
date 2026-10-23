@@ -31,6 +31,7 @@ function toEditableModules(modules: ModuleDTO[]): EditableModule[] {
       title: lesson.title,
       type: lesson.type,
       content: lesson.content,
+        document: lesson.document,
     })),
   }));
 }

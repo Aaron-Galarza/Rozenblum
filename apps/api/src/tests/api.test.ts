@@ -206,7 +206,7 @@ test("teacher can create, update, and remove lesson content", async () => {
   assert.equal(lesson.status, 201);
   const lessonId = lesson.body.data.find((module) => module.id === moduleId)?.lessons[0]?.id;
   assert.ok(lessonId);
-  const edited = await api(server.baseUrl, `/api/teacher/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}`, {
+  const edited = await api<{ data: { id: number; lessons: { id: string; document?: { blocks: unknown[] } }[] }[] }>(server.baseUrl, `/api/teacher/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}`, {
     method: "PATCH", token, body: JSON.stringify({ title: "Updated lesson", content: [], document: {
       version: 1,
       blocks: [
@@ -216,6 +216,9 @@ test("teacher can create, update, and remove lesson content", async () => {
     } }),
   });
   assert.equal(edited.status, 200);
+  assert.equal(edited.body.data.find((module) => module.id === moduleId)?.lessons[0]?.document?.blocks.length, 2);
+  const reopened = await api<{ data: { modules: { id: number; lessons: { id: string; document?: { blocks: unknown[] } }[] }[] } }>(server.baseUrl, `/api/teacher/courses/${courseId}`, { token });
+  assert.equal(reopened.body.data.modules.find((module) => module.id === moduleId)?.lessons[0]?.document?.blocks.length, 2);
   const stored = await repositories.courses.findById(courseId);
   const richLesson = stored?.modules.find((module) => module.id === moduleId)?.lessons.find((item) => item.id === lessonId);
   assert.equal(richLesson?.document?.blocks.length, 2);

@@ -378,6 +378,7 @@ function buildModuleDTOs(course: StoredCourse): ModuleDTO[] {
       highlight: lesson.highlight,
       position: lesson.position,
       content: lesson.content,
+      document: lesson.document,
     })),
   }));
 }
