@@ -6,6 +6,7 @@ import type {
   RichLessonDocument,
   ModuleDTO,
 } from "@rozenblum/shared";
+import { richLessonDocumentSchema } from "@rozenblum/shared";
 import { badRequest, forbidden, notFound } from "../lib/http.js";
 import { formatArs, newId } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
@@ -156,6 +157,12 @@ function nextLessonId(mod: StoredModule): string {
 }
 
 async function persistModules(course: StoredCourse, modules: StoredModule[]): Promise<StoredCourse> {
+  const invalidDocument = modules.some((mod) =>
+    mod.lessons.some(
+      (lesson) => lesson.document && !richLessonDocumentSchema.safeParse(lesson.document).success,
+    ),
+  );
+  if (invalidDocument) throw badRequest("El documento de una lección no es válido.");
   const updated = await getRepositories().courses.saveModules(course.legacyId, modules);
   if (!updated) throw notFound("Curso no encontrado.");
   return updated;

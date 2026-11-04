@@ -226,6 +226,12 @@ test("teacher can create, update, and remove lesson content", async () => {
   const richLesson = stored?.modules.find((module) => module.id === moduleId)?.lessons.find((item) => item.id === lessonId);
   assert.equal(richLesson?.document?.blocks.length, 2);
   assert.equal((richLesson?.document?.blocks[0]?.content as { styles: { bold: boolean } }[])[0]?.styles.bold, true);
+  const oversized = await api(server.baseUrl, `/api/teacher/courses/${courseId}/modules/${moduleId}/lessons`, {
+    method: "POST", token, body: JSON.stringify({
+      title: "Oversized lesson", type: "doc", content: [{ id: "big", type: "paragraph", content: "x".repeat(20_001) }],
+    }),
+  });
+  assert.equal(oversized.status, 400);
   const rejected = await api(server.baseUrl, `/api/teacher/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}`, {
     method: "PATCH", token, body: JSON.stringify({ document: { version: 1, blocks: [{ id: "bad", type: "file", props: { url: "javascript:alert(1)" } }] } }),
   });

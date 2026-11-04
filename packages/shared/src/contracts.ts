@@ -209,12 +209,12 @@ export const richLessonDocumentSchema = z.object({
 });
 
 export const lessonBlockSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().min(1).max(100),
   type: z.enum(BLOCK_TYPES),
-  content: z.string(),
-  items: z.array(z.string()).optional(),
+  content: z.string().max(20_000),
+  items: z.array(z.string().max(20_000)).max(1000).optional(),
   expanded: z.boolean().optional(),
-  toggleContent: z.string().optional(),
+  toggleContent: z.string().max(20_000).optional(),
 }).superRefine((block, ctx) => {
   if (block.type !== "link") return;
   try {
@@ -229,7 +229,7 @@ export const lessonBlockSchema = z.object({
 export const lessonPayloadSchema = z.object({
   title: z.string().trim().min(1).max(180),
   type: z.enum(LESSON_TYPES),
-  content: z.array(lessonBlockSchema).optional(),
+  content: z.array(lessonBlockSchema).max(500).optional(),
   document: richLessonDocumentSchema.optional(),
 });
 
