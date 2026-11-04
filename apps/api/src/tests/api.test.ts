@@ -5,6 +5,7 @@ import { hashPassword, verifyPassword } from "../lib/password.js";
 import { createMockRepositories } from "../repositories/mock.js";
 import { setRepositoriesForTests } from "../repositories/index.js";
 import { parseYouTubeId } from "../services/youtube.js";
+import { login as loginService } from "../services/auth.js";
 import { api, startTestServer, type TestServer } from "./helpers.js";
 
 const password = "test-password-12345";
@@ -107,6 +108,15 @@ test("login requires a valid email, password, and role", async () => {
   const token = await login("admin", adminEmail);
   const session = await api(server.baseUrl, "/api/auth/session", { token });
   assert.equal(session.status, 200);
+  for (const email of ["missing@example.test", studentEmail]) {
+    await assert.rejects(
+      loginService({ role: "admin", email, password }),
+      (error: unknown) => {
+        const candidate = error as { status?: number; message?: string };
+        return candidate.status === 401 && candidate.message === "Correo o contraseña incorrectos.";
+      },
+    );
+  }
 });
 
 test("published courses expose metadata while lesson content remains private", async () => {
