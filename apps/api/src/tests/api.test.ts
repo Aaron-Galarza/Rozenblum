@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { loginSchema } from "@rozenblum/shared";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { createMockRepositories } from "../repositories/mock.js";
 import { setRepositoriesForTests } from "../repositories/index.js";
@@ -100,6 +101,9 @@ test("login requires a valid email, password, and role", async () => {
     body: JSON.stringify({ role: "admin", email: adminEmail, password: "wrong" }),
   });
   assert.equal(wrong.status, 401);
+  assert.equal(loginSchema.safeParse({
+    role: "admin", email: adminEmail, password: "x".repeat(129),
+  }).success, false);
   const token = await login("admin", adminEmail);
   const session = await api(server.baseUrl, "/api/auth/session", { token });
   assert.equal(session.status, 200);
