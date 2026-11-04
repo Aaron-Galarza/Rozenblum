@@ -5,7 +5,6 @@ import { initialsFromName } from "../lib/utils.js";
 import { env } from "../config/env.js";
 import type { Pagination } from "../lib/pagination.js";
 import { getRepositories } from "../repositories/index.js";
-import type { StoredUser } from "../types.js";
 import { settingsToDTO, userToDTO } from "./mappers.js";
 import type { UserDTO } from "@rozenblum/shared";
 
@@ -113,6 +112,7 @@ export async function updateSettings(input: {
 export async function listAdminUsers(
   role: "alumno" | "profesor",
   page?: Pagination,
-): Promise<StoredUser[]> {
-  return getRepositories().users.list(role, page);
+): Promise<UserDTO[]> {
+  const users = await getRepositories().users.list(role, page);
+  return users.map(userToDTO);
 }

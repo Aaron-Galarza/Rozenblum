@@ -272,9 +272,10 @@ test("admin settings and paginated lists use repository data", async () => {
   assert.equal(saved.status, 200);
   const publicSettings = await api<{ data: { companyName: string } }>(server.baseUrl, "/api/settings");
   assert.equal(publicSettings.body.data.companyName, "Updated Test Company");
-  const users = await api<{ data: unknown[] }>(server.baseUrl, "/api/admin/users?role=alumno&limit=1&offset=0", { token });
+  const users = await api<{ data: Record<string, unknown>[] }>(server.baseUrl, "/api/admin/users?role=alumno&limit=1&offset=0", { token });
   assert.equal(users.status, 200);
   assert.equal(users.body.data.length, 1);
+  assert.equal("passwordHash" in users.body.data[0], false);
 });
 
 test("payment reversal revokes course access", async () => {
