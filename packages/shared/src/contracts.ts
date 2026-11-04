@@ -254,7 +254,7 @@ export const coursePayloadSchema = z.object({
   duration: z.string().trim().min(1).max(60),
   professor: z.string().trim().min(1).max(120),
   status: z.enum(["published", "draft"]).default("draft"),
-  img: z.string().trim().url().optional(),
+  img: z.string().trim().url().refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
 });
 
 /* ──────────────────────────────────────────────────────────────────────────────
@@ -340,7 +340,10 @@ export const siteSettingsSchema = z.object({
   companyName: z.string().trim().min(2).max(120),
   supportEmail: z.string().trim().email(),
   contactWhatsapp: z.string().trim().regex(/^\d{8,18}$/),
-  logoUrl: z.string().trim().max(500),
+  logoUrl: z.string().trim().max(500).refine(
+    (value) => value === "" || safeDocumentUrl(value),
+    "El logo debe usar http o https.",
+  ),
   privacyText: z.string().trim().min(10).max(10000),
 });
 
@@ -392,7 +395,7 @@ export const adminCoursePatchSchema = z.object({
   duration: z.string().trim().min(1).max(60).optional(),
   level: z.string().trim().min(1).max(60).optional(),
   status: z.enum(["published", "draft"]).optional(),
-  img: z.string().trim().url().optional(),
+  img: z.string().trim().url().refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
 });
 
 export const orderStatusSchema = z.object({

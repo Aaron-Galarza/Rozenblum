@@ -347,8 +347,10 @@ test("text fields, prices, IDs and lesson blocks reject invalid boundaries", asy
     { path: `/api/teacher/courses/${courseId}/modules/1/lessons`, method: "POST", token: teacherToken, body: { title: "Bad link", type: "doc", content: [{ id: "bad", type: "link", content: "javascript:alert(1)" }] } },
     { path: `/api/teacher/courses/${courseId}/modules/1/lessons/reorder`, method: "PUT", token: teacherToken, body: { ids: [] } },
     { path: "/api/admin/courses", method: "POST", token: adminToken, body: { title: "Valid title", description: "Valid description", priceCents: -1, professor: "Test profesor", duration: "Online", level: "Inicial" } },
+    { path: "/api/admin/courses", method: "POST", token: adminToken, body: { title: "Valid title", description: "Valid description", priceCents: 1000, professor: "Test profesor", duration: "Online", level: "Inicial", img: "data:image/png;base64,AAAA" } },
     { path: "/api/admin/users", method: "POST", token: adminToken, body: { role: "alumno", name: "New Student", email: "new@example.test", password: "short" } },
     { path: "/api/admin/settings", method: "PUT", token: adminToken, body: { companyName: "Test Company", supportEmail: "support@example.test", contactWhatsapp: "abc", logoUrl: "", privacyText: "A complete privacy policy" } },
+    { path: "/api/admin/settings", method: "PUT", token: adminToken, body: { companyName: "Test Company", supportEmail: "support@example.test", contactWhatsapp: "5491112345678", logoUrl: "javascript:alert(1)", privacyText: "A complete privacy policy" } },
     { path: "/api/admin/orders/unknown", method: "PATCH", token: adminToken, body: { estado: "Unknown" } },
   ];
   for (const item of cases) {
