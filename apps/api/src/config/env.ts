@@ -15,7 +15,6 @@ const envSchema = z.object({
    */
   TRUST_PROXY: z.string().trim().optional(),
   MERCADOPAGO_ACCESS_TOKEN: z.string().optional(),
-  MERCADOPAGO_PUBLIC_KEY: z.string().optional(),
   MERCADOPAGO_WEBHOOK_SECRET: z.string().optional(),
   MERCADOPAGO_NOTIFICATION_URL: z.union([z.string().url(), z.literal("")]).optional(),
   WEB_PUBLIC_URL: z.union([z.string().url(), z.literal("")]).optional(),
