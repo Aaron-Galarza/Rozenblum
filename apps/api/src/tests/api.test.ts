@@ -214,6 +214,51 @@ test("image gallery requires authentication and restricts folder and file types"
     body: Buffer.from("not-a-png"),
   });
   assert.equal(invalid.status, 400);
+
+  const asset = {
+    asset_id: "test-asset",
+    public_id: "Rozenblum/courses/test-asset",
+    secure_url: "https://res.cloudinary.com/test-cloud/image/upload/v1/Rozenblum/courses/test-asset.png",
+    asset_folder: "Rozenblum/courses",
+    resource_type: "image",
+    width: 1,
+    height: 1,
+    bytes: 8,
+    format: "png",
+    created_at: new Date().toISOString(),
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith("https://api.cloudinary.com/v1_1/test-cloud/image/upload")) {
+      const body = init?.body as FormData;
+      assert.equal(body.get("asset_folder"), "Rozenblum/courses");
+      assert.equal(body.get("use_asset_folder_as_public_id_prefix"), "true");
+      return new Response(JSON.stringify(asset), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.startsWith("https://api.cloudinary.com/v1_1/test-cloud/resources/by_asset_folder")) {
+      assert.equal(new URL(url).searchParams.get("asset_folder"), "Rozenblum/courses");
+      return new Response(JSON.stringify({ resources: [asset] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const uploaded = await fetch(`${server.baseUrl}/api/media/courses`, {
+      method: "POST",
+      headers: { "content-type": "image/png", authorization: `Bearer ${teacherToken}` },
+      body: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    });
+    assert.equal(uploaded.status, 201);
+    const uploadedBody = await uploaded.json() as { data: { url: string } };
+    assert.equal(uploadedBody.data.url, asset.secure_url);
+    const gallery = await api<{ data: { images: { url: string }[] } }>(
+      server.baseUrl, "/api/media/courses", { token: teacherToken },
+    );
+    assert.equal(gallery.status, 200);
+    assert.deepEqual(gallery.body.data.images.map((image) => image.url), [asset.secure_url]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("student progress unlocks modules and teacher edits stay role guarded", async () => {
