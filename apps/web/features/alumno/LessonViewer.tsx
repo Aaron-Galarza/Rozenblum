@@ -87,7 +87,7 @@ export default function LessonViewer({
   return (
     <main className="flex-1 overflow-y-auto">
       {/* Course header gradient */}
-      <div className="px-10 py-8" style={{ background: "linear-gradient(135deg, #173B6C 0%, #1e4d8c 100%)" }}>
+      <div className="px-4 py-6 sm:px-10 sm:py-8" style={{ background: "linear-gradient(135deg, #173B6C 0%, #1e4d8c 100%)" }}>
         <h2 className="text-3xl font-bold mb-1" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>{courseTitle}</h2>
         <p className="text-sm mb-4" style={{ color: "rgba(250,248,245,0.85)" }}>{professor}</p>
         <div>
@@ -99,8 +99,8 @@ export default function LessonViewer({
       </div>
 
       {/* Lesson content */}
-      <div className="p-8 max-w-3xl">
-        <div className="p-8 rounded-lg shadow-sm" style={{ backgroundColor: "#FFFFFF" }}>
+      <div className="max-w-3xl px-3 py-5 sm:p-8">
+        <div className="rounded-lg p-4 shadow-sm sm:p-8" style={{ backgroundColor: "#FFFFFF" }}>
           <div className="flex items-center gap-3 mb-6 flex-wrap">
             <h3 className="text-2xl font-medium" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>
               Lección {selectedLesson.id}: {selectedLesson.title}
