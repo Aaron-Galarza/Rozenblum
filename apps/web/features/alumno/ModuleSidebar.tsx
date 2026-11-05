@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import type { CourseModuleView, Lesson } from "../../types";
 import { TypeIcon } from "../../components/icons";
+import { optimizedImage } from "../../lib/images";
 
 type ModuleSidebarProps = {
   modules: CourseModuleView[];
@@ -67,7 +68,7 @@ export default function ModuleSidebar({
         <div className="rounded p-3 mb-4" style={{ backgroundColor: "#F5F5F5", borderLeft: "4px solid #B58A43" }}>
           <div className="w-full h-24 rounded mb-2 overflow-hidden" style={{ backgroundColor: "#D0D0D0" }}>
             {courseImg && (
-              <img src={courseImg} alt={courseTitle} className="w-full h-full object-cover" />
+              <img src={optimizedImage(courseImg, 320)} alt={courseTitle} className="w-full h-full object-cover" />
             )}
           </div>
           <p className="text-sm font-semibold" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{courseTitle}</p>

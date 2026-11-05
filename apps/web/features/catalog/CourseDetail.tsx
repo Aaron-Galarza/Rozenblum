@@ -1,25 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { HomeContentDTO } from "@rozenblum/shared";
+import type { CourseDetailDTO, HomeContentDTO } from "@rozenblum/shared";
 import type { Course, DetailTab } from "../../types";
 import { apiFetch } from "../../lib/api";
+import { optimizedImage, responsiveImageSet } from "../../lib/images";
 
 type CourseDetailProps = {
   course: Course;
+  professor: CourseDetailDTO["professor"] | null;
   onBack: () => void;
   onBuy: () => void;
 };
 
-export default function CourseDetail({ course, onBack, onBuy }: CourseDetailProps) {
+export default function CourseDetail({ course, professor, onBack, onBuy }: CourseDetailProps) {
   const [tab, setTab] = useState<DetailTab>("descripcion");
   const [expandedMods, setExpandedMods] = useState<number[]>([1]);
   const [homeContent, setHomeContent] = useState<HomeContentDTO | null>(null);
 
   useEffect(() => {
-    apiFetch<HomeContentDTO>("/api/content/home").then(setHomeContent).catch(() => setHomeContent(null));
-  }, []);
-  const teacher = homeContent?.team.find((member) => member.name === course.professor);
+    if (!professor?.img) apiFetch<HomeContentDTO>("/api/content/home").then(setHomeContent).catch(() => setHomeContent(null));
+  }, [professor?.img]);
+  const teacherPhoto = professor?.img ?? homeContent?.team.find((member) => member.name === course.professor)?.img;
 
   const toggleMod = (id: number) =>
     setExpandedMods((prev) => prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]);
@@ -42,13 +44,13 @@ export default function CourseDetail({ course, onBack, onBuy }: CourseDetailProp
             className="w-full flex items-center justify-center mb-8 rounded-lg overflow-hidden"
             style={{ aspectRatio: "16/9", backgroundColor: "#0f172a", position: "relative" }}
           >
-            <img src={course.img} alt={course.title} className="absolute inset-0 w-full h-full object-cover opacity-40" />
+            <img src={optimizedImage(course.img, 960)} srcSet={responsiveImageSet(course.img)} sizes="(max-width: 1024px) 100vw, 65vw" alt={course.title} className="absolute inset-0 w-full h-full object-cover opacity-40" />
           </div>
 
           <h1 className="text-4xl lg:text-5xl font-light mb-2" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>
             {course.title}
           </h1>
-          <p className="text-sm mb-8" style={{ color: "rgba(23,59,108,0.65)" }}>Por {course.professor}</p>
+          <p className="text-sm mb-8" style={{ color: "rgba(23,59,108,0.65)" }}>Por {professor?.name ?? course.professor}</p>
 
           {/* Tabs */}
           <div className="flex" style={{ borderBottom: "2px solid rgba(23,59,108,0.1)" }}>
@@ -118,13 +120,12 @@ export default function CourseDetail({ course, onBack, onBuy }: CourseDetailProp
 
             {tab === "docente" && (
               <div className="flex gap-5 items-start">
-                {teacher?.img && <div className="w-20 h-20 rounded-full overflow-hidden flex-shrink-0" style={{ border: "3px solid #B58A43" }}>
-                  <img src={teacher.img} alt={teacher.name} className="w-full h-full object-cover" />
+                {teacherPhoto && <div className="w-20 h-20 rounded-full overflow-hidden flex-shrink-0" style={{ border: "3px solid #B58A43" }}>
+                  <img src={optimizedImage(teacherPhoto, 320)} alt={professor?.name ?? course.professor} className="w-full h-full object-cover" />
                 </div>}
                 <div>
-                  <h3 className="text-2xl font-medium mb-1" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{course.professor}</h3>
+                  <h3 className="text-2xl font-medium mb-1" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{professor?.name ?? course.professor}</h3>
                   <p className="text-xs mb-3" style={{ color: "#B58A43" }}>Docente del curso</p>
-                  {teacher && <p className="text-sm leading-relaxed" style={{ color: "rgba(23,59,108,0.7)" }}>{teacher.role}</p>}
                 </div>
               </div>
             )}

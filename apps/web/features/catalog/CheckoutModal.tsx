@@ -15,13 +15,13 @@ type CheckoutModalProps = {
 export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutModalProps) {
   const titleId = useId();
   const dialogRef = useModalA11y<HTMLDivElement>(onClose);
-  const [form, setForm] = useState({ nombre: "", email: "", password: "" });
+  const [form, setForm] = useState({ nombre: "", email: "", dni: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.nombre || !form.email || !form.password) return;
+    if (!form.nombre || !form.email || !/^\d{7,8}$/.test(form.dni)) return;
     setLoading(true);
     setError("");
     try {
@@ -31,7 +31,7 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
           courseSlug: course.slug ?? String(course.id),
           nombre: form.nombre,
           email: form.email,
-          password: form.password,
+          dni: form.dni,
         },
       });
       onSuccess(result.order.externalReference ?? result.order.id, form.email);
@@ -88,15 +88,17 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
           {[
             { id: "nombre", label: "Nombre y Apellido *", type: "text", placeholder: "Juan García" },
             { id: "email", label: "Correo Electrónico *", type: "email", placeholder: "juan@email.com" },
-            { id: "password", label: "Contraseña de tu cuenta o nueva contraseña *", type: "password", placeholder: "Mínimo 12 caracteres" },
+            { id: "dni", label: "DNI *", type: "text", placeholder: "Sin puntos, 7 u 8 dígitos" },
           ].map(({ id, label, type, placeholder }) => (
             <div key={id} className="flex flex-col gap-1.5">
               <label htmlFor={id} className="text-xs font-medium tracking-widest uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>{label}</label>
               <input
                 id={id}
                 required
-                maxLength={id === "nombre" ? 120 : id === "password" ? 128 : undefined}
-                minLength={id === "password" ? 12 : id === "nombre" ? 3 : undefined}
+                maxLength={id === "nombre" ? 120 : id === "dni" ? 8 : undefined}
+                minLength={id === "dni" ? 7 : id === "nombre" ? 3 : undefined}
+                pattern={id === "dni" ? "\\d{7,8}" : undefined}
+                inputMode={id === "dni" ? "numeric" : undefined}
                 type={type}
                 placeholder={placeholder}
                 value={form[id as keyof typeof form]}
@@ -112,7 +114,7 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
           {/* Registration status */}
           <div className="p-4 rounded" style={{ backgroundColor: "#F5F5F5" }}>
             <p className="text-xs font-bold tracking-widest uppercase mb-2" style={{ color: "#173B6C" }}>Solicitud de inscripción</p>
-            <p className="text-xs leading-relaxed" style={{ color: "rgba(23,59,108,0.7)" }}>Si ya tenés cuenta, ingresá su contraseña. Si es tu primera inscripción, se creará una cuenta con la contraseña que elijas. No se realiza ningún cobro en este sitio; consultá las instrucciones de pago por WhatsApp al finalizar.</p>
+            <p className="text-xs leading-relaxed" style={{ color: "rgba(23,59,108,0.7)" }}>Tu DNI será la contraseña inicial de tu cuenta. La cuenta se crea automáticamente cuando se confirme el pago y el acceso se habilita al aula. No se realiza ningún cobro en este sitio; consultá las instrucciones de pago por WhatsApp al finalizar.</p>
           </div>
 
           {error && (

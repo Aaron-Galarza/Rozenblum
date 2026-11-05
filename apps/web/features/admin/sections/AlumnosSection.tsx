@@ -10,18 +10,17 @@ const inputStyle: React.CSSProperties = { border: "1px solid rgba(23,59,108,0.2)
 
 type AlumnosSectionProps = {
   alumnos: AdminAlumnoDTO[];
-  onCreate: (input: { name: string; email: string; password: string }) => Promise<void>;
-  onUpdate: (id: string, patch: { name: string; email: string; password?: string }) => Promise<void>;
+  onUpdate: (id: string, patch: { name: string; email: string }) => Promise<void>;
   onToggleStatus: (alumno: AdminAlumnoDTO) => Promise<void>;
   onDelete: (alumno: AdminAlumnoDTO) => Promise<void>;
 };
-type ModalState = { type: "ver" | "editar" | "crear"; item?: AdminAlumnoDTO } | null;
+type ModalState = { type: "ver" | "editar"; item?: AdminAlumnoDTO } | null;
 
-export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleStatus, onDelete }: AlumnosSectionProps) {
+export default function AlumnosSection({ alumnos, onUpdate, onToggleStatus, onDelete }: AlumnosSectionProps) {
   const [search, setSearch] = useState("");
   const [estadoFilter, setEstadoFilter] = useState("Todos");
   const [modal, setModal] = useState<ModalState>(null);
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({ name: "", email: "" });
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -50,27 +49,15 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
       showToast(a.estado === "Activo" ? `${a.name} suspendido` : `${a.name} reactivado`);
     });
 
-  const createAlumno = () => {
-    if (form.name.trim().length < 3 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.password.length < 12) {
-      showToast("Ingresá nombre, correo válido y una contraseña de al menos 12 caracteres.", true);
-      return;
-    }
-    void run(async () => {
-      await onCreate({ name: form.name.trim(), email: form.email.trim(), password: form.password });
-      setModal(null);
-      showToast("✓ Alumno creado correctamente");
-    });
-  };
-
   const saveEdit = () => {
     if (!modal?.item) return;
-    if (form.name.trim().length < 3 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || (form.password && form.password.length < 12)) {
-      showToast("Revisá nombre, correo y contraseña (mínimo 12 caracteres si la cambiás).", true);
+    if (form.name.trim().length < 3 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      showToast("Revisá nombre y correo.", true);
       return;
     }
     const item = modal.item;
     void run(async () => {
-      await onUpdate(item.id, { name: form.name, email: form.email, ...(form.password ? { password: form.password } : {}) });
+      await onUpdate(item.id, { name: form.name, email: form.email });
       setModal(null);
       showToast("✓ Cambios guardados");
     });
@@ -80,11 +67,9 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
     <>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <h2 className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Gestión de Alumnos</h2>
-        <div className="flex gap-2 flex-wrap">
-          <button onClick={() => { setForm({ name: "", email: "", password: "" }); setModal({ type: "crear" }); }} className="px-5 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
-            + CREAR NUEVO ALUMNO
-          </button>
-        </div>
+        <p className="text-xs max-w-md leading-relaxed" style={{ color: "rgba(23,59,108,0.55)" }}>
+          Los alumnos se crean automáticamente cuando se confirma el pago de una inscripción. Su contraseña inicial es el DNI informado en el checkout.
+        </p>
       </div>
 
       {/* Filters */}
@@ -143,7 +128,7 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
                     <button onClick={() => setModal({ type: "ver", item: a })} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity" style={{ color: "#173B6C" }}>Ver</button>
-                    <button disabled={busy} onClick={() => { setForm({ name: a.name, email: a.email, password: "" }); setModal({ type: "editar", item: a }); }} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#173B6C" }}>Editar</button>
+                    <button disabled={busy} onClick={() => { setForm({ name: a.name, email: a.email }); setModal({ type: "editar", item: a }); }} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#173B6C" }}>Editar</button>
                     <button disabled={busy} onClick={() => void toggleSuspend(a)} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#173B6C" }}>{a.estado === "Activo" ? "Suspender" : "Activar"}</button>
                     <button disabled={busy} onClick={() => { if (window.confirm(`¿Eliminar a ${a.name} y sus inscripciones?`)) void run(async () => { await onDelete(a); showToast("Alumno eliminado"); }); }} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#72132C" }}>Eliminar</button>
                   </div>
@@ -174,8 +159,8 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
         </Modal>
       )}
 
-      {(modal?.type === "editar" || modal?.type === "crear") && (
-        <Modal title={modal.type === "crear" ? "Crear Nuevo Alumno" : "Editar Alumno"} onClose={() => setModal(null)}>
+      {modal?.type === "editar" && (
+        <Modal title="Editar Alumno" onClose={() => setModal(null)}>
           <div className="space-y-4 mb-5">
             {[["Nombre completo", "name", "text"], ["Email", "email", "email"]].map(([label, key, type]) => (
               <div key={key} className="flex flex-col gap-1.5">
@@ -184,7 +169,7 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
                   id={`alumno-${key}`}
                   autoFocus={key === "name"}
                   type={type}
-                  readOnly={modal.type === "editar" && key === "email"}
+                  readOnly={key === "email"}
                   value={form[key as "name" | "email"]}
                   onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
                   className="px-3 py-2.5 text-sm outline-none"
@@ -192,17 +177,14 @@ export default function AlumnosSection({ alumnos, onCreate, onUpdate, onToggleSt
                   onFocus={(e) => (e.currentTarget.style.borderColor = "#B58A43")}
                   onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(23,59,108,0.2)")}
                 />
-                {modal.type === "editar" && key === "email" && <p className="text-xs" style={{ color: "rgba(23,59,108,0.55)" }}>El correo identifica las inscripciones y no se puede cambiar.</p>}
+                {key === "email" && <p className="text-xs" style={{ color: "rgba(23,59,108,0.55)" }}>El correo identifica las inscripciones y no se puede cambiar.</p>}
               </div>
             ))}
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="alumno-password" className="text-xs font-medium tracking-wide uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>Contraseña {modal.type === "crear" ? "(mínimo 12 caracteres)" : "nueva (opcional)"}</label>
-              <input id="alumno-password" type="password" autoComplete="new-password" minLength={12} value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} className="px-3 py-2.5 text-sm outline-none" style={inputStyle} />
-            </div>
+            <p className="text-xs leading-relaxed" style={{ color: "rgba(23,59,108,0.55)" }}>La contraseña del alumno es su DNI y no se edita desde el panel.</p>
           </div>
           <div className="flex gap-2">
-            <button disabled={busy} onClick={modal.type === "crear" ? createAlumno : saveEdit} className="flex-1 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all disabled:opacity-50" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
-              {busy ? "GUARDANDO..." : modal.type === "crear" ? "CREAR" : "GUARDAR"}
+            <button disabled={busy} onClick={saveEdit} className="flex-1 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all disabled:opacity-50" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
+              {busy ? "GUARDANDO..." : "GUARDAR"}
             </button>
             <button onClick={() => setModal(null)} className="flex-1 py-2.5 text-xs font-medium border hover:opacity-70 transition-opacity" style={{ color: "#173B6C", borderColor: "#173B6C" }}>CANCELAR</button>
           </div>

@@ -2,13 +2,14 @@
 
 import { useEffect, useId, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { CourseDTO, HomeContentDTO } from "@rozenblum/shared";
+import type { CourseDTO, CourseDetailDTO, HomeContentDTO } from "@rozenblum/shared";
 import type { PracticeArea } from "../types";
 import { IconBriefcase, IconBuilding, IconClose, IconDoc, IconExternal, IconFamily, IconShield } from "../components/icons";
 import LandingFooter from "../components/layout/LandingFooter";
 import { apiFetch, errorMessage } from "../lib/api";
 import { useModalA11y } from "../lib/use-modal-a11y";
 import { usePublicSettings } from "../lib/use-public-settings";
+import { optimizedImage, responsiveImageSet } from "../lib/images";
 
 const NAV_LINKS = ["Inicio", "Áreas", "Nosotros", "Equipo", "Cursos", "Contacto"];
 
@@ -77,6 +78,7 @@ export default function LandingPage() {
   const router = useRouter();
   const settings = usePublicSettings();
   const [homeContent, setHomeContent] = useState<HomeContentDTO | null>(null);
+  const [featuredCourse, setFeaturedCourse] = useState<CourseDTO | null>(null);
   const [courses, setCourses] = useState<CourseDTO[]>([]);
   const [contentError, setContentError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -91,6 +93,9 @@ export default function LandingPage() {
     apiFetch<HomeContentDTO>("/api/content/home")
       .then(setHomeContent)
       .catch((error) => setContentError(errorMessage(error)));
+    apiFetch<CourseDetailDTO>("/api/courses/latest")
+      .then((detail) => setFeaturedCourse(detail.course))
+      .catch((error) => setContentError(errorMessage(error)));
     apiFetch<CourseDTO[]>("/api/courses")
       .then(setCourses)
       .catch((error) => setContentError(errorMessage(error)));
@@ -101,7 +106,6 @@ export default function LandingPage() {
     icon: AREA_ICONS[area.icon],
   }));
   const team = homeContent?.team ?? [];
-  const featuredCourse = courses[0];
 
   const scrollTo = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
@@ -219,7 +223,7 @@ export default function LandingPage() {
             </div>
           </div>
           <div className="hidden lg:block relative">
-            {homeContent?.brand.heroImage && <img src={homeContent.brand.heroImage} alt="Despacho jurídico moderno" className="w-full object-cover" style={{ height: 560 }} />}
+            {homeContent?.brand.heroImage && <img src={optimizedImage(homeContent.brand.heroImage, 960)} srcSet={responsiveImageSet(homeContent.brand.heroImage)} sizes="(max-width: 1024px) 100vw, 50vw" alt="Despacho jurídico moderno" className="w-full object-cover" style={{ height: 560 }} />}
             <div className="absolute -bottom-4 -right-4 w-40 h-40 border-2 pointer-events-none" style={{ borderColor: "#B58A43" }} />
             <div className="absolute bottom-8 left-8 px-6 py-5" style={{ backgroundColor: "#173B6C" }}>
               <p className="text-xs tracking-widest uppercase" style={{ color: "#B58A43" }}>Fundado en</p>
@@ -277,7 +281,7 @@ export default function LandingPage() {
           </div>
           {featuredCourse && <div className="grid lg:grid-cols-5 overflow-hidden" style={{ border: "1px solid rgba(181,138,67,0.3)" }}>
             <div className="lg:col-span-2 relative overflow-hidden" style={{ minHeight: 280 }}>
-              <img src={featuredCourse.img} alt={featuredCourse.title} className="w-full h-full object-cover" />
+              <img src={optimizedImage(featuredCourse.img, 960)} srcSet={responsiveImageSet(featuredCourse.img)} sizes="(max-width: 1024px) 100vw, 40vw" alt={featuredCourse.title} className="w-full h-full object-cover" />
               <div className="absolute inset-0" style={{ background: "linear-gradient(to right, transparent 50%, #173B6C)" }} />
               <div className="absolute top-5 left-5 px-3 py-1.5 text-xs font-medium tracking-widest" style={{ backgroundColor: "#B58A43", color: "#FAF8F5" }}>DESTACADO</div>
             </div>
@@ -307,7 +311,7 @@ export default function LandingPage() {
             </div>
           </div>}
           <div className="mt-6 grid sm:grid-cols-3 gap-4">
-            {courses.slice(1, 4).map((course) => (
+            {courses.filter((course) => course.slug !== featuredCourse?.slug).slice(0, 3).map((course) => (
               <button key={course.id} onClick={() => router.push(`/cursos/${course.slug}`)} className="p-6 flex flex-col gap-2 text-left" style={{ border: "1px solid rgba(181,138,67,0.15)", backgroundColor: "rgba(250,248,245,0.03)" }}>
                 <h4 className="text-lg font-medium" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>{course.title}</h4>
                 <p className="text-xs" style={{ color: "rgba(250,248,245,0.45)" }}>{course.description}</p>
@@ -379,7 +383,7 @@ export default function LandingPage() {
               <div key={m.name} className="flex flex-col items-center text-center group">
                 <div className="relative mb-5">
                   <div className="w-36 h-36 lg:w-44 lg:h-44 rounded-full overflow-hidden border-4 transition-all duration-300" style={{ borderColor: "rgba(23,59,108,0.12)" }}>
-                    <img src={m.img} alt={m.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                    <img src={optimizedImage(m.img, 640)} srcSet={responsiveImageSet(m.img)} sizes="(max-width: 640px) 80vw, 25vw" alt={m.name} loading="lazy" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                   </div>
                   <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-8 h-0.5" style={{ backgroundColor: "#B58A43" }} />
                 </div>

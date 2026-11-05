@@ -1,4 +1,5 @@
 import type { Course } from "../../types";
+import { optimizedImage, responsiveImageSet } from "../../lib/images";
 
 type CourseCardProps = {
   course: Course;
@@ -14,8 +15,11 @@ export default function CourseCard({ course, onSelect }: CourseCardProps) {
       {/* Image */}
       <div className="overflow-hidden" style={{ height: 200 }}>
         <img
-          src={course.img}
+          src={optimizedImage(course.img, 640)}
+          srcSet={responsiveImageSet(course.img)}
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
           alt={course.title}
+          loading="lazy"
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
       </div>

@@ -16,6 +16,7 @@ export default function CourseDetailPage({ slug }: { slug: string }) {
   const settings = usePublicSettings();
   const router = useRouter();
   const [course, setCourse] = useState<Course | null>(null);
+  const [professor, setProfessor] = useState<CourseDetailDTO["professor"] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -26,6 +27,7 @@ export default function CourseDetailPage({ slug }: { slug: string }) {
     try {
       const data = await apiFetch<CourseDetailDTO>(`/api/courses/${encodeURIComponent(slug)}`);
       setCourse(courseFromDTO(data.course));
+      setProfessor(data.professor);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -72,6 +74,7 @@ export default function CourseDetailPage({ slug }: { slug: string }) {
       ) : course ? (
         <CourseDetail
           course={course}
+          professor={professor}
           onBack={() => router.push("/catalogo")}
           onBuy={() => setCheckoutOpen(true)}
         />
