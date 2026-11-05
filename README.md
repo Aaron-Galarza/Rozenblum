@@ -61,6 +61,22 @@ Las imágenes se almacenan en Cloudinary; MongoDB guarda solo sus URL. La API ne
 
 `GET /api/media/:category` lista la galería y `POST /api/media/:category` recibe los bytes de la imagen. Ambas rutas requieren sesión de profesor o administrador; solo el administrador gestiona `professors` y `brand`. `GET /api/courses/latest` devuelve el curso publicado creado más recientemente, con su temario público y sin cuerpos de lecciones. La portada consulta este endpoint para el destacado.
 
+## API pública y contacto
+
+Las respuestas correctas usan `{ "data": ... }`; los errores incluyen `code`, `message` y `requestId` dentro de `error`.
+
+| Método y ruta | Respuesta y casos relevantes |
+| --- | --- |
+| `GET /api/courses` | `200` con los cursos publicados; `[]` si no hay. No incluye borradores, correo de acceso del profesor ni cuerpos de lecciones. |
+| `GET /api/courses/latest` | `200` con detalle público del curso publicado más reciente; `404` si no hay publicados. |
+| `GET /api/courses/:slug` | `200` con datos, profesor y esquema de módulos/lecciones, sin contenido de lecciones; `404` para slug inexistente o borrador. |
+| `GET /api/content/home` | `200` con contenido institucional de `site_content`, fotos actuales de profesores vinculados y sin IDs internos; `404` si falta el documento `home`. |
+| `GET /api/settings` | `200` con nombre, correo de soporte, WhatsApp, logo, privacidad y disponibilidad del proveedor de pagos; nunca devuelve claves. |
+| `POST /api/contact` | Body `{ name, email, message }`; `201` con ID y acuse de recepción, `400` si no valida, `429` tras 10 solicitudes en 10 minutos por IP. Guarda el mensaje en Atlas para consulta administrativa; no envía correo ni garantiza un plazo de respuesta. |
+| `GET /api/admin/contacts?limit=...&offset=...` | Sólo admin: `200` con mensajes ordenados por fecha, `401` sin sesión, `403` con otro rol. `limit` y `offset` son opcionales. No hay estados de atención ni envío de correos en este MVP. |
+
+El contenido de inicio y los ajustes son fuentes distintas: `site_content` contiene textos e imágenes institucionales; `settings` contiene nombre, soporte, WhatsApp, logo y privacidad. La dirección, el teléfono, el horario y la matrícula aún aparecen como texto fijo en el frontend y requieren revisión en su bloque correspondiente.
+
 ### Autenticación de la API
 
 | Método y ruta | Acceso | Resultado |
