@@ -4,6 +4,7 @@ const SILENT =
   process.env.NODE_ENV === "test" || process.env.npm_lifecycle_event === "test";
 
 function write(level: LogLevel, message: string, fields?: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "production") return;
   if (SILENT && level !== "error") return;
   const entry = JSON.stringify({
     time: new Date().toISOString(),
@@ -19,7 +20,6 @@ function write(level: LogLevel, message: string, fields?: Record<string, unknown
 /** Minimal structured JSON logger (no external dependencies). */
 export const logger = {
   debug(message: string, fields?: Record<string, unknown>) {
-    if (process.env.NODE_ENV === "production") return;
     write("debug", message, fields);
   },
   info(message: string, fields?: Record<string, unknown>) {

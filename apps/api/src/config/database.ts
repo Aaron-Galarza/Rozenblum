@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { logger } from "../lib/logger.js";
 import { env } from "./env.js";
 
 /** Atlas is the only runtime data store; tests inject isolated repositories. */
@@ -20,7 +21,7 @@ export async function connectDatabase(): Promise<void> {
       maxPoolSize: 10,
       retryWrites: true,
     });
-    console.log(`[db] Conectado a MongoDB Atlas — base "${env.MONGODB_DB}".`);
+    logger.info("atlas_connected", { database: env.MONGODB_DB });
   } catch {
     throw new Error(
       "No se pudo conectar a MongoDB Atlas. " +

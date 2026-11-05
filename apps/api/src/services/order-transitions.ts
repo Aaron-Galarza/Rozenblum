@@ -1,5 +1,6 @@
 import type { OrderStatus } from "@rozenblum/shared";
 import { badRequest, conflict, notFound } from "../lib/http.js";
+import { logger } from "../lib/logger.js";
 import { initialsFromName, newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredOrder, StoredPaymentEvent } from "../types.js";
@@ -60,7 +61,7 @@ export async function applyOrderTransition(input: Transition): Promise<StoredPay
   const repos = getRepositories();
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return await repos.withTransaction(async () => {
+      const result = await repos.withTransaction(async () => {
         if (input.providerEventId &&
             await repos.paymentEvents.findByProviderEventId(input.providerEventId)) return null;
         const order = await repos.orders.findByReference(input.reference);
@@ -106,6 +107,9 @@ export async function applyOrderTransition(input: Transition): Promise<StoredPay
         };
         return repos.paymentEvents.create(event);
       });
+      if (result) logger.debug("order_transition", { orderId: result.orderId, source: result.source,
+        previousStatus: result.previousStatus, nextStatus: result.nextStatus, eventId: result.id });
+      return result;
     } catch (error) {
       if ((error as { code?: number }).code === 11000 && attempt === 0) continue;
       if ((error as { code?: number }).code === 11000 && input.providerEventId &&

@@ -44,6 +44,8 @@ type RequestOptions = Omit<RequestInit, "body"> & { body?: unknown; auth?: boole
 
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { body, auth = false, headers, ...rest } = options;
+  const started = performance.now();
+  const method = rest.method ?? "GET";
   const requestHeaders = new Headers(headers);
   requestHeaders.set("content-type", "application/json");
 
@@ -63,11 +65,17 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
+    if (process.env.NODE_ENV === "development") console.debug("[api]", method, path.split("?")[0], "network_error");
     throw new ApiClientError(
       0,
       "NETWORK_ERROR",
       "No pudimos conectar con el servidor. Verificá que la API esté corriendo.",
     );
+  }
+
+  if (process.env.NODE_ENV === "development") {
+    console.debug("[api]", method, path.split("?")[0], response.status,
+      `${Math.round(performance.now() - started)}ms`, response.headers.get("x-request-id") ?? "");
   }
 
   if (response.status === 204) {
@@ -111,6 +119,7 @@ export type GalleryPage = { images: GalleryImage[]; nextCursor: string | null };
 export type ImageCategory = "courses" | "professors" | "lessons" | "brand";
 
 export async function uploadGalleryImage(category: ImageCategory, file: File): Promise<GalleryImage> {
+  const started = performance.now();
   const session = getSession();
   if (!session) throw new ApiClientError(401, "UNAUTHORIZED", "Tu sesión expiró. Volvé a ingresar.");
   if (file.size === 0 || file.size > 8 * 1024 * 1024 ||
@@ -125,7 +134,12 @@ export async function uploadGalleryImage(category: ImageCategory, file: File): P
       body: file,
     });
   } catch {
+    if (process.env.NODE_ENV === "development") console.debug("[api]", "POST", `/api/media/${category}`, "network_error");
     throw new ApiClientError(0, "NETWORK_ERROR", "No pudimos conectar con el servidor.");
+  }
+  if (process.env.NODE_ENV === "development") {
+    console.debug("[api]", "POST", `/api/media/${category}`, response.status,
+      `${Math.round(performance.now() - started)}ms`, response.headers.get("x-request-id") ?? "");
   }
   const payload = await response.json() as { data?: GalleryImage; error?: { code: string; message: string } };
   if (!response.ok || !payload.data) {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { badRequest, notFound } from "../lib/http.js";
+import { logger } from "../lib/logger.js";
 import { getRepositories } from "../repositories/index.js";
 import { paymentGateway, verifyPaymentWebhook } from "./mercadopago.js";
 import { applyOrderTransition } from "./order-transitions.js";
@@ -50,6 +51,8 @@ export async function processPaymentWebhook(input: {
   // different attempt must not revoke the enrollment activated by this payment.
   if (order.paymentId && order.paymentId !== payment.id) return;
   const status = nextOrderStatus(payment.status, payment.statusDetail);
+  logger.debug("payment_verified", { reference: order.externalReference, paymentId: payment.id,
+    providerStatus: payment.status, nextStatus: status });
   await applyOrderTransition({
     reference: order.externalReference,
     status: status ?? order.estado, source: "mercadopago",

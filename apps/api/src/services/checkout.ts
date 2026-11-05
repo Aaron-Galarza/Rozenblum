@@ -4,6 +4,7 @@ import type {
   OrderDTO,
 } from "@rozenblum/shared";
 import { badRequest, notFound } from "../lib/http.js";
+import { logger } from "../lib/logger.js";
 import { hashPassword } from "../lib/password.js";
 import { newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
@@ -64,6 +65,8 @@ export async function checkout(
   };
 
   const { createdOrder, enrollment } = await persistCheckoutRecords(order, teacher);
+  logger.debug("checkout_created", { reference, courseId: course.legacyId, paymentMethod,
+    amountCents: course.priceCents, orderId: createdOrder.id });
 
   return {
     order: orderToDTO(createdOrder),
