@@ -7,8 +7,8 @@ import type {
   ModuleDTO,
 } from "@rozenblum/shared";
 import { richLessonDocumentSchema } from "@rozenblum/shared";
-import { badRequest, forbidden, notFound } from "../lib/http.js";
-import { formatArs, newId } from "../lib/utils.js";
+import { badRequest, conflict, forbidden, notFound } from "../lib/http.js";
+import { formatArs, newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
 import type { CourseInput, StoredCourse, StoredLesson, StoredModule, StoredUser } from "../types.js";
 import { courseStructure, courseToDTO, courseToPublicDTO, enrollmentToDTO, moduleStatuses } from "./mappers.js";
@@ -148,8 +148,16 @@ export async function updateCourse(
   const nextPatch = professor && patch.professorEmail
     ? { ...patch, professor: professor.name, professorEmail: professor.email }
     : patch;
-  const updated = await repos.courses.update(courseId, nextPatch);
-  if (!updated) throw notFound("Curso no encontrado.");
+  if (course.status === "published" || patch.status === "published") {
+    nextPatch.everPublished = true;
+  }
+  const updated = await repos.courses.update(courseId, nextPatch, course.revision ?? 0);
+  if (!updated) {
+    if (await repos.courses.findById(courseId)) {
+      throw conflict("El curso cambió mientras lo editabas. Recargá e intentá nuevamente.");
+    }
+    throw notFound("Curso no encontrado.");
+  }
 
   // Course threads follow the current professor. Without this, a former
   // professor would keep reading and answering the course conversations.
@@ -171,11 +179,28 @@ export async function deleteCourse(courseId: number): Promise<void> {
   const repos = getRepositories();
   const course = await repos.courses.findById(courseId);
   if (!course) throw notFound("Curso no encontrado.");
-  if ((await repos.enrollments.listAll()).some((item) => item.courseId === courseId) ||
-      (await repos.orders.list()).some((item) => item.courseId === courseId)) {
+  if (course.status === "published" || course.everPublished) {
+    throw badRequest("Un curso que ya fue publicado no se puede eliminar.");
+  }
+  if (await repos.enrollments.existsByCourse(courseId) ||
+      await repos.orders.existsByCourse(courseId)) {
     throw badRequest("El curso tiene inscripciones u órdenes y no se puede eliminar.");
   }
-  await repos.courses.delete(courseId);
+  if (!await repos.courses.delete(courseId, course.revision ?? 0)) {
+    if (await repos.courses.findById(courseId)) {
+      throw conflict("El curso cambió mientras lo eliminabas. Recargá e intentá nuevamente.");
+    }
+    throw notFound("Curso no encontrado.");
+  }
+}
+
+async function assertAcademicDeletionAllowed(course: StoredCourse): Promise<void> {
+  const repos = getRepositories();
+  if (course.status === "published" || course.everPublished ||
+      await repos.enrollments.existsByCourse(course.legacyId) ||
+      await repos.orders.existsByCourse(course.legacyId)) {
+    throw badRequest("El contenido de un curso lanzado o con inscripciones no se puede borrar; podés editarlo.");
+  }
 }
 
 function findModule(course: StoredCourse, moduleId: number): StoredModule {
@@ -188,16 +213,22 @@ function nextModuleId(course: StoredCourse): number {
   return course.modules.reduce((max, mod) => Math.max(max, mod.id), course.legacyId * 100) + 1;
 }
 
-function nextLessonId(mod: StoredModule): string {
+function nextLessonId(course: StoredCourse, mod: StoredModule): { id: string; number: number } {
   const prefix = `${mod.position + 1}.`;
-  const used = mod.lessons
-    .filter((lesson) => lesson.id.startsWith(prefix))
-    .map((lesson) => Number(lesson.id.slice(prefix.length)))
-    .filter((value) => Number.isFinite(value));
-  return `${prefix}${(used.length ? Math.max(...used) : 0) + 1}`;
+  const previousMaximum = course.modules.reduce((maximum, item) =>
+    item.lessons.reduce((current, lesson) => {
+      const suffix = Number(lesson.id.split(".").at(-1));
+      return Number.isSafeInteger(suffix) && suffix > current ? suffix : current;
+    }, maximum), 0);
+  const number = Math.max(course.nextLessonNumber ?? 0, previousMaximum) + 1;
+  return { id: `${prefix}${number}`, number };
 }
 
-async function persistModules(course: StoredCourse, modules: StoredModule[]): Promise<StoredCourse> {
+async function persistModules(
+  course: StoredCourse,
+  modules: StoredModule[],
+  nextLessonNumber?: number,
+): Promise<StoredCourse> {
   const invalidDocument = modules.some((mod) =>
     mod.lessons.some(
       (lesson) => lesson.document && !richLessonDocumentSchema.safeParse(lesson.document).success,
@@ -216,8 +247,16 @@ async function persistModules(course: StoredCourse, modules: StoredModule[]): Pr
   for (const mod of modules) for (const lesson of mod.lessons) for (const url of imageUrls(lesson.document?.blocks)) {
     assertManagedImageUrl(url, "lessons");
   }
-  const updated = await getRepositories().courses.saveModules(course.legacyId, modules);
-  if (!updated) throw notFound("Curso no encontrado.");
+  const repos = getRepositories();
+  const updated = await repos.courses.saveModules(
+    course.legacyId, modules, course.revision ?? 0, nextLessonNumber,
+  );
+  if (!updated) {
+    if (await repos.courses.findById(course.legacyId)) {
+      throw conflict("El curso cambió mientras lo editabas. Recargá e intentá nuevamente.");
+    }
+    throw notFound("Curso no encontrado.");
+  }
   return updated;
 }
 
@@ -237,6 +276,10 @@ export async function addModule(
       title: title.trim(),
       position: course.modules.length,
       lessons: [],
+      createdBy: user.id,
+      createdAt: nowIso(),
+      updatedBy: user.id,
+      updatedAt: nowIso(),
     },
   ];
   const updated = await persistModules(course, modules);
@@ -252,9 +295,13 @@ export async function updateModule(
   const course = await getRepositories().courses.findById(courseId);
   if (!course) throw notFound("Curso no encontrado.");
   if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  findModule(course, moduleId);
 
   const modules = course.modules.map((mod) =>
-    mod.id === moduleId ? { ...mod, title: patch.title?.trim() || mod.title } : mod,
+    mod.id === moduleId ? {
+      ...mod, title: patch.title?.trim() || mod.title,
+      updatedBy: user.id, updatedAt: nowIso(),
+    } : mod,
   );
   const updated = await persistModules(course, modules);
   return buildModuleDTOs(updated);
@@ -269,11 +316,7 @@ export async function deleteModule(
   if (!course) throw notFound("Curso no encontrado.");
   if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
   findModule(course, moduleId);
-
-  if (course.status === "published" &&
-      course.modules.every((mod) => mod.id === moduleId || mod.lessons.length === 0)) {
-    throw badRequest("Un curso publicado debe conservar al menos una lección.");
-  }
+  await assertAcademicDeletionAllowed(course);
 
   const modules = course.modules
     .filter((mod) => mod.id !== moduleId)
@@ -295,7 +338,9 @@ export async function reorderModules(
   }
 
   const ordered = ids.map((id) => findModule(course, id));
-  const modules = ordered.map((mod, index) => ({ ...mod, position: index }));
+  const modules = ordered.map((mod, index) => ({
+    ...mod, position: index, updatedBy: user.id, updatedAt: nowIso(),
+  }));
   const updated = await persistModules(course, modules);
   return buildModuleDTOs(updated);
 }
@@ -310,20 +355,25 @@ export async function addLesson(
   if (!course) throw notFound("Curso no encontrado.");
   if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
   const mod = findModule(course, moduleId);
+  const next = nextLessonId(course, mod);
 
   const lesson: StoredLesson = {
-    id: nextLessonId(mod),
+    id: next.id,
     title: input.title.trim(),
     type: input.type,
     position: mod.lessons.length,
     content: input.content ?? [],
     document: input.document,
+    createdBy: user.id,
+    createdAt: nowIso(),
+    updatedBy: user.id,
+    updatedAt: nowIso(),
   };
 
   const modules = course.modules.map((item) =>
     item.id === moduleId ? { ...item, lessons: [...item.lessons, lesson] } : item,
   );
-  const updated = await persistModules(course, modules);
+  const updated = await persistModules(course, modules, next.number);
   return buildModuleDTOs(updated);
 }
 
@@ -354,6 +404,8 @@ export async function updateLesson(
                   type: patch.type ?? lesson.type,
                   content: patch.content ?? lesson.content,
                   document: patch.document ?? lesson.document,
+                  updatedBy: user.id,
+                  updatedAt: nowIso(),
                 }
               : lesson,
           ),
@@ -373,13 +425,11 @@ export async function deleteLesson(
   const course = await getRepositories().courses.findById(courseId);
   if (!course) throw notFound("Curso no encontrado.");
   if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
-  // Throws when the module does not exist, before any mutation.
-  findModule(course, moduleId);
-
-  if (course.status === "published" &&
-      course.modules.reduce((count, item) => count + item.lessons.length, 0) === 1) {
-    throw badRequest("Un curso publicado debe conservar al menos una lección.");
+  const mod = findModule(course, moduleId);
+  if (!mod.lessons.some((lesson) => lesson.id === lessonId)) {
+    throw notFound("Lección no encontrada.");
   }
+  await assertAcademicDeletionAllowed(course);
 
   const modules = course.modules.map((item) =>
     item.id === moduleId
@@ -417,7 +467,9 @@ export async function reorderLessons(
 
   const modules = course.modules.map((item) =>
     item.id === moduleId
-      ? { ...item, lessons: ordered.map((lesson, index) => ({ ...lesson, position: index })) }
+      ? { ...item, lessons: ordered.map((lesson, index) => ({
+          ...lesson, position: index, updatedBy: user.id, updatedAt: nowIso(),
+        })) }
       : item,
   );
   const updated = await persistModules(course, modules);

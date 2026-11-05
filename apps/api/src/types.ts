@@ -32,6 +32,10 @@ export type StoredLesson = {
   highlight?: boolean;
   content: LessonBlockDTO[];
   document?: RichLessonDocument;
+  createdBy?: string;
+  createdAt?: string;
+  updatedBy?: string;
+  updatedAt?: string;
 };
 
 export type StoredModule = {
@@ -39,6 +43,10 @@ export type StoredModule = {
   title: string;
   position: number;
   lessons: StoredLesson[];
+  createdBy?: string;
+  createdAt?: string;
+  updatedBy?: string;
+  updatedAt?: string;
 };
 
 export type StoredCourse = {
@@ -58,6 +66,12 @@ export type StoredCourse = {
   modules: StoredModule[];
   createdAt: string;
   updatedAt: string;
+  /** Optional for courses created before revision tracking was introduced. */
+  revision?: number;
+  /** Once published, structural deletion remains forbidden after unpublishing. */
+  everPublished?: boolean;
+  /** Monotonic suffix for lesson IDs, including IDs of deleted lessons. */
+  nextLessonNumber?: number;
 };
 
 /** Fields needed by the catalogue, with module IDs but no lesson bodies. */

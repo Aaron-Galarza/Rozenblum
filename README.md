@@ -36,7 +36,7 @@ Completá `MONGODB_URI`, `AUTH_SECRET` y las tres variables `CLOUDINARY_*` en `a
 | `npm run typecheck` | Chequeo de tipos en todos los paquetes |
 | `npm run lint` | ESLint (flat config) sobre API, web y shared |
 | `npm test` | Tests de integración de la API (repositorios mock, sin Atlas) |
-| `npm --workspace @rozenblum/api run test:atlas` | Prueba autenticación, revocación y permisos con Mongoose real en una base aleatoria aislada; la elimina al finalizar |
+| `npm --workspace @rozenblum/api run test:atlas` | Prueba autenticación, CRUD académico, concurrencia, documentos BlockNote y permisos con Mongoose real en una base aleatoria aislada; la elimina al finalizar |
 | `npm --workspace @rozenblum/api run bootstrap:admin -- correo@ejemplo.com` | Crea el primer administrador y la configuración inicial de forma idempotente; requiere `BOOTSTRAP_ADMIN_PASSWORD` en el entorno |
 
 ## Modelo de identidad
@@ -54,6 +54,8 @@ Completá `MONGODB_URI`, `AUTH_SECRET` y las tres variables `CLOUDINARY_*` en `a
 ## Cursos y profesores
 
 Para crear un curso, el administrador debe seleccionar primero una cuenta de profesor activa. La API recibe su correo, verifica la cuenta y guarda su nombre y correo en el curso. Los cursos nuevos empiezan como borrador; para publicarlos hace falta mantener un profesor activo, al menos una lección y una imagen. Si el profesor deja de estar disponible, el checkout rechaza la solicitud antes de crear registros parciales.
+
+Publicar un curso publica todas sus lecciones. Módulos, lecciones y cursos se pueden borrar mientras el curso siga siendo un borrador nunca publicado y no tenga órdenes ni inscripciones. Después del primer lanzamiento se permite editar, pero no borrar, incluso si el curso vuelve a borrador. Los IDs de lección no se reutilizan; módulos y lecciones nuevos guardan autor y fecha de creación y edición. Las ediciones académicas usan una revisión atómica del curso: si otra edición se guardó primero, la API responde `409` y el cliente debe recargar y reintentar para no sobrescribirla.
 
 ## Imágenes
 

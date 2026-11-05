@@ -68,15 +68,23 @@ export interface CourseRepository {
         | "professorEmail"
         | "status"
         | "temario"
+        | "everPublished"
       >
     >,
+    expectedRevision: number,
   ): Promise<StoredCourse | null>;
-  saveModules(legacyId: number, modules: StoredModule[]): Promise<StoredCourse | null>;
-  delete(legacyId: number): Promise<boolean>;
+  saveModules(
+    legacyId: number,
+    modules: StoredModule[],
+    expectedRevision: number,
+    nextLessonNumber?: number,
+  ): Promise<StoredCourse | null>;
+  delete(legacyId: number, expectedRevision: number): Promise<boolean>;
 }
 
 export interface EnrollmentRepository {
   listAll(page?: Pagination): Promise<StoredEnrollment[]>;
+  existsByCourse(courseId: number): Promise<boolean>;
   listByStudent(email: string): Promise<StoredEnrollment[]>;
   findById(id: string): Promise<StoredEnrollment | null>;
   findByStudentAndCourse(email: string, courseId: number): Promise<StoredEnrollment | null>;
@@ -94,6 +102,7 @@ export interface EnrollmentRepository {
 
 export interface OrderRepository {
   list(): Promise<StoredOrder[]>;
+  existsByCourse(courseId: number): Promise<boolean>;
   findByReference(reference: string): Promise<StoredOrder | null>;
   create(input: StoredOrder): Promise<StoredOrder>;
   updateStatus(id: string, estado: OrderStatus): Promise<StoredOrder | null>;

@@ -42,6 +42,11 @@ const clean = <T>(doc: unknown): T => {
   return value as T;
 };
 
+/** Older courses have no revision field; treat that state as revision zero. */
+const courseRevisionFilter = (revision: number) => revision === 0
+  ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] }
+  : { revision };
+
 export function createMongooseRepositories(): Repositories {
   const users: UserRepository = {
     async findByEmail(email) {
@@ -160,6 +165,9 @@ export function createMongooseRepositories(): Repositories {
             modules: [],
             createdAt: nowIso(),
             updatedAt: nowIso(),
+            revision: 0,
+            everPublished: input.status === "published",
+            nextLessonNumber: 0,
           });
           return clean<StoredCourse>(doc.toObject());
         } catch (error) {
@@ -170,30 +178,40 @@ export function createMongooseRepositories(): Repositories {
       }
       throw new Error("No se pudo crear el curso.");
     },
-    async update(legacyId, patch) {
+    async update(legacyId, patch, expectedRevision) {
       const update: Record<string, unknown> = { ...patch, updatedAt: nowIso() };
       if (patch.priceCents !== undefined) update.price = formatArs(patch.priceCents);
       const doc = await CourseModel.findOneAndUpdate(
-        { legacyId },
-        { $set: update },
+        { legacyId, ...courseRevisionFilter(expectedRevision) },
+        { $set: update, $inc: { revision: 1 } },
         { returnDocument: "after" },
       )
         .lean()
         .exec();
       return doc ? clean<StoredCourse>(doc) : null;
     },
-    async saveModules(legacyId, modules: StoredModule[]) {
+    async saveModules(legacyId, modules: StoredModule[], expectedRevision, nextLessonNumber) {
+      const update = {
+        modules,
+        updatedAt: nowIso(),
+        ...(nextLessonNumber === undefined ? {} : { nextLessonNumber }),
+      };
       const doc = await CourseModel.findOneAndUpdate(
-        { legacyId },
-        { $set: { modules, updatedAt: nowIso() } },
+        { legacyId, ...courseRevisionFilter(expectedRevision) },
+        { $set: update, $inc: { revision: 1 } },
         { returnDocument: "after" },
       )
         .lean()
         .exec();
       return doc ? clean<StoredCourse>(doc) : null;
     },
-    async delete(legacyId) {
-      const result = await CourseModel.deleteOne({ legacyId }).exec();
+    async delete(legacyId, expectedRevision) {
+      const result = await CourseModel.deleteOne({
+        legacyId,
+        ...courseRevisionFilter(expectedRevision),
+        status: "draft",
+        everPublished: { $ne: true },
+      }).exec();
       return result.deletedCount === 1;
     },
   };
@@ -207,6 +225,9 @@ export function createMongooseRepositories(): Repositories {
         .lean()
         .exec();
       return docs.map((doc) => clean<StoredEnrollment>(doc));
+    },
+    async existsByCourse(courseId) {
+      return Boolean(await EnrollmentModel.exists({ courseId }));
     },
     async listByStudent(email) {
       const docs = await EnrollmentModel.find({ studentEmail: email.toLowerCase() })
@@ -276,6 +297,9 @@ export function createMongooseRepositories(): Repositories {
         .lean()
         .exec();
       return docs.map((doc) => clean<StoredOrder>(doc));
+    },
+    async existsByCourse(courseId) {
+      return Boolean(await OrderModel.exists({ courseId }));
     },
     async findByReference(reference) {
       const doc = await OrderModel.findOne({

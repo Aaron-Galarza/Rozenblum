@@ -122,7 +122,7 @@ before(async () => {
     { id: 2, title: "Second module", position: 2, lessons: [
       { id: "2.1", title: "Second lesson", type: "doc", position: 1, content: [] },
     ] },
-  ]);
+  ], 0);
   const enrollment = await repositories.enrollments.create({
     studentEmail,
     studentName: "Test alumno",
@@ -220,8 +220,8 @@ test("latest course endpoint ignores drafts and exposes only public information"
     assert.equal(response.body.data.course.slug, newer.slug);
     assert.ok(response.body.data.modules.every((module) => module.lessons.every((lesson) => !lesson.content && !lesson.document)));
   } finally {
-    await repositories.courses.delete(draft.legacyId);
-    await repositories.courses.delete(newer.legacyId);
+    await repositories.courses.delete(draft.legacyId, draft.revision ?? 0);
+    await repositories.courses.delete(newer.legacyId, newer.revision ?? 0);
   }
 });
 
@@ -433,7 +433,7 @@ test("contact requests are limited to ten per ten-minute window", async () => {
   }
 });
 
-test("teacher can create, update, and remove lesson content", async () => {
+test("teacher can create and edit launched lesson content without deleting it", async () => {
   const token = await login("profesor", teacherEmail);
   const invalidPreview = await api(server.baseUrl, "/api/teacher/youtube-preview?url=https%3A%2F%2Fexample.test%2Fwatch%3Fv%3DjPTpya17tI0", { token });
   assert.equal(invalidPreview.status, 400);
@@ -494,7 +494,128 @@ test("teacher can create, update, and remove lesson content", async () => {
   const removed = await api(server.baseUrl, `/api/teacher/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}`, {
     method: "DELETE", token,
   });
-  assert.equal(removed.status, 200);
+  assert.equal(removed.status, 400);
+});
+
+test("a stale lesson edit returns 409, preserves the winner, and can be retried", async () => {
+  const course = await repositories.courses.create({
+    title: "Concurrent Lesson Test", description: "Isolated revision conflict test",
+    priceCents: 50_000, duration: "Online", level: "Inicial",
+    professor: "Test profesor", professorEmail: teacherEmail,
+    status: "draft", img: "https://example.test/concurrent.jpg",
+  });
+  const moduleId = 9901;
+  const lessonId = "1.1";
+  const initialModules = [{
+    id: moduleId, title: "Module", position: 0,
+    lessons: [{ id: lessonId, title: "Original", type: "doc" as const, position: 0, content: [] }],
+  }];
+  await repositories.courses.saveModules(course.legacyId, initialModules, 0);
+  const originalSave = repositories.courses.saveModules.bind(repositories.courses);
+  let injected = false;
+  repositories.courses.saveModules = async (id, modules, revision, nextLessonNumber) => {
+    if (id === course.legacyId && !injected) {
+      injected = true;
+      const winner = structuredClone(modules);
+      winner[0]!.lessons[0]!.title = "Concurrent winner";
+      assert.ok(await originalSave(id, winner, revision));
+    }
+    return originalSave(id, modules, revision, nextLessonNumber);
+  };
+  const token = await login("profesor", teacherEmail);
+  const path = `/api/teacher/courses/${course.legacyId}/modules/${moduleId}/lessons/${lessonId}`;
+  try {
+    const stale = await api<{ error: { code: string } }>(server.baseUrl, path, {
+      method: "PATCH", token, body: JSON.stringify({ title: "Stale loser" }),
+    });
+    assert.equal(stale.status, 409);
+    assert.equal(stale.body.error.code, "CONFLICT");
+  } finally {
+    repositories.courses.saveModules = originalSave;
+  }
+  const winner = await repositories.courses.findById(course.legacyId);
+  assert.equal(winner?.modules[0]?.lessons[0]?.title, "Concurrent winner");
+  const retried = await api(server.baseUrl, path, {
+    method: "PATCH", token, body: JSON.stringify({ title: "Retried edit" }),
+  });
+  assert.equal(retried.status, 200);
+  assert.equal((await repositories.courses.findById(course.legacyId))?.modules[0]?.lessons[0]?.title, "Retried edit");
+  await repositories.courses.delete(course.legacyId, (await repositories.courses.findById(course.legacyId))!.revision ?? 0);
+});
+
+test("draft lessons keep unique IDs and launched courses cannot be deleted", async () => {
+  const image = "https://res.cloudinary.com/test-cloud/image/upload/v1/Rozenblum/courses/academic.jpg";
+  const course = await repositories.courses.create({
+    title: "Academic Lifecycle", description: "Draft deletion and launch protection",
+    priceCents: 60_000, duration: "Online", level: "Inicial",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "draft", img: image,
+  });
+  const teacherToken = await login("profesor", teacherEmail);
+  const adminToken = await login("admin", adminEmail);
+  const base = `/api/teacher/courses/${course.legacyId}`;
+  const addModule = (title: string) => api<{ data: { id: number }[] }>(server.baseUrl, `${base}/modules`, {
+    method: "POST", token: teacherToken, body: JSON.stringify({ title }),
+  });
+  const firstModule = (await addModule("First")).body.data.at(-1)!.id;
+  assert.equal(await repositories.courses.delete(course.legacyId, 0), false);
+  assert.equal((await repositories.courses.findById(course.legacyId))?.modules[0]?.createdBy, (await repositories.users.findByEmail(teacherEmail))?.id);
+  assert.equal((await api(server.baseUrl, `${base}/modules/999999`, {
+    method: "PATCH", token: teacherToken, body: JSON.stringify({ title: "Missing" }),
+  })).status, 404);
+  const secondModule = (await addModule("Second")).body.data.at(-1)!.id;
+  const addLesson = (moduleId: number, title: string) => api<{
+    data: { id: number; lessons: { id: string }[] }[]
+  }>(server.baseUrl, `${base}/modules/${moduleId}/lessons`, {
+    method: "POST", token: teacherToken, body: JSON.stringify({ title, type: "doc" }),
+  });
+  const firstId = (await addLesson(firstModule, "Deleted draft")).body.data
+    .find(({ id }) => id === firstModule)!.lessons.at(-1)!.id;
+  assert.equal((await repositories.courses.findById(course.legacyId))?.modules[0]?.lessons[0]?.createdBy, (await repositories.users.findByEmail(teacherEmail))?.id);
+  assert.equal((await api(server.baseUrl, `${base}/modules/${firstModule}/lessons/${firstId}`, {
+    method: "DELETE", token: teacherToken,
+  })).status, 200);
+  assert.equal((await api(server.baseUrl, `${base}/modules/${firstModule}/lessons/${firstId}`, {
+    method: "DELETE", token: teacherToken,
+  })).status, 404);
+  const replacementId = (await addLesson(firstModule, "Replacement draft")).body.data
+    .find(({ id }) => id === firstModule)!.lessons.at(-1)!.id;
+  assert.notEqual(replacementId, firstId);
+  assert.equal((await api(server.baseUrl, `${base}/modules/reorder`, {
+    method: "PUT", token: teacherToken, body: JSON.stringify({ ids: [secondModule, firstModule] }),
+  })).status, 200);
+  const reorderedId = (await addLesson(secondModule, "After reorder")).body.data
+    .find(({ id }) => id === secondModule)!.lessons.at(-1)!.id;
+  assert.equal(new Set([firstId, replacementId, reorderedId]).size, 3);
+  assert.equal((await api(server.baseUrl, `${base}/modules/${firstModule}`, {
+    method: "DELETE", token: teacherToken,
+  })).status, 200);
+
+  const publish = await api(server.baseUrl, `/api/admin/courses/${course.legacyId}`, {
+    method: "PATCH", token: adminToken, body: JSON.stringify({ status: "published" }),
+  });
+  assert.equal(publish.status, 200);
+  assert.equal((await api(server.baseUrl, `${base}/modules/${secondModule}/lessons/${reorderedId}`, {
+    method: "DELETE", token: teacherToken,
+  })).status, 400);
+  assert.equal((await api(server.baseUrl, `${base}/modules/${secondModule}`, {
+    method: "DELETE", token: teacherToken,
+  })).status, 400);
+  assert.equal((await api(server.baseUrl, `/api/admin/courses/${course.legacyId}`, {
+    method: "DELETE", token: adminToken,
+  })).status, 400);
+  assert.equal((await api(server.baseUrl, `/api/admin/courses/${course.legacyId}`, {
+    method: "PATCH", token: adminToken, body: JSON.stringify({ status: "draft" }),
+  })).status, 200);
+  assert.equal((await api(server.baseUrl, `${base}/modules/${secondModule}/lessons/${reorderedId}`, {
+    method: "DELETE", token: teacherToken,
+  })).status, 400);
+  assert.equal((await api(server.baseUrl, `${base}/modules/${secondModule}/lessons/${reorderedId}`, {
+    method: "PATCH", token: teacherToken, body: JSON.stringify({ title: "Edited after launch" }),
+  })).status, 200);
+  const edited = (await repositories.courses.findById(course.legacyId))?.modules[0]?.lessons[0];
+  assert.equal(edited?.updatedBy, (await repositories.users.findByEmail(teacherEmail))?.id);
+  assert.ok(edited?.updatedAt);
+  await repositories.courses.delete(course.legacyId, (await repositories.courses.findById(course.legacyId))!.revision ?? 0);
 });
 
 test("YouTube URL parsing only accepts known video hosts and IDs", () => {
@@ -906,7 +1027,7 @@ test("a student can replace the DNI password with a strong one", async () => {
     { id: 1, title: "Only module", position: 1, lessons: [
       { id: "1.1", title: "Only lesson", type: "doc", position: 1, content: [] },
     ] },
-  ]);
+  ], 0);
 
   const body = JSON.stringify({
     courseSlug: extraCourse.slug,

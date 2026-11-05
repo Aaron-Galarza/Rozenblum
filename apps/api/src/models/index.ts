@@ -31,8 +31,12 @@ const lessonSchema = new Schema(
     highlight: { type: Boolean, default: undefined },
     content: { type: [blockSchema], default: [] },
     document: { type: Schema.Types.Mixed, default: undefined },
+    createdBy: { type: String, default: undefined },
+    createdAt: { type: String, default: undefined },
+    updatedBy: { type: String, default: undefined },
+    updatedAt: { type: String, default: undefined },
   },
-  { _id: false, versionKey: false },
+  { _id: false, versionKey: false, minimize: false },
 );
 
 const moduleSchema = new Schema(
@@ -41,8 +45,12 @@ const moduleSchema = new Schema(
     title: { type: String, required: true },
     position: { type: Number, required: true },
     lessons: { type: [lessonSchema], default: [] },
+    createdBy: { type: String, default: undefined },
+    createdAt: { type: String, default: undefined },
+    updatedBy: { type: String, default: undefined },
+    updatedAt: { type: String, default: undefined },
   },
-  { _id: false, versionKey: false },
+  { _id: false, versionKey: false, minimize: false },
 );
 
 const temarioSchema = new Schema(
@@ -88,8 +96,11 @@ const courseSchema = new Schema<StoredCourse>(
     modules: { type: [moduleSchema], default: [] },
     createdAt: { type: String, required: true },
     updatedAt: { type: String, required: true },
+    revision: { type: Number, required: true, default: 0 },
+    everPublished: { type: Boolean, required: true, default: false },
+    nextLessonNumber: { type: Number, required: true, default: 0 },
   },
-  { versionKey: false, collection: "courses" },
+  { versionKey: false, collection: "courses", minimize: false },
 );
 
 courseSchema.index({ status: 1, legacyId: 1 });
@@ -119,7 +130,7 @@ const orderSchema = new Schema<StoredOrder>(
     dniPasswordHash: { type: String, default: undefined, select: false },
     curso: { type: String, required: true },
     courseSlug: { type: String, required: true },
-    courseId: { type: Number, required: true },
+    courseId: { type: Number, required: true, index: true },
     monto: { type: String, required: true },
     montoCents: { type: Number, required: true },
     fecha: { type: String, required: true },

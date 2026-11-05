@@ -165,27 +165,35 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
         modules: [],
         createdAt: nowIso(),
         updatedAt: nowIso(),
+        revision: 0,
+        everPublished: input.status === "published",
+        nextLessonNumber: 0,
       };
       db.courses.push(course);
       return clone(course);
     },
-    async update(legacyId, patch) {
+    async update(legacyId, patch, expectedRevision) {
       const course = db.courses.find((c) => c.legacyId === legacyId);
-      if (!course) return null;
+      if (!course || (course.revision ?? 0) !== expectedRevision) return null;
       Object.assign(course, patch);
       if (patch.priceCents !== undefined) course.price = formatArs(patch.priceCents);
       course.updatedAt = nowIso();
+      course.revision = expectedRevision + 1;
       return clone(course);
     },
-    async saveModules(legacyId, modules) {
+    async saveModules(legacyId, modules, expectedRevision, nextLessonNumber) {
       const course = db.courses.find((c) => c.legacyId === legacyId);
-      if (!course) return null;
+      if (!course || (course.revision ?? 0) !== expectedRevision) return null;
       course.modules = clone(modules);
       course.updatedAt = nowIso();
+      course.revision = expectedRevision + 1;
+      if (nextLessonNumber !== undefined) course.nextLessonNumber = nextLessonNumber;
       return clone(course);
     },
-    async delete(legacyId) {
-      const index = db.courses.findIndex((c) => c.legacyId === legacyId);
+    async delete(legacyId, expectedRevision) {
+      const index = db.courses.findIndex((c) =>
+        c.legacyId === legacyId && (c.revision ?? 0) === expectedRevision,
+      );
       if (index === -1) return false;
       db.courses.splice(index, 1);
       return true;
@@ -196,6 +204,9 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
     async listAll(page) {
       const items = db.enrollments.map(clone);
       return page ? items.slice(page.offset, page.offset + page.limit) : items;
+    },
+    async existsByCourse(courseId) {
+      return db.enrollments.some((item) => item.courseId === courseId);
     },
     async listByStudent(email) {
       return db.enrollments
@@ -249,6 +260,9 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
   const orders: OrderRepository = {
     async list() {
       return [...db.orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(clone);
+    },
+    async existsByCourse(courseId) {
+      return db.orders.some((item) => item.courseId === courseId);
     },
     async findByReference(reference) {
       const order = db.orders.find(

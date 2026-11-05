@@ -125,18 +125,58 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     const courseId = createdCourse.body.data.id;
     assert.equal((await api(server.baseUrl, `/api/courses/${createdCourse.body.data.slug}`)).status, 404);
     assert.equal((await api<{ data: unknown[] }>(server.baseUrl, "/api/courses")).body.data.length, 0);
-    await repositories.courses.saveModules(courseId, [{
+    // Documents written before revision tracking must still accept the first edit.
+    await CourseModel.updateOne({ legacyId: courseId }, { $unset: { revision: 1 } }).exec();
+    assert.ok(await repositories.courses.saveModules(courseId, [{
       id: 1, title: "First module", position: 0,
       lessons: [{ id: "1.1", title: "First lesson", type: "doc", position: 0,
         content: [{ id: "private", type: "paragraph", content: "PRIVATE ATLAS LESSON" }],
         document: { version: 1, blocks: [{ type: "paragraph", content: "PRIVATE BLOCKNOTE" }] },
       }],
-    }]);
+    }], 0));
+    assert.equal((await repositories.courses.findById(courseId))?.revision, 1);
     const published = await api(server.baseUrl, `/api/admin/courses/${courseId}`, {
       method: "PATCH", token: adminLogin.body.data.token,
       body: JSON.stringify({ status: "published" }),
     });
     assert.equal(published.status, 200);
+    const lessonPath = `/api/teacher/courses/${courseId}/modules/1/lessons/1.1`;
+    const richDocument = {
+      version: 1,
+      blocks: [{
+        id: "atlas-rich", type: "paragraph", props: {},
+        content: [{ type: "text", text: "Atlas rich content", styles: { bold: true } }],
+        children: [],
+      }],
+    };
+    assert.equal((await api(server.baseUrl, lessonPath, {
+      method: "PATCH", token: adminLogin.body.data.token,
+      body: JSON.stringify({ document: richDocument }),
+    })).status, 200);
+    assert.deepEqual((await repositories.courses.findById(courseId))?.modules[0]?.lessons[0]?.document, richDocument);
+    assert.ok((await repositories.courses.findById(courseId))?.modules[0]?.lessons[0]?.updatedAt);
+    const invalidDocument = structuredClone(richDocument);
+    (invalidDocument.blocks[0] as typeof richDocument.blocks[0] & { props: { url?: string } }).props.url = "javascript:alert(1)";
+    assert.equal((await api(server.baseUrl, lessonPath, {
+      method: "PATCH", token: adminLogin.body.data.token,
+      body: JSON.stringify({ document: invalidDocument }),
+    })).status, 400);
+    const beforeRace = (await repositories.courses.findById(courseId))!;
+    const revisions = ["Concurrent A", "Concurrent B"].map((title) => {
+      const modules = structuredClone(beforeRace.modules);
+      modules[0]!.title = title;
+      return modules;
+    });
+    const race = await Promise.all(revisions.map((modules) =>
+      repositories.courses.saveModules(courseId, modules, beforeRace.revision ?? 0),
+    ));
+    assert.equal(race.filter(Boolean).length, 1);
+    const raceWinner = (await repositories.courses.findById(courseId))!;
+    assert.equal(raceWinner.revision, (beforeRace.revision ?? 0) + 1);
+    assert.ok(["Concurrent A", "Concurrent B"].includes(raceWinner.modules[0]!.title));
+    assert.equal((await api(server.baseUrl, `/api/admin/courses/${courseId}`, {
+      method: "DELETE", token: adminLogin.body.data.token,
+    })).status, 400);
     const publicList = await api<{ data: { slug: string; professorId?: string }[] }>(server.baseUrl, "/api/courses");
     assert.equal(publicList.body.data.length, 1);
     assert.equal(publicList.body.data[0]?.professorId, undefined);
@@ -148,6 +188,49 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     assert.equal(JSON.stringify(publicDetail.body).includes("PRIVATE ATLAS LESSON"), false);
     assert.equal(JSON.stringify(publicDetail.body).includes("PRIVATE BLOCKNOTE"), false);
     assert.equal(JSON.stringify(publicDetail.body).includes("professor@example.test"), false);
+    const teacherLogin = await api<{ data: { token: string } }>(server.baseUrl, "/api/auth/login", {
+      method: "POST", body: JSON.stringify({ role: "profesor", email: professor.email, password: adminPassword }),
+    });
+    assert.equal(teacherLogin.status, 200);
+    const draft = await api<{ data: { id: number } }>(server.baseUrl, "/api/admin/courses", {
+      method: "POST", token: adminLogin.body.data.token,
+      body: JSON.stringify({ ...courseInput, title: "Atlas Academic Draft" }),
+    });
+    assert.equal(draft.status, 201);
+    const draftPath = `/api/teacher/courses/${draft.body.data.id}`;
+    assert.equal((await api(server.baseUrl, draftPath)).status, 401);
+    const addedModule = await api<{ data: { id: number }[] }>(server.baseUrl, `${draftPath}/modules`, {
+      method: "POST", token: teacherLogin.body.data.token,
+      body: JSON.stringify({ title: "Draft module" }),
+    });
+    assert.equal(addedModule.status, 201);
+    const draftModuleId = addedModule.body.data[0]!.id;
+    const addedLesson = await api<{ data: { lessons: { id: string }[] }[] }>(
+      server.baseUrl, `${draftPath}/modules/${draftModuleId}/lessons`, {
+        method: "POST", token: teacherLogin.body.data.token,
+        body: JSON.stringify({ title: "Draft lesson", type: "doc" }),
+      },
+    );
+    assert.equal(addedLesson.status, 201);
+    const draftLessonId = addedLesson.body.data[0]!.lessons[0]!.id;
+    assert.equal((await api(server.baseUrl, `${draftPath}/modules/${draftModuleId}/lessons/${draftLessonId}`, {
+      method: "PATCH", token: teacherLogin.body.data.token,
+      body: JSON.stringify({ title: "Edited draft lesson" }),
+    })).status, 200);
+    const storedDraft = (await repositories.courses.findById(draft.body.data.id))!;
+    assert.equal(storedDraft.modules[0]?.lessons[0]?.title, "Edited draft lesson");
+    assert.equal(storedDraft.modules[0]?.lessons[0]?.createdBy, professor.id);
+    assert.equal(storedDraft.modules[0]?.lessons[0]?.updatedBy, professor.id);
+    assert.equal((await api(server.baseUrl, `${draftPath}/modules/${draftModuleId}/lessons/${draftLessonId}`, {
+      method: "DELETE", token: teacherLogin.body.data.token,
+    })).status, 200);
+    assert.equal((await api(server.baseUrl, `${draftPath}/modules/${draftModuleId}`, {
+      method: "DELETE", token: teacherLogin.body.data.token,
+    })).status, 200);
+    assert.equal((await api(server.baseUrl, `/api/admin/courses/${draft.body.data.id}`, {
+      method: "DELETE", token: adminLogin.body.data.token,
+    })).status, 204);
+    assert.equal(await repositories.courses.findById(draft.body.data.id), null);
     await CourseModel.init();
     await assert.rejects(
       CourseModel.create({ ...(await repositories.courses.findById(courseId)), legacyId: courseId + 100 }),
@@ -169,6 +252,10 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
       studentEmail: other.email, studentName: other.name,
       courseId: course.legacyId, status: "Activo",
     });
+    assert.equal((await api(server.baseUrl, `/api/admin/courses/${courseId}`, {
+      method: "DELETE", token: adminLogin.body.data.token,
+    })).status, 400);
+    assert.ok(await repositories.enrollments.findById(otherEnrollment.id));
 
     const studentLogin = await api<{ data: { token: string } }>(server.baseUrl, "/api/auth/login", {
       method: "POST", body: JSON.stringify({ role: "alumno", email: student.email, password: studentPassword }),
