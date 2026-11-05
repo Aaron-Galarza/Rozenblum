@@ -78,8 +78,8 @@ export default function ImagePicker({ category, label, value, onChange, onUpload
           {busy && images.length === 0 && <p role="status" className="text-sm text-[#173B6C]">Cargando imágenes…</p>}
           {!busy && images.length === 0 && !error && <p className="text-sm text-[#5b6780]">Todavía no hay imágenes en esta carpeta.</p>}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {images.map((image) => (
-              <button key={image.id} type="button" onClick={() => onChange(image.url)} aria-label="Seleccionar imagen" aria-pressed={value === image.url} className={`min-h-20 overflow-hidden rounded border-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#173B6C] ${value === image.url ? "border-[#B58A43]" : "border-transparent"}`}>
+            {images.map((image, index) => (
+              <button key={image.id} type="button" onClick={() => onChange(image.url)} aria-label={`Seleccionar imagen ${index + 1} de ${images.length}`} aria-pressed={value === image.url} className={`min-h-20 overflow-hidden rounded border-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#173B6C] ${value === image.url ? "border-[#B58A43]" : "border-transparent"}`}>
                 <img src={image.thumbnailUrl} alt="" loading="lazy" className="aspect-[4/3] w-full object-cover" />
               </button>
             ))}
