@@ -1,13 +1,11 @@
 import type { OrderStatus, Role } from "@rozenblum/shared";
 import { formatArs, newId, nowIso, slugify } from "../lib/utils.js";
 import type {
-  CourseInput,
   StoredContact,
   StoredConversation,
   StoredCourse,
   StoredEnrollment,
   StoredMessage,
-  StoredModule,
   StoredOrder,
   StoredSettings,
   StoredUser,
@@ -70,17 +68,20 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
         role: input.role,
         status: input.status ?? "Activo",
         initials: input.initials,
+        img: input.img,
         passwordHash: input.passwordHash,
+        sessionVersion: input.sessionVersion ?? 0,
         createdAt: nowIso(),
       };
       db.users.push(user);
       return user;
     },
-    async update(id, patch) {
+    async update(id, patch, options) {
       const user = db.users.find((u) => u.id === id);
       if (!user) return null;
       Object.assign(user, patch);
       if (patch.email) user.email = patch.email.toLowerCase();
+      if (options?.revokeSessions) user.sessionVersion = (user.sessionVersion ?? 0) + 1;
       return user;
     },
     async delete(id) {
@@ -97,6 +98,12 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
     },
     async listPublished() {
       return db.courses.filter((c) => c.status === "published").map(clone);
+    },
+    async findLatestPublished() {
+      const latest = db.courses
+        .filter((c) => c.status === "published")
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.legacyId - a.legacyId)[0];
+      return latest ? clone(latest) : null;
     },
     async findBySlug(slug) {
       const course = db.courses.find((c) => c.slug === slug);
@@ -265,6 +272,23 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
       if (!conversation) return null;
       conversation.messages.push(clone(message));
       return clone(conversation);
+    },
+    async reassignTeacher(courseId, teacherEmail, teacherName) {
+      let changed = 0;
+      for (const conversation of db.conversations) {
+        if (conversation.courseId !== courseId) continue;
+        conversation.teacherEmail = teacherEmail.toLowerCase();
+        conversation.teacherName = teacherName;
+        changed += 1;
+      }
+      return changed;
+    },
+    async deleteByStudent(email) {
+      const before = db.conversations.length;
+      db.conversations = db.conversations.filter(
+        (c) => c.studentEmail.toLowerCase() !== email.toLowerCase(),
+      );
+      return before - db.conversations.length;
     },
   };
 

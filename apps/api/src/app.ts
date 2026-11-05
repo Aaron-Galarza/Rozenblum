@@ -13,13 +13,18 @@ import { publicRouter } from "./routes/public.js";
 import { studentRouter } from "./routes/student.js";
 import { teacherRouter } from "./routes/teacher.js";
 import { adminRouter } from "./routes/admin.js";
+import { mediaRouter } from "./routes/media.js";
 
 export function createApp() {
   const app = express();
 
   app.disable("x-powered-by");
-  // Behind a managed proxy the client IP arrives in X-Forwarded-For.
-  if (env.isProduction) app.set("trust proxy", 1);
+  // Behind a managed proxy the client IP arrives in X-Forwarded-For. The
+  // number of trusted hops is configurable (TRUST_PROXY) to avoid spoofing.
+  app.set("trust proxy", env.trustProxy);
+  // Request context goes first so CORS/body-parser failures still carry a
+  // request id and are logged with the same shape as application errors.
+  app.use(requestContext);
   app.use(helmet());
   app.use(
     cors({
@@ -33,7 +38,6 @@ export function createApp() {
     }),
   );
   app.use(express.json({ limit: "1mb" }));
-  app.use(requestContext);
 
   // Abuse protection for the endpoints that write data or check credentials.
   const authLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 20 });
@@ -67,6 +71,7 @@ export function createApp() {
   });
 
   app.use("/api/auth/login", authLimiter);
+  app.use("/api/auth/password", authLimiter);
   app.use("/api/checkout", checkoutLimiter);
   app.use("/api/contact", contactLimiter);
   app.use("/api/teacher/youtube-preview", youtubePreviewLimiter);
@@ -75,6 +80,7 @@ export function createApp() {
   app.use("/api/student", studentRouter);
   app.use("/api/teacher", teacherRouter);
   app.use("/api/admin", adminRouter);
+  app.use("/api/media", mediaRouter);
   app.use("/api", publicRouter);
 
   app.use(notFoundHandler);

@@ -63,6 +63,8 @@ const userSchema = new Schema<StoredUser>(
     status: { type: String, required: true, enum: ["Activo", "Suspendido"], default: "Activo" },
     initials: { type: String, required: true },
     passwordHash: { type: String, required: true },
+    sessionVersion: { type: Number, required: true, default: 0 },
+    img: { type: String, default: undefined },
     createdAt: { type: String, required: true },
   },
   { versionKey: false, collection: "users" },
@@ -78,9 +80,9 @@ const courseSchema = new Schema<StoredCourse>(
     priceCents: { type: Number, required: true },
     duration: { type: String, required: true },
     level: { type: String, required: true },
-    img: { type: String, required: true },
+    img: { type: String, default: "" },
     professor: { type: String, required: true },
-    professorEmail: { type: String, default: undefined, index: true },
+    professorEmail: { type: String, required: true, index: true, lowercase: true },
     status: { type: String, required: true, enum: ["published", "draft"], default: "draft" },
     temario: { type: [temarioSchema], default: [] },
     modules: { type: [moduleSchema], default: [] },
@@ -91,6 +93,7 @@ const courseSchema = new Schema<StoredCourse>(
 );
 
 courseSchema.index({ status: 1, legacyId: 1 });
+courseSchema.index({ status: 1, createdAt: -1, legacyId: -1 });
 
 const enrollmentSchema = new Schema<StoredEnrollment>(
   {
@@ -113,6 +116,7 @@ const orderSchema = new Schema<StoredOrder>(
     externalReference: { type: String, required: true, unique: true, index: true },
     alumno: { type: String, required: true },
     email: { type: String, required: true, index: true, lowercase: true },
+    dniPasswordHash: { type: String, default: undefined, select: false },
     curso: { type: String, required: true },
     courseSlug: { type: String, required: true },
     courseId: { type: Number, required: true },
@@ -162,7 +166,7 @@ const settingsSchema = new Schema<StoredSettings>(
   {
     companyName: { type: String, required: true },
     supportEmail: { type: String, required: true },
-    contactWhatsapp: { type: String, required: true },
+    contactWhatsapp: { type: String, default: "" },
     logoUrl: { type: String, default: "" },
     privacyText: { type: String, default: "" },
     updatedAt: { type: String, required: true },
@@ -222,7 +226,7 @@ const homeContentSchema = new Schema<HomeContentDTO>(
       aboutParagraphs: [String],
       footerTagline: String,
     },
-    team: [{ name: String, role: String, img: String }],
+    team: [{ name: String, role: String, img: String, userId: String }],
     practiceAreas: [{
       title: String,
       desc: String,

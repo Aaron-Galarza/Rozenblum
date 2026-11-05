@@ -10,6 +10,7 @@ import type {
   TeacherStudentDTO,
 } from "@rozenblum/shared";
 import { formatArs } from "../lib/utils.js";
+import { forbidden, notFound } from "../lib/http.js";
 import type { Pagination } from "../lib/pagination.js";
 import { env } from "../config/env.js";
 import { getRepositories } from "../repositories/index.js";
@@ -138,8 +139,8 @@ export async function getTeacherStudents(
 ): Promise<TeacherStudentDTO[]> {
   const repos = getRepositories();
   const course = await repos.courses.findById(courseId);
-  if (!course) throw new Error("Curso no encontrado.");
-  if (!canManageCourse(course, user)) throw new Error("No gestionás este curso.");
+  if (!course) throw notFound("Curso no encontrado.");
+  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
 
   const enrollments = (await repos.enrollments.listAll()).filter(
     (enrollment) => enrollment.courseId === courseId,

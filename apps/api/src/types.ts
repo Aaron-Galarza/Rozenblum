@@ -17,7 +17,10 @@ export type StoredUser = {
   role: Role;
   status: "Activo" | "Suspendido";
   initials: string;
+  img?: string;
   passwordHash: string;
+  /** Bumped on password/status changes to revoke previously issued tokens. */
+  sessionVersion: number;
   createdAt: string;
 };
 
@@ -49,7 +52,7 @@ export type StoredCourse = {
   level: string;
   img: string;
   professor: string;
-  professorEmail?: string;
+  professorEmail: string;
   status: "published" | "draft";
   temario: CourseSyllabusModule[];
   modules: StoredModule[];
@@ -72,6 +75,8 @@ export type StoredOrder = {
   externalReference: string;
   alumno: string;
   email: string;
+  /** Salted scrypt hash of the DNI, carried until payment confirmation. Never expose in DTOs. */
+  dniPasswordHash?: string;
   curso: string;
   courseSlug: string;
   courseId: number;
@@ -154,7 +159,7 @@ export type CourseInput = {
   duration: string;
   level: string;
   professor: string;
-  professorEmail?: string;
+  professorEmail: string;
   status: "published" | "draft";
   img: string;
 };

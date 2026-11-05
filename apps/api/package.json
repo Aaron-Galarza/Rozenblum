@@ -8,7 +8,9 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --import ./src/tests/test-env.ts --test ./src/tests/api.test.ts"
+    "bootstrap:admin": "tsx src/scripts/bootstrap-admin.ts",
+    "test": "node --import tsx --import ./src/tests/test-env.ts --test ./src/tests/api.test.ts",
+    "test:atlas": "node --import tsx --test ./src/tests/atlas.test.ts"
   },
   "dependencies": {
     "@rozenblum/shared": "*",

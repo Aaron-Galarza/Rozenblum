@@ -26,10 +26,18 @@ export interface UserRepository {
     status?: "Activo" | "Suspendido";
     passwordHash: string;
     initials: string;
+    img?: string;
+    sessionVersion?: number;
   }): Promise<StoredUser>;
   update(
     id: string,
-    patch: Partial<Pick<StoredUser, "name" | "email" | "status" | "passwordHash" | "initials">>,
+    patch: Partial<
+      Pick<
+        StoredUser,
+        "name" | "email" | "status" | "passwordHash" | "initials" | "img"
+      >
+    >,
+    options?: { revokeSessions?: boolean },
   ): Promise<StoredUser | null>;
   delete(id: string): Promise<boolean>;
 }
@@ -37,6 +45,7 @@ export interface UserRepository {
 export interface CourseRepository {
   list(): Promise<StoredCourse[]>;
   listPublished(): Promise<StoredCourse[]>;
+  findLatestPublished(): Promise<StoredCourse | null>;
   findBySlug(slug: string): Promise<StoredCourse | null>;
   findById(legacyId: number): Promise<StoredCourse | null>;
   nextLegacyId(): Promise<number>;
@@ -98,6 +107,10 @@ export interface ConversationRepository {
   ): Promise<StoredConversation | null>;
   create(input: StoredConversation): Promise<StoredConversation>;
   addMessage(id: string, message: StoredMessage): Promise<StoredConversation | null>;
+  /** Moves every thread of a course to its new professor. */
+  reassignTeacher(courseId: number, teacherEmail: string, teacherName: string): Promise<number>;
+  /** Removes the threads of a deleted student, including their messages. */
+  deleteByStudent(email: string): Promise<number>;
 }
 
 export interface SettingsRepository {

@@ -28,6 +28,7 @@ export function userToDTO(user: StoredUser): UserDTO {
     role: user.role,
     initials: user.initials,
     status: user.status,
+    img: user.img,
   };
 }
 
@@ -68,7 +69,14 @@ export function moduleStatuses(
       continue;
     }
 
-    if (previousCompleted && (done > 0 || total > 0)) {
+    // An empty module has nothing to unlock, but it must not lock the rest of
+    // the course. Preserve the previous module's completion state.
+    if (total === 0) {
+      statuses.set(mod.id, "locked");
+      continue;
+    }
+
+    if (previousCompleted) {
       statuses.set(mod.id, "in_progress");
       previousCompleted = false;
       continue;
@@ -248,6 +256,7 @@ export function adminProfesor(
     cursos: courses,
     alumnos: students,
     estado: user.status,
+    img: user.img,
   };
 }
 

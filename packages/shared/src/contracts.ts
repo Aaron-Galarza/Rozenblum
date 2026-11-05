@@ -16,6 +16,7 @@ export type UserDTO = {
   role: Role;
   initials: string;
   status: "Activo" | "Suspendido";
+  img?: string;
 };
 
 export type SessionDTO = {
@@ -32,8 +33,46 @@ export type LoginInput = {
 export const loginSchema = z.object({
   role: roleSchema,
   email: z.string().trim().email(),
+  /**
+   * The password of every student account is their DNI. Staff accounts keep a
+   * regular password, so this field only enforces a sane length boundary.
+   */
   password: z.string().min(1).max(128),
 });
+
+/**
+ * Self-service password change. The current password is always required, even
+ * for the first rotation of a student's DNI-based password. A successful change
+ * bumps `sessionVersion`; the API returns a fresh token so the caller keeps a
+ * valid session while every previously issued token stops working.
+ */
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(128),
+    newPassword: z.string().min(8).max(128),
+  })
+  .superRefine((value, ctx) => {
+    if (value.currentPassword === value.newPassword) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["newPassword"],
+        message: "La nueva contraseña debe ser distinta de la actual.",
+      });
+    }
+  });
+
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+/**
+ * Argentine DNI: 7 or 8 digits, without dots. It is captured during checkout
+ * and becomes the student's initial password once the payment is approved.
+ */
+export const DNI_PATTERN = /^\d{7,8}$/;
+
+export const dniSchema = z
+  .string()
+  .trim()
+  .regex(DNI_PATTERN, "El DNI debe tener 7 u 8 dígitos, sin puntos.");
 
 /* ──────────────────────────────────────────────────────────────────────────────
  * Courses
@@ -252,8 +291,8 @@ export const coursePayloadSchema = z.object({
   priceCents: z.number().int().nonnegative(),
   level: z.string().trim().min(1).max(60),
   duration: z.string().trim().min(1).max(60),
-  professor: z.string().trim().min(1).max(120),
-  status: z.enum(["published", "draft"]).default("draft"),
+  professorEmail: z.string().trim().email(),
+  status: z.literal("draft").default("draft"),
   img: z.string().trim().url().refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
 });
 
@@ -280,7 +319,11 @@ export const checkoutSchema = z.object({
   courseSlug: z.string().min(1),
   nombre: z.string().trim().min(3).max(120),
   email: z.string().trim().email(),
-  password: z.string().min(12).max(128),
+  /**
+   * Hashed with a unique salt on the order. No account is created here: the
+   * student account is created after an administrator confirms payment.
+   */
+  dni: dniSchema,
 });
 
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
@@ -327,7 +370,7 @@ export type HomeContentDTO = {
     aboutParagraphs: string[];
     footerTagline: string;
   };
-  team: { name: string; role: string; img: string }[];
+  team: { name: string; role: string; img: string; userId?: string }[];
   practiceAreas: {
     title: string;
     desc: string;
@@ -367,17 +410,19 @@ export type AdminOverviewDTO = {
 };
 
 export type AdminUserInput = {
-  role: "alumno" | "profesor";
+  /** Students are created only from an approved checkout, never by hand. */
+  role: "profesor";
   name: string;
   email: string;
   password: string;
 };
 
 export const adminUserSchema = z.object({
-  role: z.enum(["alumno", "profesor"]),
+  role: z.literal("profesor"),
   name: z.string().trim().min(3).max(120),
   email: z.string().trim().email(),
   password: z.string().min(12).max(128),
+  img: z.string().trim().url().refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
 });
 
 export const adminUserPatchSchema = z.object({
@@ -385,12 +430,13 @@ export const adminUserPatchSchema = z.object({
   email: z.string().trim().email().optional(),
   status: z.enum(["Activo", "Suspendido"]).optional(),
   password: z.string().min(12).max(128).optional(),
+  img: z.string().trim().url().refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
 });
 
 export const adminCoursePatchSchema = z.object({
   title: z.string().trim().min(3).max(180).optional(),
   description: z.string().trim().min(3).max(2000).optional(),
-  professor: z.string().trim().min(1).max(120).optional(),
+  professorEmail: z.string().trim().email().optional(),
   priceCents: z.number().int().nonnegative().optional(),
   duration: z.string().trim().min(1).max(60).optional(),
   level: z.string().trim().min(1).max(60).optional(),
@@ -461,6 +507,7 @@ export type TeacherDashboardDTO = {
 export type CourseDetailDTO = {
   course: CourseDTO;
   modules: ModuleDTO[];
+  professor: { name: string; img?: string };
 };
 
 export type AdminAlumnoDTO = {
@@ -480,6 +527,7 @@ export type AdminProfesorDTO = {
   cursos: number;
   alumnos: number;
   estado: "Activo" | "Suspendido";
+  img?: string;
 };
 
 export type AdminCursoDTO = {

@@ -12,6 +12,7 @@ import { formatArs, newId } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
 import type { CourseInput, StoredCourse, StoredLesson, StoredModule, StoredUser } from "../types.js";
 import { courseStructure, courseToDTO, enrollmentToDTO, moduleStatuses } from "./mappers.js";
+import { assertManagedImageUrl } from "./media.js";
 
 export function canManageCourse(course: StoredCourse, user: StoredUser): boolean {
   if (user.role === "admin") return true;
@@ -19,18 +20,23 @@ export function canManageCourse(course: StoredCourse, user: StoredUser): boolean
   return course.professorEmail?.toLowerCase() === user.email.toLowerCase();
 }
 
-async function resolveProfessor(name: string): Promise<StoredUser> {
-  const normalized = name.replace(/^(Abg\.|Dr\.|Dra\.|Prof\.)\s*/i, "").trim().toLowerCase();
-  const matches = (await getRepositories().users.list("profesor")).filter(
-    (user) => user.name.trim().toLowerCase() === normalized,
-  );
-  if (matches.length !== 1) throw badRequest("Seleccioná un profesor registrado con nombre único.");
-  return matches[0];
+async function resolveProfessor(email: string): Promise<StoredUser> {
+  const professor = await getRepositories().users.findByEmail(email);
+  if (!professor || professor.role !== "profesor" || professor.status !== "Activo") {
+    throw badRequest("Seleccioná un profesor activo y registrado.");
+  }
+  return professor;
 }
 
 export async function listPublishedCourses(): Promise<CourseDTO[]> {
   const courses = await getRepositories().courses.listPublished();
   return courses.map(courseToDTO);
+}
+
+export async function getLatestPublishedCourse(): Promise<CourseDetailDTO> {
+  const latest = await getRepositories().courses.findLatestPublished();
+  if (!latest) throw notFound("No hay cursos publicados.");
+  return getPublishedCourseDetail(latest.slug);
 }
 
 export async function getPublishedCourse(slug: string): Promise<CourseDTO> {
@@ -46,13 +52,16 @@ export async function getPublishedCourse(slug: string): Promise<CourseDTO> {
  * intentionally excluded — they belong to enrolled students.
  */
 export async function getPublishedCourseDetail(slug: string): Promise<CourseDetailDTO> {
-  const course = await getRepositories().courses.findBySlug(slug);
+  const repos = getRepositories();
+  const course = await repos.courses.findBySlug(slug);
   if (!course || course.status !== "published") {
     throw notFound("Curso no encontrado.");
   }
 
+  const professor = await repos.users.findByEmail(course.professorEmail);
   return {
     course: courseToDTO(course),
+    professor: { name: professor?.name ?? course.professor, ...(professor?.img ? { img: professor.img } : {}) },
     modules: course.modules.map((mod) => ({
       id: mod.id,
       title: mod.title,
@@ -101,7 +110,11 @@ export async function getTeacherCourseList(user: StoredUser): Promise<CourseDTO[
 
 export async function createCourse(input: CourseInput, user: StoredUser): Promise<CourseDTO> {
   if (user.role !== "admin") throw forbidden("Solo un administrador puede crear cursos.");
-  const course = await getRepositories().courses.create(input);
+  if (input.img) assertManagedImageUrl(input.img, "courses");
+  const professor = await resolveProfessor(input.professorEmail);
+  const course = await getRepositories().courses.create({
+    ...input, professor: professor.name, professorEmail: professor.email, status: "draft",
+  });
   return courseToDTO(course);
 }
 
@@ -114,15 +127,40 @@ export async function updateCourse(
   const course = await repos.courses.findById(courseId);
   if (!course) throw notFound("Curso no encontrado.");
   if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  if (patch.img) assertManagedImageUrl(patch.img, "courses");
+  if (patch.professorEmail && user.role !== "admin") {
+    throw forbidden("Solo un administrador puede asignar profesores.");
+  }
+  const professor = patch.professorEmail
+    ? await resolveProfessor(patch.professorEmail)
+    : patch.status === "published"
+      ? await resolveProfessor(course.professorEmail)
+      : null;
   if (patch.status === "published" && !course.modules.some((mod) => mod.lessons.length > 0)) {
     throw badRequest("Agregá al menos una lección antes de publicar el curso.");
   }
-
-  const nextPatch = patch.professor
-    ? { ...patch, professorEmail: (await resolveProfessor(patch.professor)).email }
+  if (patch.status === "published" && !(patch.img ?? course.img)) {
+    throw badRequest("Seleccioná una imagen del curso antes de publicarlo.");
+  }
+  const nextPatch = professor && patch.professorEmail
+    ? { ...patch, professor: professor.name, professorEmail: professor.email }
     : patch;
   const updated = await repos.courses.update(courseId, nextPatch);
   if (!updated) throw notFound("Curso no encontrado.");
+
+  // Course threads follow the current professor. Without this, a former
+  // professor would keep reading and answering the course conversations.
+  if (
+    updated.professorEmail &&
+    updated.professorEmail.toLowerCase() !== course.professorEmail.toLowerCase()
+  ) {
+    await repos.conversations.reassignTeacher(
+      courseId,
+      updated.professorEmail,
+      updated.professor,
+    );
+  }
+
   return courseToDTO(updated);
 }
 
@@ -163,6 +201,18 @@ async function persistModules(course: StoredCourse, modules: StoredModule[]): Pr
     ),
   );
   if (invalidDocument) throw badRequest("El documento de una lección no es válido.");
+  const imageUrls = (value: unknown): string[] => {
+    if (!value || typeof value !== "object") return [];
+    if (Array.isArray(value)) return value.flatMap(imageUrls);
+    const block = value as { type?: string; props?: { url?: unknown }; children?: unknown[] };
+    return [
+      ...(block.type === "image" ? [String(block.props?.url ?? "")] : []),
+      ...imageUrls(block.children),
+    ];
+  };
+  for (const mod of modules) for (const lesson of mod.lessons) for (const url of imageUrls(lesson.document?.blocks)) {
+    assertManagedImageUrl(url, "lessons");
+  }
   const updated = await getRepositories().courses.saveModules(course.legacyId, modules);
   if (!updated) throw notFound("Curso no encontrado.");
   return updated;
@@ -320,7 +370,8 @@ export async function deleteLesson(
   const course = await getRepositories().courses.findById(courseId);
   if (!course) throw notFound("Curso no encontrado.");
   if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
-  const mod = findModule(course, moduleId);
+  // Throws when the module does not exist, before any mutation.
+  findModule(course, moduleId);
 
   if (course.status === "published" &&
       course.modules.reduce((count, item) => count + item.lessons.length, 0) === 1) {
@@ -406,25 +457,24 @@ export async function createEmptyCourseForAdmin(input: {
   title: string;
   description: string;
   priceCents: number;
-  professor: string;
+  professorEmail: string;
   level?: string;
   duration?: string;
   img?: string;
-  status?: "published" | "draft";
+  status?: "draft";
 }): Promise<CourseDTO> {
-  const professor = await resolveProfessor(input.professor);
+  if (input.img) assertManagedImageUrl(input.img, "courses");
+  const professor = await resolveProfessor(input.professorEmail);
   const course = await getRepositories().courses.create({
     title: input.title,
     description: input.description,
     priceCents: input.priceCents,
     level: input.level ?? "Inicial",
     duration: input.duration ?? "On-Demand",
-    professor: input.professor,
+    professor: professor.name,
     professorEmail: professor.email,
-    status: input.status ?? "draft",
-    img:
-      input.img ??
-      "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=600&h=300&fit=crop&auto=format",
+    status: "draft",
+    img: input.img ?? "",
   });
   return courseToDTO(course);
 }

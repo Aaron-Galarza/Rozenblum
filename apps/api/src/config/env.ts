@@ -8,8 +8,17 @@ const envSchema = z.object({
   MONGODB_DB: z.string().trim().default("rozenblum"),
   AUTH_SECRET: z.string().min(32).optional(),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  /**
+   * Express `trust proxy` value. Defaults to 1 in production (one managed
+   * proxy) and false in development. Accepts true/false, a hop count or an
+   * Express subnet/loopback expression.
+   */
+  TRUST_PROXY: z.string().trim().optional(),
   MERCADOPAGO_ACCESS_TOKEN: z.string().optional(),
   MERCADOPAGO_PUBLIC_KEY: z.string().optional(),
+  CLOUDINARY_CLOUD_NAME: z.string().regex(/^[a-zA-Z0-9_-]+$/).optional(),
+  CLOUDINARY_API_KEY: z.string().regex(/^\d+$/).optional(),
+  CLOUDINARY_API_SECRET: z.string().min(16).optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -18,6 +27,14 @@ if (!parsed.success) {
 }
 
 const raw = parsed.data;
+const cloudinaryFields = [raw.CLOUDINARY_CLOUD_NAME, raw.CLOUDINARY_API_KEY, raw.CLOUDINARY_API_SECRET];
+if (cloudinaryFields.some(Boolean) && !cloudinaryFields.every(Boolean)) {
+  throw new Error("Cloudinary requiere CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY y CLOUDINARY_API_SECRET juntos.");
+}
+if (raw.NODE_ENV === "production" && !cloudinaryFields.every(Boolean)) {
+  throw new Error("Configurá Cloudinary antes de iniciar la API en producción.");
+}
+
 if (raw.NODE_ENV !== "test" && (!raw.MONGODB_URI || !raw.AUTH_SECRET)) {
   throw new Error("La API requiere MONGODB_URI y AUTH_SECRET en apps/api/.env.");
 }
@@ -26,11 +43,42 @@ if (raw.NODE_ENV !== "test" &&
   throw new Error("Reemplazá los valores de ejemplo de MONGODB_URI y AUTH_SECRET antes de iniciar la API.");
 }
 
+const corsOrigins = raw.CORS_ORIGIN.split(",").map((origin) => origin.trim()).filter(Boolean);
+const isHttpOrigin = (origin: string) => {
+  try {
+    const url = new URL(origin);
+    return (url.protocol === "http:" || url.protocol === "https:") &&
+      url.origin === origin && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+};
+if (corsOrigins.length === 0 || !corsOrigins.every(isHttpOrigin)) {
+  throw new Error("CORS_ORIGIN debe contener orígenes http(s) separados por coma, sin rutas ni credenciales.");
+}
+if (raw.NODE_ENV === "production" &&
+  corsOrigins.some((origin) => !origin.startsWith("https://") || /^https:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|$)/i.test(origin))) {
+  throw new Error("CORS_ORIGIN debe usar HTTPS y no puede apuntar a localhost en producción.");
+}
+
+const isProduction = raw.NODE_ENV === "production";
+const isTest = raw.NODE_ENV === "test";
+
+const trustProxy = (() => {
+  const value = raw.TRUST_PROXY?.toLowerCase();
+  if (!value) return isProduction ? 1 : false;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (/^\d+$/.test(value)) return Number(value);
+  return value;
+})();
+
 export const env = {
   ...raw,
   AUTH_SECRET: raw.AUTH_SECRET ?? "test-only-session-secret-000000000000000000000000",
-  isProduction: raw.NODE_ENV === "production",
-  isTest: raw.NODE_ENV === "test",
-  corsOrigins: raw.CORS_ORIGIN.split(",").map((origin) => origin.trim()).filter(Boolean),
+  isProduction,
+  isTest,
+  corsOrigins,
+  trustProxy,
   paymentsConfigured: Boolean(raw.MERCADOPAGO_ACCESS_TOKEN),
 };

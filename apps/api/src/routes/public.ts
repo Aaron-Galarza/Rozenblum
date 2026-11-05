@@ -1,20 +1,19 @@
 import { Router } from "express";
 import { checkoutSchema, contactSchema } from "@rozenblum/shared";
 import { sendData } from "../lib/http.js";
-import { listPublishedCourses, getPublishedCourseDetail } from "../services/courses.js";
+import { listPublishedCourses, getLatestPublishedCourse, getPublishedCourseDetail } from "../services/courses.js";
 import { checkout, getOrderReceipt } from "../services/checkout.js";
 import { submitContact, getPublicSettings } from "../services/contact.js";
+import { optionalAuth } from "../middleware/auth.js";
 import { asyncRoute, parseBody } from "./helpers.js";
-import { HomeContentModel } from "../models/index.js";
+import { getHomeContent } from "../services/home.js";
 
 export const publicRouter = Router();
 
 publicRouter.get(
   "/content/home",
   asyncRoute(async (_req, res) => {
-    const content = await HomeContentModel.findOne({ key: "home" }).select("-_id").lean().exec();
-    if (!content) throw new Error("El contenido de inicio no existe en Atlas.");
-    sendData(res, content);
+    sendData(res, await getHomeContent());
   }),
 );
 
@@ -22,6 +21,13 @@ publicRouter.get(
   "/courses",
   asyncRoute(async (_req, res) => {
     sendData(res, await listPublishedCourses());
+  }),
+);
+
+publicRouter.get(
+  "/courses/latest",
+  asyncRoute(async (_req, res) => {
+    sendData(res, await getLatestPublishedCourse());
   }),
 );
 
@@ -34,9 +40,10 @@ publicRouter.get(
 
 publicRouter.post(
   "/checkout",
+  optionalAuth,
   asyncRoute(async (req, res) => {
     const input = parseBody(checkoutSchema, req.body);
-    const result = await checkout(input);
+    const result = await checkout(input, req.authUser);
     sendData(res, result, 201);
   }),
 );

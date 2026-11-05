@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 import {
   adminCoursePatchSchema,
   adminUserPatchSchema,
@@ -21,6 +22,7 @@ import {
 import { getAdminOverview, listAdminEnrollments } from "../services/dashboard.js";
 import { createEmptyCourseForAdmin, deleteCourse, updateCourse } from "../services/courses.js";
 import { listContacts } from "../services/contact.js";
+import { updateHomeHeroImage } from "../services/home.js";
 import { asyncRoute, numericParam, parseBody } from "./helpers.js";
 
 export const adminRouter = Router();
@@ -125,3 +127,12 @@ adminRouter.put(
     sendData(res, await updateSettings(input));
   }),
 );
+
+const homeImagesSchema = z.object({
+  heroImage: z.string().url().max(1000),
+}).strict();
+
+adminRouter.put("/content/home/images", asyncRoute(async (req, res) => {
+  const input = parseBody(homeImagesSchema, req.body);
+  sendData(res, await updateHomeHeroImage(input.heroImage));
+}));

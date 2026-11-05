@@ -11,7 +11,6 @@ import {
 import { formatArs, newId, nowIso, slugify } from "../lib/utils.js";
 import { LIST_HARD_LIMIT } from "../lib/pagination.js";
 import type {
-  CourseInput,
   StoredContact,
   StoredConversation,
   StoredCourse,
@@ -67,15 +66,20 @@ export function createMongooseRepositories(): Repositories {
         role: input.role,
         status: input.status ?? "Activo",
         initials: input.initials,
+        img: input.img,
         passwordHash: input.passwordHash,
+        sessionVersion: input.sessionVersion ?? 0,
         createdAt: nowIso(),
       });
       return clean<StoredUser>(doc.toObject());
     },
-    async update(id, patch) {
+    async update(id, patch, options) {
       const update = { ...patch };
       if (update.email) update.email = update.email.toLowerCase();
-      const doc = await UserModel.findOneAndUpdate({ id }, { $set: update }, { returnDocument: "after" })
+      const changes = options?.revokeSessions
+        ? { $set: update, $inc: { sessionVersion: 1 } }
+        : { $set: update };
+      const doc = await UserModel.findOneAndUpdate({ id }, changes, { returnDocument: "after" })
         .lean()
         .exec();
       return doc ? clean<StoredUser>(doc) : null;
@@ -97,6 +101,13 @@ export function createMongooseRepositories(): Repositories {
         .lean()
         .exec();
       return docs.map((doc) => clean<StoredCourse>(doc));
+    },
+    async findLatestPublished() {
+      const doc = await CourseModel.findOne({ status: "published" })
+        .sort({ createdAt: -1, legacyId: -1 })
+        .lean()
+        .exec();
+      return doc ? clean<StoredCourse>(doc) : null;
     },
     async findBySlug(slug) {
       const doc = await CourseModel.findOne({ slug }).lean().exec();
@@ -249,6 +260,7 @@ export function createMongooseRepositories(): Repositories {
       const doc = await OrderModel.findOne({
         $or: [{ externalReference: reference }, { id: reference }],
       })
+        .select("+dniPasswordHash")
         .lean()
         .exec();
       return doc ? clean<StoredOrder>(doc) : null;
@@ -259,6 +271,7 @@ export function createMongooseRepositories(): Repositories {
     },
     async updateStatus(id, estado: OrderStatus) {
       const doc = await OrderModel.findOneAndUpdate({ id }, { $set: { estado } }, { returnDocument: "after" })
+        .select("+dniPasswordHash")
         .lean()
         .exec();
       return doc ? clean<StoredOrder>(doc) : null;
@@ -302,6 +315,19 @@ export function createMongooseRepositories(): Repositories {
         .lean()
         .exec();
       return doc ? clean<StoredConversation>(doc) : null;
+    },
+    async reassignTeacher(courseId, teacherEmail, teacherName) {
+      const result = await ConversationModel.updateMany(
+        { courseId },
+        { $set: { teacherEmail: teacherEmail.toLowerCase(), teacherName } },
+      ).exec();
+      return result.modifiedCount ?? 0;
+    },
+    async deleteByStudent(email) {
+      const result = await ConversationModel.deleteMany({
+        studentEmail: email.toLowerCase(),
+      }).exec();
+      return result.deletedCount ?? 0;
     },
   };
 
