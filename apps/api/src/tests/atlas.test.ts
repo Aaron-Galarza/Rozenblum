@@ -98,6 +98,14 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
       server.baseUrl, "/api/admin/contacts?limit=1&offset=0", { token: adminLogin.body.data.token },
     );
     assert.equal(adminContacts.body.data[0]?.id, contact.body.data.id);
+    await ContactModel.insertMany(["ctc_same_a", "ctc_same_b"].map((id) => ({
+      id, name: "Same Time", email: "same@example.test",
+      message: "Contact pagination test", createdAt: "2100-01-01T00:00:00.000Z",
+    })));
+    const equalTimeContacts = await api<{ data: { id: string }[] }>(
+      server.baseUrl, "/api/admin/contacts?limit=2&offset=0", { token: adminLogin.body.data.token },
+    );
+    assert.deepEqual(equalTimeContacts.body.data.map(({ id }) => id), ["ctc_same_b", "ctc_same_a"]);
     const courseInput = {
       title: "Atlas Test Course", description: "Isolated authorization test course",
       priceCents: 100_000, duration: "Online", level: "Inicial",
@@ -132,6 +140,9 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     const publicList = await api<{ data: { slug: string; professorId?: string }[] }>(server.baseUrl, "/api/courses");
     assert.equal(publicList.body.data.length, 1);
     assert.equal(publicList.body.data[0]?.professorId, undefined);
+    const projected = await repositories.courses.listPublished();
+    assert.deepEqual(projected[0]?.modules, [{ id: 1 }]);
+    assert.equal("professorEmail" in projected[0]!, false);
     const publicDetail = await api(server.baseUrl, `/api/courses/${createdCourse.body.data.slug}`);
     assert.equal(publicDetail.status, 200);
     assert.equal(JSON.stringify(publicDetail.body).includes("PRIVATE ATLAS LESSON"), false);

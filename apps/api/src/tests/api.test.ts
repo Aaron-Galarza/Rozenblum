@@ -396,6 +396,25 @@ test("only admins can read paginated contact messages", async () => {
   assert.deepEqual(next.body.data.map((item) => item.id), [first.id]);
 });
 
+test("contact pagination has a stable order when timestamps match", async () => {
+  const createdAt = "2100-01-01T00:00:00.000Z";
+  for (const id of ["ctc_same_a", "ctc_same_b"]) {
+    await repositories.contacts.create({
+      id, name: "Same Time", email: "same@example.test",
+      message: "Contacts with equal timestamps", createdAt,
+    });
+  }
+  const token = await login("admin", adminEmail);
+  const first = await api<{ data: { id: string }[] }>(
+    server.baseUrl, "/api/admin/contacts?limit=1&offset=0", { token },
+  );
+  const second = await api<{ data: { id: string }[] }>(
+    server.baseUrl, "/api/admin/contacts?limit=1&offset=1", { token },
+  );
+  assert.deepEqual(first.body.data.map(({ id }) => id), ["ctc_same_b"]);
+  assert.deepEqual(second.body.data.map(({ id }) => id), ["ctc_same_a"]);
+});
+
 test("contact requests are limited to ten per ten-minute window", async () => {
   const isolatedServer = await startTestServer();
   try {
