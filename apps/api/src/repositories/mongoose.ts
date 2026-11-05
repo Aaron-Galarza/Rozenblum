@@ -124,32 +124,41 @@ export function createMongooseRepositories(): Repositories {
       return (doc?.legacyId ?? 0) + 1;
     },
     async create(input) {
-      const legacyId = await this.nextLegacyId();
       const baseSlug = slugify(input.title);
-      let slug = baseSlug;
-      let suffix = 2;
-      while (await CourseModel.exists({ slug })) {
-        slug = `${baseSlug}-${suffix++}`;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const legacyId = await this.nextLegacyId();
+        let slug = baseSlug;
+        let suffix = 2;
+        while (await CourseModel.exists({ slug })) {
+          slug = `${baseSlug}-${suffix++}`;
+        }
+        try {
+          const doc = await CourseModel.create({
+            legacyId,
+            slug,
+            title: input.title,
+            description: input.description,
+            price: formatArs(input.priceCents),
+            priceCents: input.priceCents,
+            duration: input.duration,
+            level: input.level,
+            img: input.img,
+            professor: input.professor,
+            professorEmail: input.professorEmail,
+            status: input.status,
+            temario: [],
+            modules: [],
+            createdAt: nowIso(),
+            updatedAt: nowIso(),
+          });
+          return clean<StoredCourse>(doc.toObject());
+        } catch (error) {
+          if ((error as { code?: number }).code !== 11000 || attempt === 4) throw error;
+          // Another request claimed the slug or legacy ID after our lookup.
+          // Re-read both values rather than turning a normal race into a 500.
+        }
       }
-      const doc = await CourseModel.create({
-        legacyId,
-        slug,
-        title: input.title,
-        description: input.description,
-        price: formatArs(input.priceCents),
-        priceCents: input.priceCents,
-        duration: input.duration,
-        level: input.level,
-        img: input.img,
-        professor: input.professor,
-        professorEmail: input.professorEmail,
-        status: input.status,
-        temario: [],
-        modules: [],
-        createdAt: nowIso(),
-        updatedAt: nowIso(),
-      });
-      return clean<StoredCourse>(doc.toObject());
+      throw new Error("No se pudo crear el curso.");
     },
     async update(legacyId, patch) {
       const update: Record<string, unknown> = { ...patch, updatedAt: nowIso() };
