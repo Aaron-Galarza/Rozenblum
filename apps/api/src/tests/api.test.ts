@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { scryptSync } from "node:crypto";
 import { after, before, test } from "node:test";
 import { loginSchema } from "@rozenblum/shared";
 import { hashPassword, verifyPassword } from "../lib/password.js";
@@ -6,9 +7,13 @@ import { createMockRepositories } from "../repositories/mock.js";
 import { setRepositoriesForTests } from "../repositories/index.js";
 import { parseYouTubeId } from "../services/youtube.js";
 import { login as loginService } from "../services/auth.js";
+import { moduleStatuses } from "../services/mappers.js";
+import { detectImageFormat, isManagedImageUrl, mediaFolder } from "../services/media.js";
 import { api, startTestServer, type TestServer } from "./helpers.js";
 
 const password = "test-password-12345";
+/** Students authenticate with their DNI, which is their initial password. */
+const studentDni = "30123456";
 const studentEmail = "student@example.test";
 const teacherEmail = "teacher@example.test";
 const adminEmail = "admin@example.test";
@@ -23,17 +28,51 @@ const repositories = createMockRepositories({
   },
 });
 
+test("asynchronous scrypt verifies hashes created by the previous synchronous implementation", async () => {
+  const salt = "00112233445566778899aabbccddeeff";
+  const legacy = `scrypt$${salt}$${scryptSync(password, salt, 64).toString("hex")}`;
+  assert.equal(await verifyPassword(password, legacy), true);
+  assert.equal(await verifyPassword("incorrect", legacy), false);
+  const fresh = await hashPassword(password);
+  assert.match(fresh, /^scrypt\$[0-9a-f]{32}\$[0-9a-f]{128}$/);
+  assert.equal(await verifyPassword(password, fresh), true);
+});
+
 let server: TestServer;
 let courseId: number;
 let enrollmentId: string;
 
-async function login(role: "alumno" | "profesor" | "admin", email: string) {
+/** Cache main tokens so the login rate limiter is not exhausted by setup. */
+const sessionTokens = new Map<string, string>();
+
+async function login(
+  role: "alumno" | "profesor" | "admin",
+  email: string,
+  candidate = role === "alumno" ? studentDni : password,
+) {
+  const cacheKey = `${role}:${email}:${candidate}`;
+  const cached = sessionTokens.get(cacheKey);
+  if (cached) return cached;
+
   const response = await api<{ data: { token: string } }>(server.baseUrl, "/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ role, email, password }),
+    body: JSON.stringify({ role, email, password: candidate }),
   });
   assert.equal(response.status, 200);
+  sessionTokens.set(cacheKey, response.body.data.token);
   return response.body.data.token;
+}
+
+async function rawLogin(
+  role: "alumno" | "profesor" | "admin",
+  email: string,
+  candidate: string,
+) {
+  return api<{ data: { token: string } | null; error?: { message: string } }>(
+    server.baseUrl,
+    "/api/auth/login",
+    { method: "POST", body: JSON.stringify({ role, email, password: candidate }) },
+  );
 }
 
 before(async () => {
@@ -48,7 +87,7 @@ before(async () => {
       email,
       role,
       initials: "TT",
-      passwordHash: hashPassword(password),
+      passwordHash: await hashPassword(role === "alumno" ? studentDni : password),
     });
   }
   const course = await repositories.courses.create({
@@ -130,6 +169,53 @@ test("published courses expose metadata while lesson content remains private", a
   assert.ok(detail.body.data.modules.every((module) => module.lessons.every((lesson) => !lesson.content)));
 });
 
+test("latest course endpoint ignores drafts and exposes only public information", async () => {
+  const newer = await repositories.courses.create({
+    title: "Newest published course", description: "A public course.", priceCents: 75000,
+    duration: "Online", level: "Inicial", professor: "Test profesor",
+    professorEmail: teacherEmail, status: "published", img: "https://example.test/new.jpg",
+  });
+  const draft = await repositories.courses.create({
+    title: "Newest draft", description: "An unpublished course.", priceCents: 75000,
+    duration: "Online", level: "Inicial", professor: "Test profesor",
+    professorEmail: teacherEmail, status: "draft", img: "https://example.test/draft.jpg",
+  });
+  try {
+    const response = await api<{ data: { course: { slug: string }; modules: { lessons: { content?: unknown; document?: unknown }[] }[] } }>(server.baseUrl, "/api/courses/latest");
+    assert.equal(response.status, 200);
+    assert.equal(response.body.data.course.slug, newer.slug);
+    assert.ok(response.body.data.modules.every((module) => module.lessons.every((lesson) => !lesson.content && !lesson.document)));
+  } finally {
+    await repositories.courses.delete(draft.legacyId);
+    await repositories.courses.delete(newer.legacyId);
+  }
+});
+
+test("image gallery requires authentication and restricts folder and file types", async () => {
+  assert.equal(mediaFolder("courses"), "Rozenblum/courses");
+  assert.equal(isManagedImageUrl("https://res.cloudinary.com/test-cloud/image/upload/v1/Rozenblum/courses/cover.jpg", "courses"), true);
+  assert.equal(isManagedImageUrl("https://res.cloudinary.com/other/image/upload/v1/Rozenblum/courses/cover.jpg", "courses"), false);
+  assert.equal(isManagedImageUrl("https://res.cloudinary.com/test-cloud/image/upload/v1/Rozenblum/brand/logo.jpg", "courses"), false);
+  assert.equal(detectImageFormat(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), "png");
+  assert.equal(detectImageFormat(Buffer.from("<svg onload=alert(1)>")), null);
+  assert.equal((await api(server.baseUrl, "/api/media/courses")).status, 401);
+  const teacherToken = await login("profesor", teacherEmail);
+  assert.equal((await api(server.baseUrl, "/api/media/brand", { token: teacherToken })).status, 403);
+  assert.equal((await api(server.baseUrl, "/api/admin/content/home/images", {
+    method: "PUT", token: teacherToken, body: JSON.stringify({ heroImage: "https://example.test/hero.jpg" }),
+  })).status, 403);
+  const adminToken = await login("admin", adminEmail);
+  assert.equal((await api(server.baseUrl, "/api/admin/content/home/images", {
+    method: "PUT", token: adminToken, body: JSON.stringify({ heroImage: "https://example.test/hero.jpg" }),
+  })).status, 400);
+  const invalid = await fetch(`${server.baseUrl}/api/media/courses`, {
+    method: "POST",
+    headers: { "content-type": "image/png", authorization: `Bearer ${teacherToken}` },
+    body: Buffer.from("not-a-png"),
+  });
+  assert.equal(invalid.status, 400);
+});
+
 test("student progress unlocks modules and teacher edits stay role guarded", async () => {
   const studentToken = await login("alumno", studentEmail);
   const teacherToken = await login("profesor", teacherEmail);
@@ -160,7 +246,7 @@ test("checkout, receipt, and admin payment activation work together", async () =
   });
   const checkout = await api<{ data: { order: { id: string; externalReference: string }; enrollment: { id: string } } }>(
     server.baseUrl, "/api/checkout", { method: "POST", body: JSON.stringify({
-      courseSlug: otherCourse.slug, nombre: "Test alumno", email: studentEmail, password,
+      courseSlug: otherCourse.slug, nombre: "Test alumno", email: studentEmail, dni: studentDni,
     }) },
   );
   assert.equal(checkout.status, 201);
@@ -175,16 +261,20 @@ test("checkout, receipt, and admin payment activation work together", async () =
   assert.equal(enrollment?.status, "Activo");
 });
 
-test("admin user creation requires an explicit password", async () => {
+test("admin can create professors but never students", async () => {
   const token = await login("admin", adminEmail);
   const missing = await api(server.baseUrl, "/api/admin/users", { method: "POST", token, body: JSON.stringify({
-    role: "alumno", name: "Another Test", email: "another@example.test",
+    role: "profesor", name: "Another Professor", email: "another-professor@example.test",
   }) });
   assert.equal(missing.status, 400);
   const created = await api(server.baseUrl, "/api/admin/users", { method: "POST", token, body: JSON.stringify({
-    role: "alumno", name: "Another Test", email: "another@example.test", password,
+    role: "profesor", name: "Another Professor", email: "another-professor@example.test", password,
   }) });
   assert.equal(created.status, 201);
+  const studentByHand = await api(server.baseUrl, "/api/admin/users", { method: "POST", token, body: JSON.stringify({
+    role: "alumno", name: "Manual Student", email: "manual-student@example.test", password,
+  }) });
+  assert.equal(studentByHand.status, 400);
   const student = await repositories.users.findByEmail(studentEmail);
   assert.ok(student);
   const emailChange = await api(server.baseUrl, `/api/admin/users/${student.id}`, {
@@ -250,6 +340,15 @@ test("teacher can create, update, and remove lesson content", async () => {
     method: "PATCH", token, body: JSON.stringify({ document: { version: 1, blocks: [{ id: "bad", type: "file", props: { url: "javascript:alert(1)" } }] } }),
   });
   assert.equal(rejected.status, 400);
+  const imageBlock = (url: string) => ({ version: 1, blocks: [{ id: "image-test", type: "image", props: { url }, children: [] }] });
+  const externalImage = await api(server.baseUrl, `/api/teacher/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}`, {
+    method: "PATCH", token, body: JSON.stringify({ document: imageBlock("https://example.test/image.jpg") }),
+  });
+  assert.equal(externalImage.status, 400);
+  const managedImage = await api(server.baseUrl, `/api/teacher/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}`, {
+    method: "PATCH", token, body: JSON.stringify({ document: imageBlock("https://res.cloudinary.com/test-cloud/image/upload/v1/Rozenblum/lessons/image.jpg") }),
+  });
+  assert.equal(managedImage.status, 200);
   const removed = await api(server.baseUrl, `/api/teacher/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}`, {
     method: "DELETE", token,
   });
@@ -296,28 +395,46 @@ test("admin settings and paginated lists use repository data", async () => {
   assert.equal(users.status, 200);
   assert.equal(users.body.data.length, 1);
   assert.equal("passwordHash" in users.body.data[0], false);
+  assert.equal("dni" in users.body.data[0], false);
 });
 
-test("payment reversal revokes course access", async () => {
+test("checkout waits for payment, then creates the student with the DNI password", async () => {
   const token = await login("admin", adminEmail);
   const course = (await repositories.courses.listPublished()).find((item) => item.legacyId !== courseId);
   assert.ok(course);
+  const buyerDni = "28999888";
   const created = await api<{ data: { order: { id: string }; enrollment: { id: string } } }>(
     server.baseUrl, "/api/checkout", { method: "POST", body: JSON.stringify({
-      courseSlug: course.slug, nombre: "Another buyer", email: "buyer@example.test", password,
+      courseSlug: course.slug, nombre: "Another buyer", email: "buyer@example.test", dni: buyerDni,
     }) },
   );
   assert.equal(created.status, 201);
+  assert.equal(await repositories.users.findByEmail("buyer@example.test"), null);
+  const pendingOrder = await repositories.orders.findByReference(created.body.data.order.id);
+  assert.ok(pendingOrder?.dniPasswordHash);
+  assert.notEqual(pendingOrder.dniPasswordHash, buyerDni);
+  assert.equal(await verifyPassword(buyerDni, pendingOrder.dniPasswordHash), true);
+  assert.equal(JSON.stringify(pendingOrder).includes(buyerDni), false);
+  assert.equal(JSON.stringify(created.body).includes(pendingOrder.dniPasswordHash), false);
+
+  const paid = await api(server.baseUrl, `/api/admin/orders/${pendingOrder?.externalReference ?? created.body.data.order.id}`, {
+    method: "PATCH", token, body: JSON.stringify({ estado: "Pagado" }),
+  });
+  assert.equal(paid.status, 200);
   const newStudent = await repositories.users.findByEmail("buyer@example.test");
   assert.equal(newStudent?.role, "alumno");
-  assert.ok(newStudent && verifyPassword(password, newStudent.passwordHash));
-  for (const [estado, expected] of [["Pagado", "Activo"], ["Reembolsado", "Revocado"]] as const) {
-    const result = await api(server.baseUrl, `/api/admin/orders/${created.body.data.order.id}`, {
-      method: "PATCH", token, body: JSON.stringify({ estado }),
-    });
-    assert.equal(result.status, 200);
-    assert.equal((await repositories.enrollments.findById(created.body.data.enrollment.id))?.status, expected);
-  }
+  assert.equal(JSON.stringify(newStudent).includes(buyerDni), false);
+  assert.equal(newStudent?.sessionVersion, 0);
+  assert.ok(newStudent && (await verifyPassword(buyerDni, newStudent.passwordHash)));
+
+  const enrolled = await repositories.enrollments.findById(created.body.data.enrollment.id);
+  assert.equal(enrolled?.status, "Activo");
+
+  const revoked = await api(server.baseUrl, `/api/admin/orders/${created.body.data.order.id}`, {
+    method: "PATCH", token, body: JSON.stringify({ estado: "Reembolsado" }),
+  });
+  assert.equal(revoked.status, 200);
+  assert.equal((await repositories.enrollments.findById(created.body.data.enrollment.id))?.status, "Revocado");
 });
 
 test("roles and enrollment ownership are enforced on every private flow", async () => {
@@ -332,7 +449,7 @@ test("roles and enrollment ownership are enforced on every private flow", async 
 
   const other = await repositories.users.create({
     name: "Other Student", email: "other-student@example.test", role: "alumno",
-    initials: "OS", passwordHash: hashPassword(password),
+    initials: "OS", passwordHash: await hashPassword(password),
   });
   const otherEnrollment = await repositories.enrollments.create({
     studentEmail: other.email, studentName: other.name, courseId, status: "Activo",
@@ -351,14 +468,14 @@ test("text fields, prices, IDs and lesson blocks reject invalid boundaries", asy
     { path: "/api/contact", method: "POST", body: { name: "Jo", email: "valid@example.test", message: "A complete message" } },
     { path: "/api/contact", method: "POST", body: { name: "Valid Name", email: "bad-email", message: "A complete message" } },
     { path: "/api/contact", method: "POST", body: { name: "Valid Name", email: "valid@example.test", message: "too short" } },
-    { path: "/api/checkout", method: "POST", body: { courseSlug: "test-course", nombre: "Jo", email: "buyer@example.test", password } },
+    { path: "/api/checkout", method: "POST", body: { courseSlug: "test-course", nombre: "Jo", email: "buyer@example.test", dni: "123" } },
     { path: `/api/teacher/courses/${courseId}/modules`, method: "POST", token: teacherToken, body: { title: "x".repeat(181) } },
     { path: `/api/teacher/courses/${courseId}/modules/1/lessons`, method: "POST", token: teacherToken, body: { title: " ", type: "doc" } },
     { path: `/api/teacher/courses/${courseId}/modules/1/lessons`, method: "POST", token: teacherToken, body: { title: "Bad link", type: "doc", content: [{ id: "bad", type: "link", content: "javascript:alert(1)" }] } },
     { path: `/api/teacher/courses/${courseId}/modules/1/lessons/reorder`, method: "PUT", token: teacherToken, body: { ids: [] } },
-    { path: "/api/admin/courses", method: "POST", token: adminToken, body: { title: "Valid title", description: "Valid description", priceCents: -1, professor: "Test profesor", duration: "Online", level: "Inicial" } },
-    { path: "/api/admin/courses", method: "POST", token: adminToken, body: { title: "Valid title", description: "Valid description", priceCents: 1000, professor: "Test profesor", duration: "Online", level: "Inicial", img: "data:image/png;base64,AAAA" } },
-    { path: "/api/admin/users", method: "POST", token: adminToken, body: { role: "alumno", name: "New Student", email: "new@example.test", password: "short" } },
+    { path: "/api/admin/courses", method: "POST", token: adminToken, body: { title: "Valid title", description: "Valid description", priceCents: -1, professorEmail: teacherEmail, duration: "Online", level: "Inicial" } },
+    { path: "/api/admin/courses", method: "POST", token: adminToken, body: { title: "Valid title", description: "Valid description", priceCents: 1000, professorEmail: teacherEmail, duration: "Online", level: "Inicial", img: "data:image/png;base64,AAAA" } },
+    { path: "/api/admin/users", method: "POST", token: adminToken, body: { role: "profesor", name: "New Professor", email: "new@example.test", password: "short" } },
     { path: "/api/admin/settings", method: "PUT", token: adminToken, body: { companyName: "Test Company", supportEmail: "support@example.test", contactWhatsapp: "abc", logoUrl: "", privacyText: "A complete privacy policy" } },
     { path: "/api/admin/settings", method: "PUT", token: adminToken, body: { companyName: "Test Company", supportEmail: "support@example.test", contactWhatsapp: "5491112345678", logoUrl: "javascript:alert(1)", privacyText: "A complete privacy policy" } },
     { path: "/api/admin/orders/unknown", method: "PATCH", token: adminToken, body: { estado: "Unknown" } },
@@ -369,13 +486,72 @@ test("text fields, prices, IDs and lesson blocks reject invalid boundaries", asy
   }
 });
 
+test("course creation requires selecting an active registered professor", async () => {
+  const adminToken = await login("admin", adminEmail);
+  const input = {
+    title: "Professor Assignment Course", description: "Requires a real professor account",
+    priceCents: 100_000, duration: "Online", level: "Inicial", status: "draft",
+  };
+  for (const professorEmail of [undefined, "missing@example.test", adminEmail]) {
+    const response = await api(server.baseUrl, "/api/admin/courses", {
+      method: "POST", token: adminToken,
+      body: JSON.stringify({ ...input, professorEmail }),
+    });
+    assert.equal(response.status, 400);
+  }
+  const inactive = await repositories.users.create({
+    name: "Inactive Professor", email: "inactive-professor@example.test", role: "profesor",
+    status: "Suspendido", initials: "IP", passwordHash: await hashPassword(password),
+  });
+  const suspended = await api(server.baseUrl, "/api/admin/courses", {
+    method: "POST", token: adminToken,
+    body: JSON.stringify({ ...input, professorEmail: inactive.email }),
+  });
+  assert.equal(suspended.status, 400);
+  const created = await api<{ data: { id: number; professor: string; professorId: string; status: string } }>(
+    server.baseUrl, "/api/admin/courses", {
+      method: "POST", token: adminToken,
+      body: JSON.stringify({ ...input, professorEmail: teacherEmail }),
+    },
+  );
+  assert.equal(created.status, 201);
+  assert.equal(created.body.data.professorId, teacherEmail);
+  assert.equal(created.body.data.status, "draft");
+  assert.equal((await repositories.courses.findById(created.body.data.id))?.professorEmail, teacherEmail);
+  const premature = await api(server.baseUrl, "/api/admin/courses", {
+    method: "POST", token: adminToken,
+    body: JSON.stringify({ ...input, professorEmail: teacherEmail, status: "published" }),
+  });
+  assert.equal(premature.status, 400);
+});
+
+test("checkout rejects a course whose professor is no longer available without creating records", async () => {
+  const course = await repositories.courses.create({
+    title: "Unavailable Professor Course", description: "No active professor account",
+    priceCents: 100_000, duration: "Online", level: "Inicial",
+    img: "https://example.test/unavailable.jpg", professor: "Missing Professor",
+    professorEmail: "missing-professor@example.test", status: "published",
+  });
+  const orderCount = (await repositories.orders.list()).length;
+  const enrollmentCount = (await repositories.enrollments.listAll()).length;
+  const response = await api(server.baseUrl, "/api/checkout", {
+    method: "POST", body: JSON.stringify({
+      courseSlug: course.slug, nombre: "Another Buyer", email: "unavailable-buyer@example.test",
+      dni: "28999888",
+    }),
+  });
+  assert.equal(response.status, 404);
+  assert.equal((await repositories.orders.list()).length, orderCount);
+  assert.equal((await repositories.enrollments.listAll()).length, enrollmentCount);
+});
+
 test("empty courses cannot be published or sold, and related records block deletion", async () => {
   const adminToken = await login("admin", adminEmail);
   const teacherToken = await login("profesor", teacherEmail);
   const created = await api<{ data: { id: number; slug: string } }>(server.baseUrl, "/api/admin/courses", {
     method: "POST", token: adminToken, body: JSON.stringify({
       title: "Boundary Course", description: "A course for publication boundaries", priceCents: 123_400,
-      professor: "Test profesor", duration: "Two weeks", level: "Inicial", status: "draft",
+      professorEmail: teacherEmail, duration: "Two weeks", level: "Inicial", status: "draft",
     }),
   });
   assert.equal(created.status, 201);
@@ -390,13 +566,15 @@ test("empty courses cannot be published or sold, and related records block delet
   assert.equal((await api(server.baseUrl, `/api/teacher/courses/${id}/modules/${moduleId}/lessons`, {
     method: "POST", token: teacherToken, body: JSON.stringify({ title: "First lesson", type: "doc" }),
   })).status, 201);
-  assert.equal((await api(server.baseUrl, `/api/admin/courses/${id}`, { method: "PATCH", token: adminToken, body: JSON.stringify({ status: "published", priceCents: 250_000, duration: "Three weeks", level: "Intermedio" }) })).status, 200);
+  assert.equal((await api(server.baseUrl, `/api/admin/courses/${id}`, { method: "PATCH", token: adminToken, body: JSON.stringify({ status: "published" }) })).status, 400);
+  assert.equal((await api(server.baseUrl, `/api/admin/courses/${id}`, { method: "PATCH", token: adminToken, body: JSON.stringify({ status: "published", img: "https://example.test/course.jpg" }) })).status, 400);
+  assert.equal((await api(server.baseUrl, `/api/admin/courses/${id}`, { method: "PATCH", token: adminToken, body: JSON.stringify({ status: "published", img: "https://res.cloudinary.com/test-cloud/image/upload/v1/Rozenblum/courses/cover.jpg", priceCents: 250_000, duration: "Three weeks", level: "Intermedio" }) })).status, 200);
   const updated = await repositories.courses.findById(id);
   assert.equal(updated?.price.replaceAll("\u00a0", " "), "$ 2.500");
   assert.equal(updated?.duration, "Three weeks");
   assert.equal((await api(server.baseUrl, `/api/teacher/courses/${id}/modules/${moduleId}/lessons/1.1`, { method: "DELETE", token: teacherToken })).status, 400);
   const order = await api(server.baseUrl, "/api/checkout", { method: "POST", body: JSON.stringify({
-    courseSlug: created.body.data.slug, nombre: "Boundary Buyer", email: "boundary-buyer@example.test", password,
+    courseSlug: created.body.data.slug, nombre: "Boundary Buyer", email: "boundary-buyer@example.test", dni: "25555666",
   }) });
   assert.equal(order.status, 201);
   assert.equal((await api(server.baseUrl, `/api/admin/courses/${id}`, { method: "DELETE", token: adminToken })).status, 400);
@@ -415,10 +593,320 @@ test("order lookup protects other buyers and invalid pagination uses safe defaul
   }
 });
 
+test("suspended accounts and revoked tokens cannot access private routes", async () => {
+  const adminToken = await login("admin", adminEmail);
+  const suspendPassword = "suspend-password-123";
+  const user = await repositories.users.create({
+    name: "Suspend Me", email: "suspend-me@example.test", role: "alumno",
+    initials: "SM", passwordHash: await hashPassword(suspendPassword),
+  });
+
+  const initial = await rawLogin("alumno", user.email, suspendPassword);
+  assert.equal(initial.status, 200);
+  const token = initial.body.data!.token;
+  assert.equal((await api(server.baseUrl, "/api/student/enrollments", { token })).status, 200);
+
+  assert.equal((await api(server.baseUrl, `/api/admin/users/${user.id}`, {
+    method: "PATCH", token: adminToken, body: JSON.stringify({ status: "Suspendido" }),
+  })).status, 200);
+  assert.equal((await api(server.baseUrl, "/api/auth/session", { token })).status, 401);
+  assert.equal((await rawLogin("alumno", user.email, suspendPassword)).status, 401);
+
+  assert.equal((await api(server.baseUrl, `/api/admin/users/${user.id}`, {
+    method: "PATCH", token: adminToken, body: JSON.stringify({ status: "Activo" }),
+  })).status, 200);
+  // Reactivating does not resurrect tokens issued before the suspension.
+  assert.equal((await api(server.baseUrl, "/api/auth/session", { token })).status, 401);
+  assert.equal((await rawLogin("alumno", user.email, suspendPassword)).status, 200);
+
+  assert.equal((await api(server.baseUrl, "/api/auth/session", { token: "invalid.token" })).status, 401);
+});
+
+test("changing a staff password revokes previous sessions", async () => {
+  const adminToken = await login("admin", adminEmail);
+  const originalPassword = "staff-password-12345";
+  const nextPassword = "staff-password-67890";
+  const user = await repositories.users.create({
+    name: "Revocable Professor", email: "revocable-professor@example.test", role: "profesor",
+    initials: "RP", passwordHash: await hashPassword(originalPassword),
+  });
+
+  const first = await rawLogin("profesor", user.email, originalPassword);
+  assert.equal(first.status, 200);
+  const token = first.body.data!.token;
+  assert.equal((await api(server.baseUrl, "/api/auth/session", { token })).status, 200);
+
+  const changed = await api(server.baseUrl, `/api/admin/users/${user.id}`, {
+    method: "PATCH", token: adminToken, body: JSON.stringify({ password: nextPassword }),
+  });
+  assert.equal(changed.status, 200);
+  assert.equal((await api(server.baseUrl, "/api/auth/session", { token })).status, 401);
+  assert.equal((await rawLogin("profesor", user.email, originalPassword)).status, 401);
+  assert.equal((await rawLogin("profesor", user.email, nextPassword)).status, 200);
+});
+
+test("concurrent password changes increment the session version atomically", async () => {
+  const user = await repositories.users.create({
+    name: "Concurrent Professor", email: "concurrent-professor@example.test", role: "profesor",
+    initials: "CP", passwordHash: await hashPassword(password),
+  });
+  const adminToken = await login("admin", adminEmail);
+  const responses = await Promise.all(["concurrent-password-1", "concurrent-password-2"].map(
+    (candidate) => api(server.baseUrl, `/api/admin/users/${user.id}`, {
+      method: "PATCH", token: adminToken, body: JSON.stringify({ password: candidate }),
+    }),
+  ));
+  assert.ok(responses.every((response) => response.status === 200));
+  assert.equal((await repositories.users.findById(user.id))?.sessionVersion, 2);
+});
+
+test("users can change their own password and receive a fresh session", async () => {
+  const initialPassword = "initial-password-123";
+  const nextPassword = "brand-new-password-456";
+  const user = await repositories.users.create({
+    name: "Self Changer",
+    email: "self-changer@example.test",
+    role: "profesor",
+    initials: "SC",
+    passwordHash: await hashPassword(initialPassword),
+  });
+
+  const first = await loginService({ role: "profesor", email: user.email, password: initialPassword });
+  const oldToken = first.token;
+
+  const wrongCurrent = await api(server.baseUrl, "/api/auth/password", {
+    method: "POST",
+    token: oldToken,
+    body: JSON.stringify({ currentPassword: "not-the-password", newPassword: nextPassword }),
+  });
+  assert.equal(wrongCurrent.status, 400);
+
+  const changed = await api<{ data: { token: string } }>(server.baseUrl, "/api/auth/password", {
+    method: "POST",
+    token: oldToken,
+    body: JSON.stringify({ currentPassword: initialPassword, newPassword: nextPassword }),
+  });
+  assert.equal(changed.status, 200);
+  const freshToken = changed.body.data.token;
+  assert.notEqual(freshToken, oldToken);
+
+  // The change revokes the token used for the request, but the returned token
+  // keeps the user working without forcing a new login.
+  assert.equal((await api(server.baseUrl, "/api/auth/session", { token: oldToken })).status, 401);
+  assert.equal((await api(server.baseUrl, "/api/auth/session", { token: freshToken })).status, 200);
+  await assert.rejects(
+    loginService({ role: "profesor", email: user.email, password: initialPassword }),
+  );
+  const nextSession = await loginService({ role: "profesor", email: user.email, password: nextPassword });
+  assert.equal(nextSession.user.email, user.email);
+
+  const repeated = await api(server.baseUrl, "/api/auth/password", {
+    method: "POST",
+    token: freshToken,
+    body: JSON.stringify({ currentPassword: nextPassword, newPassword: nextPassword }),
+  });
+  assert.equal(repeated.status, 400);
+});
+
+test("a student can replace the DNI password with a strong one", async () => {
+  const dni = "27654321";
+  const nextPassword = "student-own-password-789";
+  const email = "dni-rotation@example.test";
+  await repositories.users.create({
+    name: "DNI Rotation",
+    email,
+    role: "alumno",
+    initials: "DR",
+    passwordHash: await hashPassword(dni),
+  });
+
+  const session = await loginService({ role: "alumno", email, password: dni });
+  const changed = await api(server.baseUrl, "/api/auth/password", {
+    method: "POST",
+    token: session.token,
+    body: JSON.stringify({ currentPassword: dni, newPassword: nextPassword }),
+  });
+  assert.equal(changed.status, 200);
+  await assert.rejects(loginService({ role: "alumno", email, password: dni }));
+  const nextSession = await loginService({ role: "alumno", email, password: nextPassword });
+  assert.equal(nextSession.user.email, email);
+
+  // Buying another course after rotating the password: the DNI is no longer
+  // the password, but the signed-in session proves identity.
+  const extraCourse = await repositories.courses.create({
+    title: "Post Rotation Course",
+    description: "Course used to verify checkout after a password change.",
+    priceCents: 75_000,
+    duration: "On-Demand",
+    level: "Inicial",
+    professor: "Test profesor",
+    professorEmail: teacherEmail,
+    status: "published",
+    img: "https://example.test/post-rotation.jpg",
+  });
+  await repositories.courses.saveModules(extraCourse.legacyId, [
+    { id: 1, title: "Only module", position: 1, lessons: [
+      { id: "1.1", title: "Only lesson", type: "doc", position: 1, content: [] },
+    ] },
+  ]);
+
+  const body = JSON.stringify({
+    courseSlug: extraCourse.slug,
+    nombre: "DNI Rotation",
+    email,
+    dni,
+  });
+  const withoutSession = await api(server.baseUrl, "/api/checkout", {
+    method: "POST",
+    body,
+  });
+  assert.equal(withoutSession.status, 401);
+
+  const withSession = await api(server.baseUrl, "/api/checkout", {
+    method: "POST",
+    token: nextSession.token,
+    body,
+  });
+  assert.equal(withSession.status, 201);
+});
+
+test("error envelopes always include the request id and malformed JSON is a 400", async () => {
+  const missing = await api<{ error: { requestId?: string } }>(server.baseUrl, "/api/not-a-real-route");
+  assert.equal(missing.status, 404);
+  assert.ok(missing.body.error.requestId);
+
+  const invalid = await api<{ error: { code: string; requestId?: string } }>(
+    server.baseUrl,
+    "/api/auth/login",
+    { method: "POST", body: JSON.stringify({ role: "admin", email: "not-an-email" }) },
+  );
+  assert.equal(invalid.status, 400);
+  assert.equal(invalid.body.error.code, "BAD_REQUEST");
+  assert.ok(invalid.body.error.requestId);
+
+  const malformed = await fetch(`${server.baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{",
+  });
+  assert.equal(malformed.status, 400);
+  const body = (await malformed.json()) as { error: { requestId?: string } };
+  assert.ok(body.error.requestId);
+  assert.equal(malformed.headers.get("x-request-id"), body.error.requestId);
+});
+
+test("an empty module does not lock the following modules", () => {
+  const course = {
+    modules: [
+      { id: 1, lessons: [{ id: "1.1" }] },
+      { id: 2, lessons: [] },
+      { id: 3, lessons: [{ id: "3.1" }] },
+    ],
+  } as unknown as Parameters<typeof moduleStatuses>[0];
+
+  const statuses = moduleStatuses(course, ["1.1"]);
+  assert.equal(statuses.get(1), "completed");
+  assert.equal(statuses.get(2), "locked");
+  assert.equal(statuses.get(3), "in_progress");
+});
+
+test("reassigning a course professor moves its conversations", async () => {
+  const adminToken = await login("admin", adminEmail);
+  const newProfessor = await repositories.users.create({
+    name: "Replacement Professor",
+    email: "replacement-professor@example.test",
+    role: "profesor",
+    initials: "RP",
+    passwordHash: await hashPassword(password),
+  });
+  const course = await repositories.courses.create({
+    title: "Reassignable Course",
+    description: "Course used to verify conversation reassignment.",
+    priceCents: 50_000,
+    duration: "On-Demand",
+    level: "Inicial",
+    professor: "Test profesor",
+    professorEmail: teacherEmail,
+    status: "draft",
+    img: "https://example.test/reassign.jpg",
+  });
+  const conversation = await repositories.conversations.create({
+    id: "cnv_reassign_test",
+    courseId: course.legacyId,
+    studentEmail: "reassign-student@example.test",
+    studentName: "Reassign Student",
+    teacherEmail,
+    teacherName: "Test profesor",
+    messages: [],
+  });
+
+  const updated = await api(server.baseUrl, `/api/admin/courses/${course.legacyId}`, {
+    method: "PATCH",
+    token: adminToken,
+    body: JSON.stringify({ professorEmail: newProfessor.email }),
+  });
+  assert.equal(updated.status, 200);
+
+  const moved = await repositories.conversations.findById(conversation.id);
+  assert.equal(moved?.teacherEmail, newProfessor.email);
+  assert.equal(moved?.teacherName, newProfessor.name);
+
+  const newToken = (
+    await loginService({ role: "profesor", email: newProfessor.email, password })
+  ).token;
+  const list = await api<{ data: { id: string }[] }>(server.baseUrl, "/api/teacher/conversations", {
+    token: newToken,
+  });
+  assert.ok(list.body.data.some((item) => item.id === conversation.id));
+  const former = await api(server.baseUrl, `/api/teacher/conversations/${conversation.id}/messages`, {
+    method: "POST",
+    token: await login("profesor", teacherEmail),
+    body: JSON.stringify({ text: "Still here?" }),
+  });
+  assert.equal(former.status, 403);
+});
+
+test("deleting a student also removes their conversations", async () => {
+  const adminToken = await login("admin", adminEmail);
+  const student = await repositories.users.create({
+    name: "Deletable Student",
+    email: "deletable-student@example.test",
+    role: "alumno",
+    initials: "DS",
+    passwordHash: await hashPassword("deletable-password-123"),
+  });
+  const enrollment = await repositories.enrollments.create({
+    studentEmail: student.email,
+    studentName: student.name,
+    courseId,
+    status: "Activo",
+  });
+  const conversation = await repositories.conversations.create({
+    id: "cnv_deletable_test",
+    courseId,
+    studentEmail: student.email,
+    studentName: student.name,
+    teacherEmail,
+    teacherName: "Test profesor",
+    messages: [],
+  });
+
+  const removed = await api(server.baseUrl, `/api/admin/users/${student.id}`, {
+    method: "DELETE",
+    token: adminToken,
+  });
+  assert.equal(removed.status, 204);
+  assert.equal(await repositories.users.findById(student.id), null);
+  assert.equal(await repositories.enrollments.findById(enrollment.id), null);
+  assert.equal(await repositories.conversations.findById(conversation.id), null);
+});
+
 test("login is rate limited after repeated invalid attempts", async () => {
   let limited = false;
   for (let attempt = 0; attempt < 25; attempt += 1) {
-    const response = await api(server.baseUrl, "/api/auth/login", { method: "POST", body: JSON.stringify({
+    const response = await api(server.baseUrl, "/api/auth/login", { method: "POST", headers: {
+      "x-forwarded-for": `198.51.100.${attempt + 1}`,
+    }, body: JSON.stringify({
       role: "admin", email: adminEmail, password: "invalid",
     }) });
     if (response.status === 429) limited = true;
