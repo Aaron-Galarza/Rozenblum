@@ -51,6 +51,18 @@ export function courseToDTO(course: StoredCourse): CourseDTO {
   };
 }
 
+/** Public catalogue shape, without the professor's login email. */
+export function courseToPublicDTO(course: StoredCourse): CourseDTO {
+  const publicCourse = courseToDTO(course);
+  delete publicCourse.professorId;
+  publicCourse.temario = course.temario.map(({ mod, title, lessons }) => ({
+    mod,
+    title,
+    lessons: [...lessons],
+  }));
+  return publicCourse;
+}
+
 export function moduleStatuses(
   course: StoredCourse,
   completedLessonIds: string[],

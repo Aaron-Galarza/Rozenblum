@@ -11,7 +11,7 @@ import { badRequest, forbidden, notFound } from "../lib/http.js";
 import { formatArs, newId } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
 import type { CourseInput, StoredCourse, StoredLesson, StoredModule, StoredUser } from "../types.js";
-import { courseStructure, courseToDTO, enrollmentToDTO, moduleStatuses } from "./mappers.js";
+import { courseStructure, courseToDTO, courseToPublicDTO, enrollmentToDTO, moduleStatuses } from "./mappers.js";
 import { assertManagedImageUrl } from "./media.js";
 
 export function canManageCourse(course: StoredCourse, user: StoredUser): boolean {
@@ -30,7 +30,7 @@ async function resolveProfessor(email: string): Promise<StoredUser> {
 
 export async function listPublishedCourses(): Promise<CourseDTO[]> {
   const courses = await getRepositories().courses.listPublished();
-  return courses.map(courseToDTO);
+  return courses.map(courseToPublicDTO);
 }
 
 export async function getLatestPublishedCourse(): Promise<CourseDetailDTO> {
@@ -44,7 +44,7 @@ export async function getPublishedCourse(slug: string): Promise<CourseDTO> {
   if (!course || course.status !== "published") {
     throw notFound("Curso no encontrado.");
   }
-  return courseToDTO(course);
+  return courseToPublicDTO(course);
 }
 
 /**
@@ -60,7 +60,7 @@ export async function getPublishedCourseDetail(slug: string): Promise<CourseDeta
 
   const professor = await repos.users.findByEmail(course.professorEmail);
   return {
-    course: courseToDTO(course),
+    course: courseToPublicDTO(course),
     professor: { name: professor?.name ?? course.professor, ...(professor?.img ? { img: professor.img } : {}) },
     modules: course.modules.map((mod) => ({
       id: mod.id,

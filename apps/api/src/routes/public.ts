@@ -65,7 +65,7 @@ publicRouter.post(
       res,
       {
         id: contact.id,
-        message: "Mensaje recibido. Te respondemos dentro de las próximas 48 horas hábiles.",
+        message: "Mensaje recibido por el Estudio.",
       },
       201,
     );
