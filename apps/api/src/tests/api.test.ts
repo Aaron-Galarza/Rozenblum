@@ -18,6 +18,19 @@ const studentEmail = "student@example.test";
 const teacherEmail = "teacher@example.test";
 const adminEmail = "admin@example.test";
 const repositories = createMockRepositories({
+  homeContent: {
+    key: "home",
+    brand: {
+      locationLabel: "Buenos Aires",
+      foundedYear: "2020",
+      heroImage: "https://res.cloudinary.com/test-cloud/image/upload/v1/Rozenblum/brand/hero.jpg",
+      metrics: [{ value: "5", label: "Años" }],
+      aboutParagraphs: ["Contenido institucional de prueba."],
+      footerTagline: "Estudio de prueba",
+    },
+    team: [{ name: "Test profesor", role: "Docente", img: "https://example.test/team.jpg" }],
+    practiceAreas: [{ title: "Derecho", desc: "Área de prueba", icon: "briefcase", casos: [] }],
+  },
   settings: {
     companyName: "Test Company",
     supportEmail: "support@example.test",
@@ -159,14 +172,35 @@ test("login requires a valid email, password, and role", async () => {
 });
 
 test("published courses expose metadata while lesson content remains private", async () => {
-  const list = await api<{ data: { slug: string }[] }>(server.baseUrl, "/api/courses");
+  const list = await api<{ data: { slug: string; professorId?: string }[] }>(server.baseUrl, "/api/courses");
   assert.equal(list.status, 200);
   assert.equal(list.body.data.length, 1);
+  assert.equal(list.body.data[0]?.professorId, undefined);
   const detail = await api<{ data: { modules: { lessons: { content?: unknown }[] }[] } }>(
     server.baseUrl, `/api/courses/${list.body.data[0]?.slug}`,
   );
   assert.equal(detail.status, 200);
   assert.ok(detail.body.data.modules.every((module) => module.lessons.every((lesson) => !lesson.content)));
+  assert.equal(JSON.stringify(detail.body).includes(teacherEmail), false);
+});
+
+test("home content uses the injected repository and an absent document returns 404", async () => {
+  const home = await api<{ data: { brand: { locationLabel: string; heroImage: string } } }>(
+    server.baseUrl, "/api/content/home",
+  );
+  assert.equal(home.status, 200);
+  assert.equal(home.body.data.brand.locationLabel, "Buenos Aires");
+  assert.equal(JSON.stringify(home.body).includes("userId"), false);
+  assert.equal(JSON.stringify(home.body).includes("_id"), false);
+
+  const withoutHome = createMockRepositories();
+  setRepositoriesForTests(withoutHome);
+  try {
+    const missing = await api(server.baseUrl, "/api/content/home");
+    assert.equal(missing.status, 404);
+  } finally {
+    setRepositoriesForTests(repositories);
+  }
 });
 
 test("latest course endpoint ignores drafts and exposes only public information", async () => {
@@ -333,7 +367,51 @@ test("contact form validates and stores messages", async () => {
     name: "Test Contact", email: "contact@example.test", message: "A complete test inquiry for the team.",
   }) });
   assert.equal(response.status, 201);
+  assert.equal((response.body as { data: { message: string } }).data.message.includes("48 horas"), false);
   assert.equal((await repositories.contacts.list()).length, 1);
+});
+
+test("only admins can read paginated contact messages", async () => {
+  const teacherToken = await login("profesor", teacherEmail);
+  assert.equal((await api(server.baseUrl, "/api/admin/contacts")).status, 401);
+  assert.equal((await api(server.baseUrl, "/api/admin/contacts", { token: teacherToken })).status, 403);
+
+  const first = await repositories.contacts.create({
+    id: "ctc_public_test_first", name: "First Contact", email: "first@example.test",
+    message: "First test inquiry", createdAt: "2099-01-01T00:00:00.000Z",
+  });
+  const second = await repositories.contacts.create({
+    id: "ctc_public_test_second", name: "Second Contact", email: "second@example.test",
+    message: "Second test inquiry", createdAt: "2099-01-02T00:00:00.000Z",
+  });
+  const token = await login("admin", adminEmail);
+  const newest = await api<{ data: { id: string }[] }>(
+    server.baseUrl, "/api/admin/contacts?limit=1&offset=0", { token },
+  );
+  const next = await api<{ data: { id: string }[] }>(
+    server.baseUrl, "/api/admin/contacts?limit=1&offset=1", { token },
+  );
+  assert.equal(newest.status, 200);
+  assert.deepEqual(newest.body.data.map((item) => item.id), [second.id]);
+  assert.deepEqual(next.body.data.map((item) => item.id), [first.id]);
+});
+
+test("contact requests are limited to ten per ten-minute window", async () => {
+  const isolatedServer = await startTestServer();
+  try {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const response = await api(isolatedServer.baseUrl, "/api/contact", {
+        method: "POST", body: JSON.stringify({ name: "x" }),
+      });
+      assert.equal(response.status, 400);
+    }
+    const limited = await api(isolatedServer.baseUrl, "/api/contact", {
+      method: "POST", body: JSON.stringify({ name: "x" }),
+    });
+    assert.equal(limited.status, 429);
+  } finally {
+    await isolatedServer.close();
+  }
 });
 
 test("teacher can create, update, and remove lesson content", async () => {
@@ -441,6 +519,22 @@ test("admin settings and paginated lists use repository data", async () => {
   assert.equal(users.body.data.length, 1);
   assert.equal("passwordHash" in users.body.data[0], false);
   assert.equal("dni" in users.body.data[0], false);
+});
+
+test("admin branding changes are visible through the public home endpoint", async () => {
+  const token = await login("admin", adminEmail);
+  const heroImage = "https://res.cloudinary.com/test-cloud/image/upload/v1/Rozenblum/brand/new-hero.jpg";
+  const updated = await api<{ data: { brand: { heroImage: string } } }>(
+    server.baseUrl, "/api/admin/content/home/images", {
+      method: "PUT", token, body: JSON.stringify({ heroImage }),
+    },
+  );
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.data.brand.heroImage, heroImage);
+  const publicHome = await api<{ data: { brand: { heroImage: string } } }>(
+    server.baseUrl, "/api/content/home",
+  );
+  assert.equal(publicHome.body.data.brand.heroImage, heroImage);
 });
 
 test("checkout waits for payment, then creates the student with the DNI password", async () => {
