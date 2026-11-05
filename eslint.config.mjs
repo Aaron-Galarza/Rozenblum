@@ -52,4 +52,8 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "warn",
     },
   },
+  {
+    files: ["scripts/**/*.mjs"],
+    rules: { "no-undef": "off" },
+  },
 );
