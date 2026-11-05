@@ -90,15 +90,15 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
 
   return (
     <>
-      <div className="flex items-center justify-between mb-8">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Gestión de Cursos</h2>
-        <button disabled={!profesores.some((p) => p.estado === "Activo")} title={profesores.some((p) => p.estado === "Activo") ? undefined : "Primero creá un profesor activo"} onClick={() => { setForm({ name: "", professorEmail: "", description: "", price: "", duration: "", level: "", img: "" }); setFormError(""); setModal({ type: "crear" }); }} className="px-5 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
+        <button disabled={!profesores.some((p) => p.estado === "Activo")} title={profesores.some((p) => p.estado === "Activo") ? undefined : "Primero creá un profesor activo"} onClick={() => { setForm({ name: "", professorEmail: "", description: "", price: "", duration: "", level: "", img: "" }); setFormError(""); setModal({ type: "crear" }); }} className="min-h-11 self-start px-5 py-2.5 text-xs font-bold tracking-widest transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
           + CREAR NUEVO CURSO
         </button>
       </div>
       {!profesores.some((p) => p.estado === "Activo") && <p className="mb-5 text-xs" style={{ color: "#72132C" }}>Creá un profesor activo antes de crear un curso.</p>}
-      <div className="rounded-lg overflow-hidden shadow-sm" style={{ border: "1px solid rgba(23,59,108,0.08)" }}>
-        <table className="w-full text-xs">
+      <div className="overflow-x-auto rounded-lg shadow-sm" style={{ border: "1px solid rgba(23,59,108,0.08)" }}>
+        <table className="min-w-[720px] w-full text-xs">
           <thead><tr style={{ backgroundColor: "#173B6C" }}>
             {["Nombre", "Profesor", "Alumnos", "Completion %", "Estado", "Acciones"].map((h) => (
               <th key={h} className="px-4 py-3 text-left font-medium" style={{ color: "#FAF8F5" }}>{h}</th>

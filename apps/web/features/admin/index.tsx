@@ -85,15 +85,16 @@ export default function AdminView() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
         {/* ── SIDEBAR ── */}
-        <aside className="w-60 flex-shrink-0 overflow-y-auto" style={{ backgroundColor: "#173B6C" }}>
-          <div className="py-6">
+        <aside className="w-full shrink-0 overflow-x-auto lg:w-60 lg:overflow-x-hidden lg:overflow-y-auto" style={{ backgroundColor: "#173B6C" }}>
+          <nav aria-label="Secciones de administración" className="flex w-max py-2 lg:block lg:w-auto lg:py-6">
             {NAV_ITEMS.map(({ key, label, emoji }) => (
               <button
                 key={key}
                 onClick={() => setSection(key)}
-                className="w-full flex items-center gap-3 px-5 py-3.5 text-sm text-left transition-all duration-150"
+                aria-current={section === key ? "page" : undefined}
+                className="flex w-auto shrink-0 items-center gap-2 whitespace-nowrap px-4 py-3 text-xs text-left transition-all duration-150 lg:w-full lg:gap-3 lg:px-5 lg:py-3.5 lg:text-sm"
                 style={{
                   color: section === key ? "#B58A43" : "rgba(250,248,245,0.65)",
                   backgroundColor: section === key ? "rgba(255,255,255,0.08)" : "transparent",
@@ -105,11 +106,11 @@ export default function AdminView() {
                 <span>{label}</span>
               </button>
             ))}
-          </div>
+          </nav>
         </aside>
 
         {/* ── MAIN ── */}
-        <main className="flex-1 overflow-y-auto p-8">
+        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           {loading ? (
             <LoadingScreen label="Cargando panel..." />
           ) : error && !overview ? (
