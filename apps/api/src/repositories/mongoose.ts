@@ -19,6 +19,7 @@ import type {
   StoredMessage,
   StoredModule,
   StoredOrder,
+  PublicCourseRecord,
   StoredSettings,
   StoredUser,
 } from "../types.js";
@@ -50,6 +51,14 @@ export function createMongooseRepositories(): Repositories {
     async findById(id) {
       const doc = await UserModel.findOne({ id }).lean().exec();
       return doc ? clean<StoredUser>(doc) : null;
+    },
+    async findProfessorImagesByIds(ids) {
+      if (ids.length === 0) return [];
+      const docs = await UserModel.find({ id: { $in: ids }, role: "profesor" })
+        .select("id img")
+        .lean()
+        .exec();
+      return docs.map(({ id, img }) => ({ id, img }));
     },
     async list(role: Role | undefined, page) {
       const docs = await UserModel.find(role ? { role } : {})
@@ -99,10 +108,11 @@ export function createMongooseRepositories(): Repositories {
     },
     async listPublished() {
       const docs = await CourseModel.find({ status: "published" })
+        .select("legacyId slug title description price priceCents duration level img professor status temario modules.id")
         .sort({ legacyId: 1 })
         .lean()
         .exec();
-      return docs.map((doc) => clean<StoredCourse>(doc));
+      return docs.map((doc) => clean<PublicCourseRecord>(doc));
     },
     async findLatestPublished() {
       const doc = await CourseModel.findOne({ status: "published" })

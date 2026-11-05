@@ -7,6 +7,7 @@ import type {
   StoredEnrollment,
   StoredMessage,
   StoredOrder,
+  PublicCourseRecord,
   StoredSettings,
   StoredUser,
 } from "../types.js";
@@ -59,6 +60,12 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
     async findById(id) {
       return db.users.find((u) => u.id === id) ?? null;
     },
+    async findProfessorImagesByIds(ids) {
+      const wanted = new Set(ids);
+      return db.users
+        .filter((user) => user.role === "profesor" && wanted.has(user.id))
+        .map(({ id, img }) => ({ id, img }));
+    },
     async list(role: Role | undefined, page) {
       const users = role ? db.users.filter((u) => u.role === role) : [...db.users];
       return page ? users.slice(page.offset, page.offset + page.limit) : users;
@@ -100,7 +107,21 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
       return db.courses.map(clone);
     },
     async listPublished() {
-      return db.courses.filter((c) => c.status === "published").map(clone);
+      return db.courses.filter((course) => course.status === "published").map((course): PublicCourseRecord => ({
+        legacyId: course.legacyId,
+        slug: course.slug,
+        title: course.title,
+        description: course.description,
+        price: course.price,
+        priceCents: course.priceCents,
+        duration: course.duration,
+        level: course.level,
+        img: course.img,
+        professor: course.professor,
+        status: course.status,
+        temario: clone(course.temario),
+        modules: course.modules.map(({ id }) => ({ id })),
+      }));
     },
     async findLatestPublished() {
       const latest = db.courses

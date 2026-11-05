@@ -60,6 +60,14 @@ export type StoredCourse = {
   updatedAt: string;
 };
 
+/** Fields needed by the catalogue, with module IDs but no lesson bodies. */
+export type PublicCourseRecord = Pick<
+  StoredCourse,
+  | "legacyId" | "slug" | "title" | "description" | "price" | "priceCents"
+  | "duration" | "level" | "img" | "professor"
+  | "status" | "temario"
+> & { modules: { id: number }[] };
+
 export type StoredEnrollment = {
   id: string;
   studentEmail: string;

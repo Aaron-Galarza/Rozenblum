@@ -1,6 +1,7 @@
 import type { HomeContentDTO } from "@rozenblum/shared";
 import { badRequest, notFound } from "../lib/http.js";
 import { getRepositories } from "../repositories/index.js";
+import type { Repositories } from "../repositories/interfaces.js";
 import { assertManagedImageUrl } from "./media.js";
 
 /**
@@ -11,14 +12,20 @@ export async function getHomeContent(): Promise<HomeContentDTO> {
   const repos = getRepositories();
   const content = await repos.home.get();
   if (!content) throw notFound("El contenido de inicio no existe.");
-  const team = await Promise.all((content.team ?? []).map(async (member) => {
-    const user = member.userId ? await repos.users.findById(member.userId) : null;
+  return toPublicHomeContent(content, repos);
+}
+
+async function toPublicHomeContent(content: HomeContentDTO, repos: Repositories): Promise<HomeContentDTO> {
+  const userIds = [...new Set(content.team.flatMap((member) => member.userId ? [member.userId] : []))];
+  const professorImages = await repos.users.findProfessorImagesByIds(userIds);
+  const imagesById = new Map(professorImages.map(({ id, img }) => [id, img]));
+  const team = content.team.map((member) => {
     return {
       name: member.name,
       role: member.role,
-      img: user?.role === "profesor" && user.img ? user.img : member.img,
+      img: imagesById.get(member.userId ?? "") || member.img,
     };
-  }));
+  });
 
   return {
     key: "home",
@@ -41,10 +48,11 @@ export async function getHomeContent(): Promise<HomeContentDTO> {
 }
 
 export async function updateHomeHeroImage(heroImage: string): Promise<HomeContentDTO> {
+  const repos = getRepositories();
   assertManagedImageUrl(heroImage, "brand");
-  const current = await getRepositories().home.get();
+  const current = await repos.home.get();
   if (!current) throw notFound("El contenido de inicio no existe.");
-  const updated = await getRepositories().home.updateHeroImage(current.brand.heroImage, heroImage);
+  const updated = await repos.home.updateHeroImage(current.brand.heroImage, heroImage);
   if (!updated) throw badRequest("El contenido cambió. Recargá la página e intentá nuevamente.");
-  return getHomeContent();
+  return toPublicHomeContent(updated, repos);
 }

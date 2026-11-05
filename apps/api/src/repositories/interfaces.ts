@@ -2,6 +2,7 @@ import type { HomeContentDTO, OrderStatus, Role } from "@rozenblum/shared";
 import type { Pagination } from "../lib/pagination.js";
 import type {
   CourseInput,
+  PublicCourseRecord,
   StoredContact,
   StoredConversation,
   StoredCourse,
@@ -18,6 +19,7 @@ export type AppMode = "test" | "atlas";
 export interface UserRepository {
   findByEmail(email: string): Promise<StoredUser | null>;
   findById(id: string): Promise<StoredUser | null>;
+  findProfessorImagesByIds(ids: string[]): Promise<{ id: string; img?: string }[]>;
   list(role?: Role, page?: Pagination): Promise<StoredUser[]>;
   create(input: {
     name: string;
@@ -44,7 +46,7 @@ export interface UserRepository {
 
 export interface CourseRepository {
   list(): Promise<StoredCourse[]>;
-  listPublished(): Promise<StoredCourse[]>;
+  listPublished(): Promise<PublicCourseRecord[]>;
   findLatestPublished(): Promise<StoredCourse | null>;
   findBySlug(slug: string): Promise<StoredCourse | null>;
   findById(legacyId: number): Promise<StoredCourse | null>;

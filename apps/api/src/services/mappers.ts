@@ -16,6 +16,7 @@ import type {
   StoredCourse,
   StoredEnrollment,
   StoredOrder,
+  PublicCourseRecord,
   StoredSettings,
   StoredUser,
 } from "../types.js";
@@ -32,7 +33,7 @@ export function userToDTO(user: StoredUser): UserDTO {
   };
 }
 
-export function courseToDTO(course: StoredCourse): CourseDTO {
+function baseCourseDTO(course: PublicCourseRecord): CourseDTO {
   return {
     id: course.legacyId,
     slug: course.slug,
@@ -45,22 +46,18 @@ export function courseToDTO(course: StoredCourse): CourseDTO {
     level: course.level,
     img: course.img,
     professor: course.professor,
-    professorId: course.professorEmail,
     status: course.status,
-    temario: course.temario,
+    temario: course.temario.map(({ mod, title, lessons }) => ({ mod, title, lessons: [...lessons] })),
   };
 }
 
+export function courseToDTO(course: StoredCourse): CourseDTO {
+  return { ...baseCourseDTO(course), professorId: course.professorEmail };
+}
+
 /** Public catalogue shape, without the professor's login email. */
-export function courseToPublicDTO(course: StoredCourse): CourseDTO {
-  const publicCourse = courseToDTO(course);
-  delete publicCourse.professorId;
-  publicCourse.temario = course.temario.map(({ mod, title, lessons }) => ({
-    mod,
-    title,
-    lessons: [...lessons],
-  }));
-  return publicCourse;
+export function courseToPublicDTO(course: PublicCourseRecord): CourseDTO {
+  return baseCourseDTO(course);
 }
 
 export function moduleStatuses(

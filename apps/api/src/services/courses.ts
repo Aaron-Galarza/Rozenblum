@@ -36,7 +36,7 @@ export async function listPublishedCourses(): Promise<CourseDTO[]> {
 export async function getLatestPublishedCourse(): Promise<CourseDetailDTO> {
   const latest = await getRepositories().courses.findLatestPublished();
   if (!latest) throw notFound("No hay cursos publicados.");
-  return getPublishedCourseDetail(latest.slug);
+  return buildPublishedCourseDetail(latest);
 }
 
 export async function getPublishedCourse(slug: string): Promise<CourseDTO> {
@@ -52,13 +52,16 @@ export async function getPublishedCourse(slug: string): Promise<CourseDTO> {
  * intentionally excluded — they belong to enrolled students.
  */
 export async function getPublishedCourseDetail(slug: string): Promise<CourseDetailDTO> {
-  const repos = getRepositories();
-  const course = await repos.courses.findBySlug(slug);
+  const course = await getRepositories().courses.findBySlug(slug);
+  return buildPublishedCourseDetail(course);
+}
+
+async function buildPublishedCourseDetail(course: StoredCourse | null): Promise<CourseDetailDTO> {
   if (!course || course.status !== "published") {
     throw notFound("Curso no encontrado.");
   }
 
-  const professor = await repos.users.findByEmail(course.professorEmail);
+  const professor = await getRepositories().users.findByEmail(course.professorEmail);
   return {
     course: courseToPublicDTO(course),
     professor: { name: professor?.name ?? course.professor, ...(professor?.img ? { img: professor.img } : {}) },
