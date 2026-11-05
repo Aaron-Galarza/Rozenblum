@@ -330,7 +330,9 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
 
   const contacts: ContactRepository = {
     async list(page) {
-      const items = [...db.contacts].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(clone);
+      const items = [...db.contacts]
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+        .map(clone);
       return page ? items.slice(page.offset, page.offset + page.limit) : items;
     },
     async create(input) {

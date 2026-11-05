@@ -185,7 +185,7 @@ const contactSchema = new Schema<StoredContact>(
   { versionKey: false, collection: "contacts" },
 );
 
-contactSchema.index({ createdAt: -1 });
+contactSchema.index({ createdAt: -1, id: -1 });
 
 export const UserModel =
   (mongoose.models.User as mongoose.Model<StoredUser>) ??

@@ -377,7 +377,7 @@ export function createMongooseRepositories(): Repositories {
   const contacts: ContactRepository = {
     async list(page) {
       const docs = await ContactModel.find({})
-        .sort({ createdAt: -1 })
+        .sort({ createdAt: -1, id: -1 })
         .skip(page?.offset ?? 0)
         .limit(page?.limit ?? LIST_HARD_LIMIT)
         .lean()
