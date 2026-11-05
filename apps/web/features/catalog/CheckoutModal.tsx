@@ -5,6 +5,7 @@ import type { CheckoutResultDTO } from "@rozenblum/shared";
 import type { Course } from "../../types";
 import { apiFetch, errorMessage } from "../../lib/api";
 import { useModalA11y } from "../../lib/use-modal-a11y";
+import { usePublicSettings } from "../../lib/use-public-settings";
 
 type CheckoutModalProps = {
   course: Course;
@@ -18,6 +19,9 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
   const [form, setForm] = useState({ nombre: "", email: "", dni: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"mercadopago" | "manual">("mercadopago");
+  const settings = usePublicSettings();
+  const onlinePayments = Boolean(settings?.paymentsConfigured);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,8 +36,14 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
           nombre: form.nombre,
           email: form.email,
           dni: form.dni,
+          paymentMethod: settings ? (onlinePayments ? paymentMethod : "manual") : undefined,
         },
       });
+      if (result.payment?.url) {
+        sessionStorage.setItem(`rozenblum-payment-email:${result.order.externalReference ?? result.order.id}`, form.email);
+        window.location.assign(result.payment.url);
+        return;
+      }
       onSuccess(result.order.externalReference ?? result.order.id, form.email);
     } catch (err) {
       setError(errorMessage(err));
@@ -111,10 +121,24 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
             </div>
           ))}
 
+          {onlinePayments && (
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-medium tracking-widest uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>Forma de pago</legend>
+              <label className="flex items-center gap-2 text-sm" style={{ color: "#173B6C" }}>
+                <input type="radio" name="paymentMethod" checked={paymentMethod === "mercadopago"} onChange={() => setPaymentMethod("mercadopago")} />
+                Mercado Pago · activación automática
+              </label>
+              <label className="flex items-center gap-2 text-sm" style={{ color: "#173B6C" }}>
+                <input type="radio" name="paymentMethod" checked={paymentMethod === "manual"} onChange={() => setPaymentMethod("manual")} />
+                Coordinar otro pago con el Estudio
+              </label>
+            </fieldset>
+          )}
+
           {/* Registration status */}
           <div className="p-4 rounded" style={{ backgroundColor: "#F5F5F5" }}>
             <p className="text-xs font-bold tracking-widest uppercase mb-2" style={{ color: "#173B6C" }}>Solicitud de inscripción</p>
-            <p className="text-xs leading-relaxed" style={{ color: "rgba(23,59,108,0.7)" }}>Tu DNI será la contraseña inicial de tu cuenta. La cuenta se crea automáticamente cuando se confirme el pago y el acceso se habilita al aula. No se realiza ningún cobro en este sitio; consultá las instrucciones de pago por WhatsApp al finalizar.</p>
+            <p className="text-xs leading-relaxed" style={{ color: "rgba(23,59,108,0.7)" }}>Tu DNI será la contraseña inicial de tu cuenta. La cuenta se crea cuando se confirme el pago. {onlinePayments && paymentMethod === "mercadopago" ? "Al continuar, irás a Mercado Pago para completar el pago. El acceso se activará cuando se confirme." : "Contactá al Estudio para coordinar el pago; un administrador habilitará el acceso."}</p>
           </div>
 
           {error && (
@@ -128,11 +152,11 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
             className="w-full py-4 text-sm font-bold tracking-widest transition-all duration-200 hover:brightness-110 active:scale-95 rounded disabled:opacity-70"
             style={{ backgroundColor: "#009EE3", color: "#FFFFFF", letterSpacing: "0.1em" }}
           >
-            {loading ? "REGISTRANDO..." : "SOLICITAR INSCRIPCIÓN"}
+            {loading ? "REGISTRANDO..." : onlinePayments && paymentMethod === "mercadopago" ? "CONTINUAR A MERCADO PAGO" : "SOLICITAR INSCRIPCIÓN"}
           </button>
 
           <p className="text-[11px] leading-relaxed text-center" style={{ color: "rgba(23,59,108,0.55)" }}>
-            El acceso se habilita cuando un administrador confirma tu inscripción.
+            El acceso se habilita cuando se confirma el pago.
           </p>
         </form>
       </div>

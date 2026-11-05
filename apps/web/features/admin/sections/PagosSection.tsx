@@ -4,8 +4,9 @@ import { useState } from "react";
 import type { OrderDTO, OrderStatus } from "@rozenblum/shared";
 import { errorMessage } from "../../../lib/api";
 import Toast from "../../../components/ui/Toast";
+import Modal from "../../../components/ui/Modal";
 
-const ORDER_STATUSES: OrderStatus[] = ["Pagado", "Pendiente", "Rechazado", "Reembolsado"];
+const ORDER_STATUSES: OrderStatus[] = ["Pagado", "Pendiente", "Rechazado", "En disputa", "Reembolsado"];
 
 function orderDateISO(label: string): string {
   const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(label);
@@ -21,12 +22,13 @@ const statusBadgeStyle: Record<OrderStatus, React.CSSProperties> = {
   Pagado: { backgroundColor: "#dcfce7", color: "#166534" },
   Pendiente: { backgroundColor: "#fef3c7", color: "#92400e" },
   Rechazado: { backgroundColor: "#fee2e2", color: "#991b1b" },
+  "En disputa": { backgroundColor: "#ffedd5", color: "#9a3412" },
   Reembolsado: { backgroundColor: "#e0e7ff", color: "#3730a3" },
 };
 
 type PagosSectionProps = {
   orders: OrderDTO[];
-  onStatusChange: (id: string, estado: OrderStatus) => Promise<void>;
+  onStatusChange: (id: string, estado: OrderStatus, motivo: string) => Promise<void>;
 };
 
 export default function PagosSection({ orders, onStatusChange }: PagosSectionProps) {
@@ -36,6 +38,8 @@ export default function PagosSection({ orders, onStatusChange }: PagosSectionPro
   const [dateTo, setDateTo] = useState("");
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<{ order: OrderDTO; estado: OrderStatus } | null>(null);
+  const [motivo, setMotivo] = useState("");
 
   const showToast = (text: string, error = false) => { setToast({ text, error }); setTimeout(() => setToast(null), 2500); };
 
@@ -67,12 +71,14 @@ export default function PagosSection({ orders, onStatusChange }: PagosSectionPro
 
   const selectStyle: React.CSSProperties = { border: "1px solid rgba(23,59,108,0.2)", color: "#173B6C", backgroundColor: "#FAF8F5" };
 
-  const changeStatus = async (order: OrderDTO, estado: OrderStatus) => {
-    if (estado === order.estado) return;
+  const changeStatus = async () => {
+    if (!pending || motivo.trim().length < 5) return;
     setBusy(true);
     try {
-      await onStatusChange(order.id, estado);
-      showToast(estado === "Pagado" ? "✓ Orden confirmada · inscripción activada" : `Orden actualizada a ${estado}`);
+      await onStatusChange(pending.order.id, pending.estado, motivo.trim());
+      showToast(pending.estado === "Pagado" ? "✓ Orden confirmada · inscripción activada" : `Orden actualizada a ${pending.estado}`);
+      setPending(null);
+      setMotivo("");
     } catch (err) {
       showToast(errorMessage(err), true);
     } finally {
@@ -130,14 +136,20 @@ export default function PagosSection({ orders, onStatusChange }: PagosSectionPro
                 <td className="px-4 py-3">
                   <select
                     value={o.estado}
-                    disabled={busy}
-                    onChange={(e) => void changeStatus(o, e.target.value as OrderStatus)}
+                    disabled={busy || o.paymentProvider === "mercadopago" || o.estado === "En disputa"}
+                    onChange={(e) => { setPending({ order: o, estado: e.target.value as OrderStatus }); setMotivo(""); }}
                     className="px-2 py-0.5 rounded text-[10px] font-bold outline-none cursor-pointer border-0 disabled:opacity-40"
                     style={statusBadgeStyle[o.estado]}
                     aria-label={`Estado de la orden ${o.externalReference ?? o.id}`}
+                    title={o.paymentProvider === "mercadopago" ? "Estado automático verificado por Mercado Pago" : undefined}
                   >
                     {ORDER_STATUSES.map((status) => (
-                      <option key={status} value={status} style={{ backgroundColor: "#FFFFFF", color: "#173B6C" }}>{status}</option>
+                      <option key={status} value={status}
+                        disabled={status === "En disputa" ||
+                          (o.estado === "Reembolsado" && status !== "Reembolsado") ||
+                          (o.estado === "Pagado" && status !== "Pagado" && status !== "Reembolsado") ||
+                          ((o.estado === "Pendiente" || o.estado === "Rechazado") && status === "Reembolsado")}
+                        style={{ backgroundColor: "#FFFFFF", color: "#173B6C" }}>{status}</option>
                     ))}
                   </select>
                 </td>
@@ -148,6 +160,24 @@ export default function PagosSection({ orders, onStatusChange }: PagosSectionPro
       </div>
 
       {toast && <Toast message={toast.text} error={toast.error} />}
+      {pending && (
+        <Modal title="Confirmar cambio de pago" onClose={() => { if (!busy) setPending(null); }}>
+          <form onSubmit={(event) => { event.preventDefault(); void changeStatus(); }} className="space-y-4">
+            <p className="text-sm" style={{ color: "#173B6C" }}>
+              Orden {pending.order.externalReference ?? pending.order.id}: {pending.order.estado} → {pending.estado}
+            </p>
+            <label htmlFor="payment-reason" className="block text-xs font-medium uppercase tracking-widest" style={{ color: "#173B6C" }}>Motivo del cambio</label>
+            <textarea id="payment-reason" required minLength={5} maxLength={500} value={motivo}
+              onChange={(event) => setMotivo(event.target.value)} rows={3}
+              className="w-full rounded border p-3 text-sm outline-none" style={{ borderColor: "rgba(23,59,108,0.25)", color: "#173B6C" }} />
+            <button type="submit" disabled={busy || motivo.trim().length < 5}
+              className="w-full rounded px-4 py-3 text-sm font-medium disabled:opacity-50"
+              style={{ backgroundColor: "#173B6C", color: "#FFFFFF" }}>
+              {busy ? "Guardando..." : "Confirmar cambio"}
+            </button>
+          </form>
+        </Modal>
+      )}
     </>
   );
 }

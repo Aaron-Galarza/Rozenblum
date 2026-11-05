@@ -206,8 +206,8 @@ export default function AdminView() {
               {section === "pagos" && (
                 <PagosSection
                   orders={overview.orders}
-                  onStatusChange={async (id: string, estado: OrderStatus) => {
-                    await apiFetch(`/api/admin/orders/${id}`, { method: "PATCH", auth: true, body: { estado } });
+                  onStatusChange={async (id: string, estado: OrderStatus, motivo: string) => {
+                    await apiFetch(`/api/admin/orders/${id}`, { method: "PATCH", auth: true, body: { estado, motivo } });
                     await load();
                   }}
                 />
