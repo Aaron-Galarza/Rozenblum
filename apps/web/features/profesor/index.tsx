@@ -147,17 +147,21 @@ export default function ProfesorView() {
       />
 
       {/* ── BODY ── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
         {/* ── SIDEBAR ── */}
-        <aside className="w-72 flex-shrink-0 overflow-y-auto" style={{ backgroundColor: "#FFFFFF", borderRight: "1px solid #E0E0E0" }}>
-          <div className="p-5">
-            <p className="text-[10px] font-bold tracking-widest uppercase mb-4" style={{ color: "#B58A43" }}>Mis Cursos</p>
-            <div className="space-y-3">
+        <aside className="w-full shrink-0 overflow-x-auto lg:w-72 lg:overflow-x-hidden lg:overflow-y-auto" style={{ backgroundColor: "#FFFFFF", borderRight: "1px solid #E0E0E0" }}>
+          <nav aria-label="Cursos del profesor" className="flex w-max items-center gap-2 p-2 lg:block lg:w-auto lg:p-5">
+            <p className="mb-4 hidden text-[10px] font-bold uppercase tracking-widest lg:block" style={{ color: "#B58A43" }}>Mis Cursos</p>
+            <button onClick={() => setTab("dashboard")} className="order-first min-h-11 w-32 shrink-0 px-3 py-2.5 text-xs font-medium tracking-wide transition-all hover:brightness-110 lg:order-last lg:mt-6 lg:w-full" style={{ backgroundColor: "#B58A43", color: "#FAF8F5" }}>
+              DASHBOARD
+            </button>
+            <div className="contents lg:block lg:space-y-3">
               {teacherCourses.map((course) => (
                 <button
                   key={course.id}
                   onClick={() => void openCourse(course.id)}
-                  className="w-full text-left p-3 rounded transition-colors hover:opacity-80"
+                  aria-current={tab === "course" && selectedCourseId === course.id ? "page" : undefined}
+                  className="min-h-11 w-44 shrink-0 rounded p-3 text-left transition-colors hover:opacity-80 lg:w-full"
                   style={{
                     backgroundColor: tab === "course" && selectedCourseId === course.id ? "rgba(181,138,67,0.08)" : "transparent",
                     borderLeft: tab === "course" && selectedCourseId === course.id ? "4px solid #B58A43" : "4px solid transparent",
@@ -168,14 +172,17 @@ export default function ProfesorView() {
                 </button>
               ))}
             </div>
-            <button onClick={() => setTab("dashboard")} className="mt-6 w-full py-2.5 text-xs font-medium tracking-widest transition-all hover:brightness-110" style={{ backgroundColor: "#B58A43", color: "#FAF8F5" }}>
-              VOLVER AL DASHBOARD
-            </button>
-          </div>
+          </nav>
         </aside>
 
         {/* ── MAIN ── */}
-        <main className="flex-1 overflow-y-auto p-8">
+        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          <details className="mb-4 rounded border border-[#e0e0e0] bg-white p-3 xl:hidden">
+            <summary className="cursor-pointer text-sm font-medium text-[#173B6C]">Notificaciones ({dashboard?.notifications.length ?? 0})</summary>
+            {(dashboard?.notifications ?? []).length === 0
+              ? <p className="mt-3 text-xs text-[#64748b]">Sin novedades por ahora.</p>
+              : (dashboard?.notifications ?? []).map((notification) => <p key={notification.id} className="mt-3 text-xs text-[#173B6C]">{notification.icon} {notification.text}</p>)}
+          </details>
           {loading ? (
             <LoadingScreen label="Cargando panel..." />
           ) : error ? (
@@ -281,7 +288,7 @@ export default function ProfesorView() {
         </main>
 
         {/* ── NOTIFICATIONS PANEL ── */}
-        <aside className="w-72 flex-shrink-0 overflow-y-auto" style={{ backgroundColor: "#FFFFFF", borderLeft: "2px solid #B58A43" }}>
+        <aside className="hidden w-72 shrink-0 overflow-y-auto xl:block" style={{ backgroundColor: "#FFFFFF", borderLeft: "2px solid #B58A43" }}>
           <div className="px-5 py-4" style={{ borderBottom: "1px solid rgba(23,59,108,0.08)" }}>
             <h4 className="text-lg font-semibold" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Notificaciones</h4>
           </div>
