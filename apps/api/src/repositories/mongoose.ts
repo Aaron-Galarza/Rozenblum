@@ -1,4 +1,5 @@
 import type { OrderStatus, Role } from "@rozenblum/shared";
+import mongoose from "mongoose";
 import {
   ContactModel,
   ConversationModel,
@@ -6,6 +7,7 @@ import {
   EnrollmentModel,
   HomeContentModel,
   OrderModel,
+  PaymentEventModel,
   SettingsModel,
   UserModel,
 } from "../models/index.js";
@@ -19,6 +21,7 @@ import type {
   StoredMessage,
   StoredModule,
   StoredOrder,
+  StoredPaymentEvent,
   PublicCourseRecord,
   StoredSettings,
   StoredUser,
@@ -30,6 +33,7 @@ import type {
   EnrollmentRepository,
   HomeRepository,
   OrderRepository,
+  PaymentEventRepository,
   Repositories,
   SettingsRepository,
   UserRepository,
@@ -48,6 +52,7 @@ const courseRevisionFilter = (revision: number) => revision === 0
   : { revision };
 
 export function createMongooseRepositories(): Repositories {
+  mongoose.set("transactionAsyncLocalStorage", true);
   const users: UserRepository = {
     async findByEmail(email) {
       const doc = await UserModel.findOne({ email: email.toLowerCase() }).lean().exec();
@@ -314,12 +319,30 @@ export function createMongooseRepositories(): Repositories {
       const doc = await OrderModel.create(input);
       return clean<StoredOrder>(doc.toObject());
     },
-    async updateStatus(id, estado: OrderStatus) {
-      const doc = await OrderModel.findOneAndUpdate({ id }, { $set: { estado } }, { returnDocument: "after" })
+    async updateStatus(id, estado: OrderStatus, paymentId) {
+      const doc = await OrderModel.findOneAndUpdate({ id }, {
+        $set: { estado, ...(paymentId ? { paymentId } : {}) },
+      }, { returnDocument: "after" })
         .select("+dniPasswordHash")
         .lean()
         .exec();
       return doc ? clean<StoredOrder>(doc) : null;
+    },
+  };
+
+  const paymentEvents: PaymentEventRepository = {
+    async findByProviderEventId(providerEventId) {
+      const doc = await PaymentEventModel.findOne({ providerEventId }).lean().exec();
+      return doc ? clean<StoredPaymentEvent>(doc) : null;
+    },
+    async listByOrder(orderId) {
+      const docs = await PaymentEventModel.find({ orderId }).sort({ createdAt: 1 })
+        .limit(LIST_HARD_LIMIT).lean().exec();
+      return docs.map((doc) => clean<StoredPaymentEvent>(doc));
+    },
+    async create(event) {
+      const doc = await PaymentEventModel.create(event);
+      return clean<StoredPaymentEvent>(doc.toObject());
     },
   };
 
@@ -431,10 +454,12 @@ export function createMongooseRepositories(): Repositories {
 
   return {
     mode: "atlas",
+    withTransaction: (work) => mongoose.connection.transaction(work),
     users,
     courses,
     enrollments,
     orders,
+    paymentEvents,
     conversations,
     settings,
     contacts,

@@ -10,6 +10,7 @@ import type {
   StoredMessage,
   StoredModule,
   StoredOrder,
+  StoredPaymentEvent,
   StoredSettings,
   StoredUser,
 } from "../types.js";
@@ -105,7 +106,13 @@ export interface OrderRepository {
   existsByCourse(courseId: number): Promise<boolean>;
   findByReference(reference: string): Promise<StoredOrder | null>;
   create(input: StoredOrder): Promise<StoredOrder>;
-  updateStatus(id: string, estado: OrderStatus): Promise<StoredOrder | null>;
+  updateStatus(id: string, estado: OrderStatus, paymentId?: string): Promise<StoredOrder | null>;
+}
+
+export interface PaymentEventRepository {
+  findByProviderEventId(providerEventId: string): Promise<StoredPaymentEvent | null>;
+  listByOrder(orderId: string): Promise<StoredPaymentEvent[]>;
+  create(event: StoredPaymentEvent): Promise<StoredPaymentEvent>;
 }
 
 export interface ConversationRepository {
@@ -141,10 +148,12 @@ export interface HomeRepository {
 
 export type Repositories = {
   mode: AppMode;
+  withTransaction<T>(work: () => Promise<T>): Promise<T>;
   users: UserRepository;
   courses: CourseRepository;
   enrollments: EnrollmentRepository;
   orders: OrderRepository;
+  paymentEvents: PaymentEventRepository;
   conversations: ConversationRepository;
   settings: SettingsRepository;
   contacts: ContactRepository;

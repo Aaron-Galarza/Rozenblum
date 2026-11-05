@@ -4,8 +4,9 @@ import { test } from "node:test";
 import mongoose from "mongoose";
 import { env } from "../config/env.js";
 import { hashPassword } from "../lib/password.js";
-import { ContactModel, CourseModel, HomeContentModel, SettingsModel } from "../models/index.js";
+import { ContactModel, CourseModel, EnrollmentModel, HomeContentModel, PaymentEventModel, SettingsModel } from "../models/index.js";
 import { createMongooseRepositories } from "../repositories/mongoose.js";
+import type { StoredPaymentEvent } from "../types.js";
 import { api, startTestServer } from "./helpers.js";
 
 // Explicit opt-in only. Every run uses a fresh database and removes it in finally.
@@ -276,15 +277,51 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
       },
     );
     assert.equal(checkout.status, 201);
+    await EnrollmentModel.init();
+    const simultaneous = await Promise.all([0, 1].map(() => api(server!.baseUrl, "/api/checkout", {
+      method: "POST", body: JSON.stringify({
+        courseSlug: course.slug, nombre: "Concurrent Buyer", email: "concurrent-buyer@example.test",
+        dni: "27123456", paymentMethod: "manual",
+      }),
+    })));
+    assert.deepEqual(simultaneous.map((response) => response.status).sort(), [201, 400]);
+    assert.equal((await mongoose.connection.db!.collection("orders").countDocuments({
+      email: "concurrent-buyer@example.test",
+    })), 1);
     assert.equal(await repositories.users.findByEmail("buyer@example.test"), null);
     const rawOrder = await mongoose.connection.db!.collection("orders").findOne({ id: checkout.body.data.order.id });
     assert.ok(rawOrder?.dniPasswordHash);
+    const rollbackReference = "ATLAS-ROLLBACK-TEST";
+    const sourceOrder = await repositories.orders.findByReference(checkout.body.data.order.id);
+    assert.ok(sourceOrder);
+    await assert.rejects(repositories.withTransaction(async () => {
+      await repositories.orders.create({ ...sourceOrder, id: "ord_rollback_test",
+        externalReference: rollbackReference, email: "rollback-atlas@example.test" });
+      throw new Error("Injected failure after order write");
+    }));
+    assert.equal(await repositories.orders.findByReference(rollbackReference), null);
     assert.equal(rawOrder.dni, undefined);
     assert.notEqual(rawOrder.dniPasswordHash, buyerDni);
     const paid = await api(server.baseUrl, `/api/admin/orders/${checkout.body.data.order.id}`, {
-      method: "PATCH", token: adminLogin.body.data.token, body: JSON.stringify({ estado: "Pagado" }),
+      method: "PATCH", token: adminLogin.body.data.token,
+      body: JSON.stringify({ estado: "Pagado", motivo: "Transferencia confirmada en ensayo" }),
     });
     assert.equal(paid.status, 200);
+    const paymentEvents = await PaymentEventModel.find({ orderId: checkout.body.data.order.id }).lean().exec();
+    assert.equal(paymentEvents.length, 1);
+    assert.equal(paymentEvents[0]?.reason, "Transferencia confirmada en ensayo");
+    assert.equal(paymentEvents[0]?.previousStatus, "Pendiente");
+    assert.equal(paymentEvents[0]?.nextStatus, "Pagado");
+    await PaymentEventModel.init();
+    const firstNotification: StoredPaymentEvent = {
+      id: "pev_unique_1", orderId: checkout.body.data.order.id, source: "mercadopago",
+      providerEventId: "notification-unique-1", providerPaymentId: "123456789",
+      previousStatus: "Pagado", nextStatus: "Pagado", reason: "Idempotency test",
+      createdAt: new Date().toISOString(), paymentStatus: "approved",
+    };
+    await PaymentEventModel.create(firstNotification);
+    await assert.rejects(PaymentEventModel.create({ ...firstNotification, id: "pev_unique_2" }),
+      (error: unknown) => (error as { code?: number }).code === 11000);
     const buyer = await repositories.users.findByEmail("buyer@example.test");
     const rawBuyer = await mongoose.connection.db!.collection("users").findOne({ email: "buyer@example.test" });
     assert.equal(rawBuyer?.dni, undefined);

@@ -1,14 +1,29 @@
 import { Router } from "express";
 import { checkoutSchema, contactSchema } from "@rozenblum/shared";
-import { sendData } from "../lib/http.js";
+import { badRequest, sendData } from "../lib/http.js";
 import { listPublishedCourses, getLatestPublishedCourse, getPublishedCourseDetail } from "../services/courses.js";
 import { checkout, getOrderReceipt } from "../services/checkout.js";
 import { submitContact, getPublicSettings } from "../services/contact.js";
 import { optionalAuth } from "../middleware/auth.js";
 import { asyncRoute, parseBody } from "./helpers.js";
 import { getHomeContent } from "../services/home.js";
+import { paymentNotificationSchema, processPaymentWebhook } from "../services/payments.js";
 
 export const publicRouter = Router();
+
+publicRouter.post("/payments/mercadopago/webhook", asyncRoute(async (req, res) => {
+  const queryPaymentId = req.query["data.id"];
+  if (typeof queryPaymentId !== "string" || !/^\d{1,30}$/.test(queryPaymentId)) {
+    throw badRequest("Identificador de pago inválido.");
+  }
+  const notification = parseBody(paymentNotificationSchema, req.body);
+  await processPaymentWebhook({
+    notification, queryPaymentId,
+    xSignature: req.header("x-signature"),
+    xRequestId: req.header("x-request-id"),
+  });
+  res.status(200).json({ data: { received: true } });
+}));
 
 publicRouter.get(
   "/content/home",

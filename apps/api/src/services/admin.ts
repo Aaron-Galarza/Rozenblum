@@ -8,6 +8,8 @@ import { getRepositories } from "../repositories/index.js";
 import { settingsToDTO, userToDTO } from "./mappers.js";
 import type { UserDTO } from "@rozenblum/shared";
 import { assertManagedImageUrl } from "./media.js";
+import { applyOrderTransition } from "./order-transitions.js";
+import type { StoredUser } from "../types.js";
 
 export async function createAdminUser(input: {
   /**
@@ -87,62 +89,18 @@ export async function deleteAdminUser(id: string): Promise<void> {
 export async function updateAdminOrder(
   id: string,
   estado: "Pagado" | "Pendiente" | "Rechazado" | "Reembolsado",
+  motivo: string,
+  actor: StoredUser,
 ): Promise<void> {
+  await applyOrderTransition({ reference: id, status: estado, source: "manual",
+    reason: motivo, actorId: actor.id });
+}
+
+export async function getAdminOrderEvents(id: string) {
   const repos = getRepositories();
   const order = await repos.orders.findByReference(id);
   if (!order) throw notFound("Orden no encontrada.");
-
-  if (estado === "Pagado") {
-    // Grant the entitlement first and only then mark the order as paid. If a
-    // write fails, the order stays pending and the admin can retry safely
-    // instead of ending up with a paid order that gives no access.
-    const existingAccount = await repos.users.findByEmail(order.email);
-    if (existingAccount && existingAccount.role !== "alumno") {
-      throw conflict("El correo de la orden pertenece a otra clase de cuenta.");
-    }
-    if (!existingAccount && !order.dniPasswordHash) {
-      throw badRequest("La orden no tiene una credencial protegida. No se puede activar la inscripción.");
-    }
-
-    // The student account is created only after payment. Checkout stores a
-    // salted hash of the DNI, never its plaintext value.
-    if (!existingAccount && order.dniPasswordHash) {
-      await repos.users.create({
-        name: order.alumno,
-        email: order.email,
-        role: "alumno",
-        passwordHash: order.dniPasswordHash,
-        initials: initialsFromName(order.alumno),
-        sessionVersion: 0,
-      });
-    }
-
-    const enrollment = await repos.enrollments.findByStudentAndCourse(order.email, order.courseId);
-    if (enrollment) {
-      await repos.enrollments.updateStatus(enrollment.id, "Activo");
-    } else {
-      await repos.enrollments.create({
-        studentEmail: order.email,
-        studentName: order.alumno,
-        courseId: order.courseId,
-        status: "Activo",
-      });
-    }
-
-    await repos.orders.updateStatus(order.id, "Pagado");
-    return;
-  }
-
-  const updated = await repos.orders.updateStatus(order.id, estado);
-  if (!updated) throw notFound("Orden no encontrada.");
-
-  const enrollment = await repos.enrollments.findByStudentAndCourse(order.email, order.courseId);
-  if (enrollment) {
-    await repos.enrollments.updateStatus(
-      enrollment.id,
-      estado === "Pendiente" ? "Pendiente" : "Revocado",
-    );
-  }
+  return repos.paymentEvents.listByOrder(order.id);
 }
 
 export async function updateSettings(input: {

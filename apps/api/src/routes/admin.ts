@@ -13,6 +13,7 @@ import { sendData, notFound } from "../lib/http.js";
 import { parsePagination } from "../lib/pagination.js";
 import {
   createAdminUser,
+  getAdminOrderEvents,
   deleteAdminUser,
   listAdminUsers,
   updateAdminOrder,
@@ -115,10 +116,14 @@ adminRouter.patch(
   "/orders/:id",
   asyncRoute(async (req, res) => {
     const input = parseBody(orderStatusSchema, req.body);
-    await updateAdminOrder(req.params.id, input.estado);
+    await updateAdminOrder(req.params.id, input.estado, input.motivo, req.authUser!);
     sendData(res, { id: req.params.id, estado: input.estado });
   }),
 );
+
+adminRouter.get("/orders/:id/events", asyncRoute(async (req, res) => {
+  sendData(res, await getAdminOrderEvents(req.params.id));
+}));
 
 adminRouter.put(
   "/settings",

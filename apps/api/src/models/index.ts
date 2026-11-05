@@ -6,6 +6,7 @@ import type {
   StoredCourse,
   StoredEnrollment,
   StoredOrder,
+  StoredPaymentEvent,
   StoredSettings,
   StoredUser,
 } from "../types.js";
@@ -138,14 +139,37 @@ const orderSchema = new Schema<StoredOrder>(
     estado: {
       type: String,
       required: true,
-      enum: ["Pagado", "Pendiente", "Rechazado", "Reembolsado"],
+      enum: ["Pagado", "Pendiente", "Rechazado", "En disputa", "Reembolsado"],
     },
     createdAt: { type: String, required: true },
+    paymentProvider: { type: String, enum: ["mercadopago", "manual"], default: "manual" },
+    preferenceId: { type: String, default: undefined, index: true },
+    paymentUrl: { type: String, default: undefined },
+    paymentId: { type: String, default: undefined },
   },
   { versionKey: false, collection: "orders" },
 );
 
 orderSchema.index({ estado: 1, createdAt: -1 });
+orderSchema.index({ paymentId: 1 }, { unique: true,
+  partialFilterExpression: { paymentId: { $type: "string" } } });
+
+const paymentEventSchema = new Schema<StoredPaymentEvent>({
+  id: { type: String, required: true, unique: true, index: true },
+  orderId: { type: String, required: true, index: true },
+  source: { type: String, required: true, enum: ["mercadopago", "manual"] },
+  providerEventId: { type: String, default: undefined },
+  providerPaymentId: { type: String, default: undefined },
+  previousStatus: { type: String, required: true },
+  nextStatus: { type: String, required: true },
+  actorId: { type: String, default: undefined },
+  reason: { type: String, required: true },
+  createdAt: { type: String, required: true },
+  paymentStatus: { type: String, default: undefined },
+}, { versionKey: false, collection: "payment_events" });
+paymentEventSchema.index({ source: 1, providerEventId: 1 }, {
+  unique: true, partialFilterExpression: { providerEventId: { $type: "string" } },
+});
 
 const messageSchema = new Schema(
   {
@@ -171,7 +195,7 @@ const conversationSchema = new Schema<StoredConversation>(
   { versionKey: false, collection: "conversations" },
 );
 
-conversationSchema.index({ studentEmail: 1, courseId: 1 });
+conversationSchema.index({ studentEmail: 1, courseId: 1 }, { unique: true });
 
 const settingsSchema = new Schema<StoredSettings>(
   {
@@ -213,6 +237,10 @@ export const EnrollmentModel =
 export const OrderModel =
   (mongoose.models.Order as mongoose.Model<StoredOrder>) ??
   mongoose.model<StoredOrder>("Order", orderSchema);
+
+export const PaymentEventModel =
+  (mongoose.models.PaymentEvent as mongoose.Model<StoredPaymentEvent>) ??
+  mongoose.model<StoredPaymentEvent>("PaymentEvent", paymentEventSchema);
 
 export const ConversationModel =
   (mongoose.models.Conversation as mongoose.Model<StoredConversation>) ??

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { scryptSync } from "node:crypto";
+import { createHmac, scryptSync } from "node:crypto";
 import { after, before, test } from "node:test";
 import { loginSchema } from "@rozenblum/shared";
 import { hashPassword, verifyPassword } from "../lib/password.js";
@@ -9,6 +9,7 @@ import { parseYouTubeId } from "../services/youtube.js";
 import { login as loginService } from "../services/auth.js";
 import { moduleStatuses } from "../services/mappers.js";
 import { detectImageFormat, isManagedImageUrl, mediaFolder } from "../services/media.js";
+import { setPaymentGatewayForTests, type PaymentSnapshot } from "../services/mercadopago.js";
 import { api, startTestServer, type TestServer } from "./helpers.js";
 
 const password = "test-password-12345";
@@ -333,11 +334,28 @@ test("checkout, receipt, and admin payment activation work together", async () =
   assert.equal(receipt.status, 200);
   const adminToken = await login("admin", adminEmail);
   const paid = await api(server.baseUrl, `/api/admin/orders/${checkout.body.data.order.id}`, {
-    method: "PATCH", token: adminToken, body: JSON.stringify({ estado: "Pagado" }),
+    method: "PATCH", token: adminToken, body: JSON.stringify({ estado: "Pagado", motivo: "Pago manual verificado" }),
   });
   assert.equal(paid.status, 200);
   const enrollment = await repositories.enrollments.findById(checkout.body.data.enrollment.id);
   assert.equal(enrollment?.status, "Activo");
+  const events = await api<{ data: { actorId?: string; reason: string; previousStatus: string; nextStatus: string }[] }>(
+    server.baseUrl, `/api/admin/orders/${checkout.body.data.order.id}/events`, { token: adminToken },
+  );
+  assert.equal(events.status, 200);
+  assert.equal(events.body.data.length, 1);
+  assert.equal(events.body.data[0]?.reason, "Pago manual verificado");
+  assert.equal(events.body.data[0]?.previousStatus, "Pendiente");
+  assert.equal(events.body.data[0]?.nextStatus, "Pagado");
+  assert.equal(events.body.data[0]?.actorId, (await repositories.users.findByEmail(adminEmail))?.id);
+  assert.equal((await api(server.baseUrl, `/api/admin/orders/${checkout.body.data.order.id}`, {
+    method: "PATCH", token: adminToken,
+    body: JSON.stringify({ estado: "Reembolsado" }),
+  })).status, 400);
+  assert.equal((await api(server.baseUrl, `/api/admin/orders/${checkout.body.data.order.id}`, {
+    method: "PATCH", token: adminToken,
+    body: JSON.stringify({ estado: "Pendiente", motivo: "Intento de reversión inválida" }),
+  })).status, 400);
 });
 
 test("admin can create professors but never students", async () => {
@@ -697,7 +715,7 @@ test("checkout waits for payment, then creates the student with the DNI password
   assert.equal(JSON.stringify(created.body).includes(pendingOrder.dniPasswordHash), false);
 
   const paid = await api(server.baseUrl, `/api/admin/orders/${pendingOrder?.externalReference ?? created.body.data.order.id}`, {
-    method: "PATCH", token, body: JSON.stringify({ estado: "Pagado" }),
+    method: "PATCH", token, body: JSON.stringify({ estado: "Pagado", motivo: "Transferencia confirmada" }),
   });
   assert.equal(paid.status, 200);
   const newStudent = await repositories.users.findByEmail("buyer@example.test");
@@ -710,7 +728,7 @@ test("checkout waits for payment, then creates the student with the DNI password
   assert.equal(enrolled?.status, "Activo");
 
   const revoked = await api(server.baseUrl, `/api/admin/orders/${created.body.data.order.id}`, {
-    method: "PATCH", token, body: JSON.stringify({ estado: "Reembolsado" }),
+    method: "PATCH", token, body: JSON.stringify({ estado: "Reembolsado", motivo: "Devolución acordada" }),
   });
   assert.equal(revoked.status, 200);
   assert.equal((await repositories.enrollments.findById(created.body.data.enrollment.id))?.status, "Revocado");
@@ -1191,4 +1209,157 @@ test("login is rate limited after repeated invalid attempts", async () => {
     if (response.status === 429) limited = true;
   }
   assert.equal(limited, true);
+});
+
+test("checkout rolls back an order when enrollment persistence fails", async () => {
+  const course = await repositories.courses.create({
+    title: "Rollback Course", description: "Transaction failure test", priceCents: 45_000,
+    duration: "Online", level: "Inicial", img: "https://example.test/rollback.jpg",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+  });
+  const originalCreate = repositories.enrollments.create.bind(repositories.enrollments);
+  repositories.enrollments.create = async () => { throw new Error("Injected enrollment failure"); };
+  try {
+    const response = await api(server.baseUrl, "/api/checkout", {
+      method: "POST", body: JSON.stringify({
+        courseSlug: course.slug, nombre: "Rollback Student", email: "rollback@example.test",
+        dni: "32123456", paymentMethod: "manual",
+      }),
+    });
+    assert.equal(response.status, 500);
+    assert.equal((await repositories.orders.list()).some((order) => order.email === "rollback@example.test"), false);
+    assert.equal(await repositories.enrollments.findByStudentAndCourse("rollback@example.test", course.legacyId), null);
+  } finally {
+    repositories.enrollments.create = originalCreate;
+  }
+});
+
+test("signed Mercado Pago events activate once, reject a wrong amount, and revoke on refund", async () => {
+  const course = await repositories.courses.create({
+    title: "Payment Course", description: "Verified gateway test", priceCents: 123_400,
+    duration: "Online", level: "Inicial", img: "https://example.test/payment.jpg",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+  });
+  const secret = "test-webhook-secret-for-payment-flow";
+  const paymentId = "123456789";
+  let reference = "";
+  let payment: PaymentSnapshot = {
+    id: paymentId, externalReference: "", status: "approved", statusDetail: "accredited",
+    amountCents: 123_400, currency: "ARS",
+  };
+  setPaymentGatewayForTests({
+    async createPreference(input) {
+      reference = input.reference;
+      assert.equal(input.priceCents, course.priceCents);
+      return { id: "pref-test", url: "https://www.mercadopago.com.ar/checkout/test" };
+    },
+    async getPayment(id) { return { ...payment, id, externalReference: payment.externalReference || reference }; },
+  }, secret);
+  try {
+    assert.equal((await api(server.baseUrl, "/api/checkout", { method: "POST", body: JSON.stringify({
+      courseSlug: course.slug, nombre: "Payment Student", email: "payment@example.test",
+      dni: "33123456", priceCents: 1,
+    }) })).status, 400);
+    const checkout = await api<{ data: { order: { id: string }; payment: { url: string } } }>(
+      server.baseUrl, "/api/checkout", { method: "POST", body: JSON.stringify({
+        courseSlug: course.slug, nombre: "Payment Student", email: "payment@example.test",
+        dni: "33123456",
+      }) },
+    );
+    assert.equal(checkout.status, 201);
+    assert.equal(checkout.body.data.payment.url, "https://www.mercadopago.com.ar/checkout/test");
+    const orderId = checkout.body.data.order.id;
+    assert.equal((await repositories.orders.findByReference(orderId))?.montoCents, 123_400);
+    assert.equal(await repositories.users.findByEmail("payment@example.test"), null);
+    const notify = async (eventId: string, signatureValid = true, requestedPaymentId = paymentId) => {
+      const requestId = `request-${eventId}`;
+      const ts = String(Date.now());
+      const manifest = `id:${requestedPaymentId};request-id:${requestId};ts:${ts};`;
+      const hash = createHmac("sha256", secret).update(manifest).digest("hex");
+      return api(server.baseUrl, `/api/payments/mercadopago/webhook?data.id=${requestedPaymentId}`, {
+        method: "POST", headers: {
+          "x-request-id": requestId,
+          "x-signature": `ts=${ts},v1=${signatureValid ? hash : "0".repeat(64)}`,
+        },
+        body: JSON.stringify({ id: eventId, type: "payment", data: { id: requestedPaymentId } }),
+      });
+    };
+    assert.equal((await notify("bad-signature", false)).status, 401);
+    payment = { ...payment, amountCents: 1 };
+    assert.equal((await notify("bad-amount")).status, 400);
+    payment = { ...payment, amountCents: 123_400, currency: "USD" };
+    assert.equal((await notify("bad-currency")).status, 400);
+    payment = { ...payment, currency: "ARS", externalReference: "wrong-reference" };
+    assert.equal((await notify("bad-reference")).status, 404);
+    assert.equal(await repositories.users.findByEmail("payment@example.test"), null);
+    payment = { ...payment, externalReference: "" };
+    const originalEventCreate = repositories.paymentEvents.create.bind(repositories.paymentEvents);
+    repositories.paymentEvents.create = async () => { throw new Error("Injected event failure"); };
+    try {
+      assert.equal((await notify("approved")).status, 500);
+      assert.equal((await repositories.orders.findByReference(orderId))?.estado, "Pendiente");
+      assert.equal(await repositories.users.findByEmail("payment@example.test"), null);
+    } finally {
+      repositories.paymentEvents.create = originalEventCreate;
+    }
+    assert.equal((await notify("approved")).status, 200);
+    assert.equal((await notify("approved")).status, 200);
+    assert.equal((await repositories.orders.findByReference(orderId))?.estado, "Pagado");
+    const adminToken = await login("admin", adminEmail);
+    assert.equal((await api(server.baseUrl, `/api/admin/orders/${orderId}`, {
+      method: "PATCH", token: adminToken,
+      body: JSON.stringify({ estado: "Reembolsado", motivo: "Intento manual inválido" }),
+    })).status, 400);
+    assert.equal((await repositories.enrollments.findByStudentAndCourse("payment@example.test", course.legacyId))?.status, "Activo");
+    assert.equal((await repositories.enrollments.listAll()).filter((item) =>
+      item.studentEmail === "payment@example.test" && item.courseId === course.legacyId).length, 1);
+    assert.ok(await repositories.users.findByEmail("payment@example.test"));
+    assert.equal((await repositories.paymentEvents.listByOrder(orderId)).length, 1);
+    payment = { ...payment, status: "in_mediation", statusDetail: "pending" };
+    assert.equal((await notify("disputed")).status, 200);
+    assert.equal((await repositories.orders.findByReference(orderId))?.estado, "En disputa");
+    assert.equal((await repositories.enrollments.findByStudentAndCourse("payment@example.test", course.legacyId))?.status, "Revocado");
+    payment = { ...payment, status: "approved", statusDetail: "accredited" };
+    assert.equal((await notify("resolved-in-favor")).status, 200);
+    assert.equal((await repositories.orders.findByReference(orderId))?.estado, "Pagado");
+    assert.equal((await repositories.enrollments.findByStudentAndCourse("payment@example.test", course.legacyId))?.status, "Activo");
+    payment = { ...payment, status: "refunded", statusDetail: "refunded" };
+    assert.equal((await notify("unrelated-refund", true, "999999999")).status, 200);
+    assert.equal((await repositories.orders.findByReference(orderId))?.estado, "Pagado");
+    assert.equal((await notify("refunded")).status, 200);
+    assert.equal((await repositories.orders.findByReference(orderId))?.estado, "Reembolsado");
+    assert.equal((await repositories.enrollments.findByStudentAndCourse("payment@example.test", course.legacyId))?.status, "Revocado");
+    payment = { ...payment, status: "approved", statusDetail: "accredited" };
+    assert.equal((await notify("late-approved")).status, 200);
+    assert.equal((await repositories.orders.findByReference(orderId))?.estado, "Reembolsado");
+  } finally {
+    setPaymentGatewayForTests(null);
+  }
+});
+
+test("manual confirmation repairs an old order without an enrollment and audits the actor", async () => {
+  const course = await repositories.courses.create({
+    title: "Legacy Order Course", description: "Order recovery test", priceCents: 80_000,
+    duration: "Online", level: "Inicial", img: "https://example.test/legacy-order.jpg",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+  });
+  const orderId = "ord_legacy_without_enrollment";
+  await repositories.orders.create({
+    id: orderId, externalReference: "RB-LEGACY-MISSING", alumno: "Legacy Buyer",
+    email: "legacy-buyer@example.test", dniPasswordHash: await hashPassword("34123456"),
+    curso: course.title, courseSlug: course.slug, courseId: course.legacyId,
+    monto: course.price, montoCents: course.priceCents, fecha: "05/11/2026",
+    metodo: "Pago manual", estado: "Pendiente", createdAt: new Date().toISOString(),
+    paymentProvider: "manual",
+  });
+  const token = await login("admin", adminEmail);
+  const result = await api(server.baseUrl, `/api/admin/orders/${orderId}`, {
+    method: "PATCH", token,
+    body: JSON.stringify({ estado: "Pagado", motivo: "Transferencia histórica verificada" }),
+  });
+  assert.equal(result.status, 200);
+  assert.equal((await repositories.enrollments.findByStudentAndCourse("legacy-buyer@example.test", course.legacyId))?.status, "Activo");
+  assert.equal((await repositories.users.findByEmail("legacy-buyer@example.test"))?.role, "alumno");
+  assert.equal((await repositories.paymentEvents.listByOrder(orderId))[0]?.actorId,
+    (await repositories.users.findByEmail(adminEmail))?.id);
 });

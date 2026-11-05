@@ -7,6 +7,7 @@ import type {
   StoredEnrollment,
   StoredMessage,
   StoredOrder,
+  StoredPaymentEvent,
   PublicCourseRecord,
   StoredSettings,
   StoredUser,
@@ -18,6 +19,7 @@ import type {
   EnrollmentRepository,
   HomeRepository,
   OrderRepository,
+  PaymentEventRepository,
   Repositories,
   SettingsRepository,
   UserRepository,
@@ -30,6 +32,7 @@ type Memory = {
   courses: StoredCourse[];
   enrollments: StoredEnrollment[];
   orders: StoredOrder[];
+  paymentEvents: StoredPaymentEvent[];
   conversations: StoredConversation[];
   settings: StoredSettings | null;
   contacts: StoredContact[];
@@ -42,6 +45,7 @@ function createMemory(initial: Partial<Memory>): Memory {
     courses: [],
     enrollments: [],
     orders: [],
+    paymentEvents: [],
     conversations: [],
     settings: null,
     contacts: [],
@@ -52,6 +56,16 @@ function createMemory(initial: Partial<Memory>): Memory {
 
 export function createMockRepositories(initial: Partial<Memory> = {}): Repositories {
   const db = createMemory(initial);
+
+  const withTransaction = async <T>(work: () => Promise<T>): Promise<T> => {
+    const before = clone(db);
+    try {
+      return await work();
+    } catch (error) {
+      Object.assign(db, before);
+      throw error;
+    }
+  };
 
   const users: UserRepository = {
     async findByEmail(email) {
@@ -224,6 +238,10 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
       return enrollment ? clone(enrollment) : null;
     },
     async create(input) {
+      if (db.enrollments.some((item) =>
+        item.studentEmail === input.studentEmail.toLowerCase() && item.courseId === input.courseId)) {
+        throw Object.assign(new Error("Inscripción duplicada."), { code: 11000 });
+      }
       const enrollment: StoredEnrollment = {
         id: newId("enr"),
         studentEmail: input.studentEmail.toLowerCase(),
@@ -274,11 +292,28 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
       db.orders.push(clone(input));
       return clone(input);
     },
-    async updateStatus(id, estado: OrderStatus) {
+    async updateStatus(id, estado: OrderStatus, paymentId) {
       const order = db.orders.find((o) => o.id === id);
       if (!order) return null;
       order.estado = estado;
+      if (paymentId) order.paymentId = paymentId;
       return clone(order);
+    },
+  };
+
+  const paymentEvents: PaymentEventRepository = {
+    async findByProviderEventId(providerEventId) {
+      return db.paymentEvents.find((event) => event.providerEventId === providerEventId) ?? null;
+    },
+    async listByOrder(orderId) {
+      return db.paymentEvents.filter((event) => event.orderId === orderId).map(clone);
+    },
+    async create(event) {
+      if (event.providerEventId && db.paymentEvents.some((item) => item.providerEventId === event.providerEventId)) {
+        throw Object.assign(new Error("Evento duplicado."), { code: 11000 });
+      }
+      db.paymentEvents.push(clone(event));
+      return clone(event);
     },
   };
 
@@ -302,6 +337,10 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
       return conversation ? clone(conversation) : null;
     },
     async create(input) {
+      if (db.conversations.some((item) =>
+        item.studentEmail === input.studentEmail.toLowerCase() && item.courseId === input.courseId)) {
+        throw Object.assign(new Error("Conversación duplicada."), { code: 11000 });
+      }
       db.conversations.push(clone(input));
       return clone(input);
     },
@@ -368,10 +407,12 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
 
   return {
     mode: "test",
+    withTransaction,
     users,
     courses,
     enrollments,
     orders,
+    paymentEvents,
     conversations,
     settings,
     contacts,

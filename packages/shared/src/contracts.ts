@@ -300,7 +300,7 @@ export const coursePayloadSchema = z.object({
  * Orders / checkout
  * ────────────────────────────────────────────────────────────────────────────*/
 
-export const ORDER_STATUSES = ["Pagado", "Pendiente", "Rechazado", "Reembolsado"] as const;
+export const ORDER_STATUSES = ["Pagado", "Pendiente", "Rechazado", "En disputa", "Reembolsado"] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export type OrderDTO = {
@@ -313,10 +313,13 @@ export type OrderDTO = {
   estado: OrderStatus;
   courseSlug?: string;
   externalReference?: string;
+  paymentProvider?: "mercadopago" | "manual";
+  paymentUrl?: string;
 };
 
 export const checkoutSchema = z.object({
   courseSlug: z.string().min(1),
+  paymentMethod: z.enum(["mercadopago", "manual"]).optional(),
   nombre: z.string().trim().min(3).max(120),
   email: z.string().trim().email(),
   /**
@@ -324,13 +327,14 @@ export const checkoutSchema = z.object({
    * student account is created after an administrator confirms payment.
    */
   dni: dniSchema,
-});
+}).strict();
 
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
 
 export type CheckoutResultDTO = {
   order: OrderDTO;
   enrollment: EnrollmentDTO | null;
+  payment?: { provider: "mercadopago"; preferenceId: string; url: string };
   message: string;
 };
 
@@ -445,8 +449,9 @@ export const adminCoursePatchSchema = z.object({
 });
 
 export const orderStatusSchema = z.object({
-  estado: z.enum(ORDER_STATUSES),
-});
+  estado: z.enum(["Pagado", "Pendiente", "Rechazado", "Reembolsado"]),
+  motivo: z.string().trim().min(5).max(500),
+}).strict();
 
 export type ConversationDTO = {
   id: string;

@@ -36,13 +36,13 @@ Completá `MONGODB_URI`, `AUTH_SECRET` y las tres variables `CLOUDINARY_*` en `a
 | `npm run typecheck` | Chequeo de tipos en todos los paquetes |
 | `npm run lint` | ESLint (flat config) sobre API, web y shared |
 | `npm test` | Tests de integración de la API (repositorios mock, sin Atlas) |
-| `npm --workspace @rozenblum/api run test:atlas` | Prueba autenticación, CRUD académico, concurrencia, documentos BlockNote y permisos con Mongoose real en una base aleatoria aislada; la elimina al finalizar |
+| `npm --workspace @rozenblum/api run test:atlas` | Prueba autenticación, CRUD académico, checkout concurrente y transacciones con Mongoose real en una base aleatoria aislada; la elimina al finalizar |
 | `npm --workspace @rozenblum/api run bootstrap:admin -- correo@ejemplo.com` | Crea el primer administrador y la configuración inicial de forma idempotente; requiere `BOOTSTRAP_ADMIN_PASSWORD` en el entorno |
 
 ## Modelo de identidad
 
 - El checkout registra una **solicitud**, no crea la cuenta. Recibe nombre, correo y DNI; guarda en la orden únicamente un hash `scrypt` con sal del DNI. El DNI legible no se conserva en usuarios ni órdenes ni se devuelve por la API.
-- Cuando el administrador marca la orden como **Pagado**, la API crea la cuenta de alumno con ese hash como contraseña inicial y activa la inscripción. El alumno inicia sesión con su correo y el DNI que informó.
+- Con Mercado Pago configurado, el checkout crea una preferencia y entrega la URL de pago. El webhook firmado consulta el pago al proveedor; solo un importe y moneda coincidentes con la orden activan la inscripción y crean la cuenta de alumno. Para pagos manuales, el administrador puede confirmar la orden indicando un motivo escrito. El alumno inicia sesión con su correo y el DNI que informó.
 - **Ningún alumno se crea a mano.** Antes de aprobar el pago solo existen la orden y la inscripción pendiente.
 - El correo no requiere validación. La contraseña se almacena con `scrypt` asíncrono y sal aleatoria por credencial (`scrypt$<sal>$<hash>`).
 - **Cambio de contraseña:** cualquier usuario autenticado puede cambiar la suya con `POST /api/auth/password` indicando la clave actual. El cambio incrementa `sessionVersion`, revoca todos los tokens anteriores y devuelve una sesión nueva para no forzar otro login.
@@ -60,6 +60,16 @@ Publicar un curso publica todas sus lecciones. Módulos, lecciones y cursos se p
 ## Imágenes
 
 Las imágenes se almacenan en Cloudinary; MongoDB guarda solo sus URL. La API necesita `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` y `CLOUDINARY_API_SECRET` en `apps/api/.env`; estas variables nunca se exponen al navegador. El panel permite elegir imágenes existentes o subir PNG, JPEG, WebP o AVIF de hasta 8 MB. Las carpetas previstas son `Rozenblum/courses`, `Rozenblum/professors`, `Rozenblum/lessons` y `Rozenblum/brand`.
+
+## Pagos
+
+Para habilitar Checkout Pro configurá `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`, `MERCADOPAGO_NOTIFICATION_URL` (URL pública completa de `POST /api/payments/mercadopago/webhook`) y `WEB_PUBLIC_URL` en `apps/api/.env`. En producción, ambas URL deben usar HTTPS. La firma secreta se obtiene de la configuración de Webhooks de la aplicación de Mercado Pago; el token y la firma quedan solo en la API. `MERCADOPAGO_PUBLIC_KEY` es opcional para este flujo redirigido. Sin las cuatro variables, la opción de pago en línea no aparece y sigue disponible el pago manual.
+
+`POST /api/checkout` acepta `{ courseSlug, nombre, email, dni, paymentMethod? }`, con `paymentMethod` igual a `mercadopago` o `manual`. Si se omite, usa Mercado Pago cuando está configurado; en caso contrario usa manual. Rechaza campos de precio enviados por el cliente: la orden y la preferencia usan el precio en centavos del curso. La respuesta incluye `payment: { provider, preferenceId, url }` para redirigir al comprador cuando corresponde. La orden, inscripción pendiente y conversación se guardan en una transacción de Atlas; un fallo revierte los tres registros. Una preferencia creada antes de un fallo de base puede quedar sin uso, pero no se entrega al comprador.
+
+El webhook valida la firma y su antigüedad, consulta el pago con el SDK oficial y comprueba referencia, ARS e importe exacto. Registra un `PaymentEvent` único por notificación y aplica cambios de estado junto con la cuenta y la inscripción dentro de una transacción. Los avisos duplicados o tardíos no reactivan una orden reembolsada. Una disputa bloquea el aula y pasa la orden a `En disputa`; si Mercado Pago confirma nuevamente el pago, el aula se reactiva. Un reembolso confirmado revoca el acceso de forma definitiva. `PATCH /api/admin/orders/:id` solo admite órdenes manuales y exige `{ estado, motivo }` (motivo de 5 a 500 caracteres); rechaza cambios inválidos como Pagado → Pendiente. `GET /api/admin/orders/:id/events` devuelve la auditoría de actor, motivo, fecha y estado anterior, solo al administrador. Las órdenes de Mercado Pago no se pueden aprobar manualmente.
+
+La prueba de integración usa un proveedor simulado y la de Atlas verifica transacciones y compras simultáneas. Para cerrar la aceptación de sandbox hay que configurar credenciales de prueba, un webhook público y ejecutar un pago, un reembolso y un contracargo de ensayo.
 
 `GET /api/media/:category` lista la galería y `POST /api/media/:category` recibe los bytes de la imagen. Ambas rutas requieren sesión de profesor o administrador; solo el administrador gestiona `professors` y `brand`. `GET /api/courses/latest` devuelve el curso publicado creado más recientemente, con su temario público y sin cuerpos de lecciones. La portada consulta este endpoint para el destacado.
 

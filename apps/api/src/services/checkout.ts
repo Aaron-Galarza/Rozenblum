@@ -7,8 +7,9 @@ import { badRequest, notFound, unauthorized } from "../lib/http.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
-import type { StoredOrder, StoredUser } from "../types.js";
+import type { StoredEnrollment, StoredOrder, StoredUser } from "../types.js";
 import { enrollmentToDTO, orderToDTO } from "./mappers.js";
+import { paymentGateway } from "./mercadopago.js";
 
 function todayLabel() {
   return new Intl.DateTimeFormat("es-AR", {
@@ -71,6 +72,20 @@ export async function checkout(
   // an administrator confirms the payment (see updateAdminOrder), using the
   // DNI as the initial password.
   const reference = `RB-${new Date().getFullYear()}-${newId("ref").slice(4).toUpperCase()}`;
+  const gateway = paymentGateway();
+  const paymentMethod = input.paymentMethod ?? (gateway ? "mercadopago" : "manual");
+  if (paymentMethod === "mercadopago" && !gateway) {
+    throw badRequest("Mercado Pago no está configurado. Elegí pago manual.");
+  }
+  if (paymentMethod === "mercadopago" && course.priceCents <= 0) {
+    throw badRequest("Este curso no tiene un importe válido para Mercado Pago.");
+  }
+  const preference = paymentMethod === "mercadopago"
+    ? await gateway!.createPreference({
+        reference, courseId: course.legacyId, title: course.title,
+        priceCents: course.priceCents, email: input.email.toLowerCase(),
+      })
+    : null;
   const order: StoredOrder = {
     id: newId("ord"),
     externalReference: reference,
@@ -83,42 +98,58 @@ export async function checkout(
     monto: course.price,
     montoCents: course.priceCents,
     fecha: todayLabel(),
-    metodo: "Pendiente de pago",
+    metodo: paymentMethod === "mercadopago" ? "Mercado Pago" : "Pago manual",
     estado: "Pendiente",
     createdAt: nowIso(),
+    paymentProvider: paymentMethod,
+    preferenceId: preference?.id,
+    paymentUrl: preference?.url,
   };
 
-  const createdOrder = await repos.orders.create(order);
-
-  const enrollment = await repos.enrollments.create({
-    studentEmail: input.email,
-    studentName: account?.name ?? input.nombre,
-    courseId: course.legacyId,
-    status: "Pendiente",
-    completedLessonIds: [],
-  });
-
-  const conversation = await repos.conversations.findByStudentAndCourse(
-    input.email,
-    course.legacyId,
-  );
-  if (!conversation) {
-    await repos.conversations.create({
-      id: newId("cnv"),
-      courseId: course.legacyId,
-      studentEmail: input.email.toLowerCase(),
-      studentName: account?.name ?? input.nombre,
-      teacherEmail: teacher.email,
-      teacherName: teacher.name,
-      messages: [],
-    });
+  let createdOrder: StoredOrder;
+  let enrollment: StoredEnrollment;
+  try {
+    ({ createdOrder, enrollment } = await repos.withTransaction(async () => {
+      if (await repos.enrollments.findByStudentAndCourse(input.email, course.legacyId)) {
+        throw badRequest("Ya existe una inscripción para este curso y correo.");
+      }
+      const createdOrder = await repos.orders.create(order);
+      const enrollment = await repos.enrollments.create({
+        studentEmail: input.email,
+        studentName: account?.name ?? input.nombre,
+        courseId: course.legacyId,
+        status: "Pendiente",
+        completedLessonIds: [],
+      });
+      const conversation = await repos.conversations.findByStudentAndCourse(input.email, course.legacyId);
+      if (!conversation) {
+        await repos.conversations.create({
+          id: newId("cnv"),
+          courseId: course.legacyId,
+          studentEmail: input.email.toLowerCase(),
+          studentName: account?.name ?? input.nombre,
+          teacherEmail: teacher.email,
+          teacherName: teacher.name,
+          messages: [],
+        });
+      }
+      return { createdOrder, enrollment };
+    }));
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000) {
+      throw badRequest("Ya existe una inscripción para este curso y correo.");
+    }
+    throw error;
   }
 
   return {
     order: orderToDTO(createdOrder),
     enrollment: enrollmentToDTO(enrollment, course),
-    message:
-      "Solicitud registrada. Contactanos para coordinar el pago; un administrador confirmará el acceso al aula.",
+    ...(preference ? { payment: { provider: "mercadopago" as const,
+      preferenceId: preference.id, url: preference.url } } : {}),
+    message: preference
+      ? "Solicitud registrada. Completá el pago en Mercado Pago; el acceso se activará al confirmarse."
+      : "Solicitud registrada. Contactanos para coordinar el pago; un administrador confirmará el acceso al aula.",
   };
 }
 

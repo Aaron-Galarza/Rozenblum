@@ -16,6 +16,9 @@ const envSchema = z.object({
   TRUST_PROXY: z.string().trim().optional(),
   MERCADOPAGO_ACCESS_TOKEN: z.string().optional(),
   MERCADOPAGO_PUBLIC_KEY: z.string().optional(),
+  MERCADOPAGO_WEBHOOK_SECRET: z.string().optional(),
+  MERCADOPAGO_NOTIFICATION_URL: z.union([z.string().url(), z.literal("")]).optional(),
+  WEB_PUBLIC_URL: z.union([z.string().url(), z.literal("")]).optional(),
   CLOUDINARY_CLOUD_NAME: z.string().regex(/^[a-zA-Z0-9_-]+$/).optional(),
   CLOUDINARY_API_KEY: z.string().regex(/^\d+$/).optional(),
   CLOUDINARY_API_SECRET: z.string().min(16).optional(),
@@ -27,6 +30,16 @@ if (!parsed.success) {
 }
 
 const raw = parsed.data;
+const paymentFields = [raw.MERCADOPAGO_ACCESS_TOKEN, raw.MERCADOPAGO_WEBHOOK_SECRET,
+  raw.MERCADOPAGO_NOTIFICATION_URL, raw.WEB_PUBLIC_URL];
+if (paymentFields.some(Boolean) && !paymentFields.every(Boolean)) {
+  throw new Error("Mercado Pago requiere access token, firma webhook y URL públicas de notificación y web.");
+}
+if (paymentFields.every(Boolean) && raw.NODE_ENV === "production" &&
+  (!raw.MERCADOPAGO_NOTIFICATION_URL!.startsWith("https://") ||
+    !raw.WEB_PUBLIC_URL!.startsWith("https://"))) {
+  throw new Error("Mercado Pago requiere URL públicas HTTPS en producción.");
+}
 const cloudinaryFields = [raw.CLOUDINARY_CLOUD_NAME, raw.CLOUDINARY_API_KEY, raw.CLOUDINARY_API_SECRET];
 if (cloudinaryFields.some(Boolean) && !cloudinaryFields.every(Boolean)) {
   throw new Error("Cloudinary requiere CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY y CLOUDINARY_API_SECRET juntos.");
@@ -80,5 +93,5 @@ export const env = {
   isTest,
   corsOrigins,
   trustProxy,
-  paymentsConfigured: Boolean(raw.MERCADOPAGO_ACCESS_TOKEN),
+  paymentsConfigured: paymentFields.every(Boolean),
 };

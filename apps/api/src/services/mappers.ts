@@ -208,6 +208,9 @@ export function orderToDTO(order: StoredOrder): OrderDTO {
     estado: order.estado,
     courseSlug: order.courseSlug,
     externalReference: order.externalReference,
+    paymentProvider: order.paymentProvider,
+    paymentUrl: order.estado === "Pendiente" || order.estado === "Rechazado"
+      ? order.paymentUrl : undefined,
   };
 }
 

@@ -108,6 +108,24 @@ export type StoredOrder = {
   metodo: string;
   estado: OrderStatus;
   createdAt: string;
+  paymentProvider?: "mercadopago" | "manual";
+  preferenceId?: string;
+  paymentUrl?: string;
+  paymentId?: string;
+};
+
+export type StoredPaymentEvent = {
+  id: string;
+  orderId: string;
+  source: "mercadopago" | "manual";
+  providerEventId?: string;
+  providerPaymentId?: string;
+  previousStatus: OrderStatus;
+  nextStatus: OrderStatus;
+  actorId?: string;
+  reason: string;
+  createdAt: string;
+  paymentStatus?: string;
 };
 
 export type StoredMessage = {
