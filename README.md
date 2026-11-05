@@ -4,26 +4,30 @@ Plataforma full-stack del Estudio Jurídico Rozenblum: sitio público, aula virt
 
 - **Frontend:** Next.js 16 (App Router) + React 19 + Tailwind 4
 - **Backend:** Express 5 + Mongoose 9 (MongoDB Atlas)
-- **Monorepo:** npm workspaces (`apps/web`, `apps/api`, `packages/shared`)
+- **Monorepo:** pnpm workspaces (`apps/web`, `apps/api`, `packages/shared`)
 
 ## Requisitos
 
 - Node.js 20.19+
-- npm 10+
+- pnpm 9.15+ (`corepack enable` si hace falta)
 - MongoDB Atlas con datos y usuarios configurados
 
 ## Puesta en marcha
 
 ```bash
-npm install
+pnpm install
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.local.example apps/web/.env.local
-npm run dev
+pnpm run dev
 ```
 
 - Web: http://localhost:3000
 - API: http://localhost:4000
 - Health: http://localhost:4000/health
+
+En Windows x64, el primer arranque descarga `cloudflared` desde la publicación oficial de Cloudflare a la carpeta temporal del usuario. En otros sistemas, instalalo antes de arrancar. El túnel gratuito entrega una URL HTTPS temporal; el script la muestra y la usa para el retorno de Mercado Pago y el webhook. No se guarda en `.env` porque cambia en cada ejecución.
+
+También podés arrancar cada parte por separado: `cd apps/api && pnpm run dev` inicia API, puente local y túnel; `cd apps/web && pnpm run dev` inicia únicamente la web. Desde la raíz, `pnpm run dev` inicia ambos. Ctrl+C detiene los procesos iniciados por ese comando. Los logs detallados de peticiones y pagos aparecen en desarrollo; nunca incluyen contraseñas, tokens ni cuerpos de formularios.
 
 Completá `MONGODB_URI`, `AUTH_SECRET` y las tres variables `CLOUDINARY_*` en `apps/api/.env`. La API usa Atlas y detiene el arranque si la conexión falla. El repositorio no incluye datos de ejemplo ni contraseñas.
 
@@ -31,13 +35,14 @@ Completá `MONGODB_URI`, `AUTH_SECRET` y las tres variables `CLOUDINARY_*` en `a
 
 | Script | Descripción |
 | --- | --- |
-| `npm run dev` | Levanta API y web en desarrollo |
-| `npm run build` | Build de producción (shared + api + web) |
-| `npm run typecheck` | Chequeo de tipos en todos los paquetes |
-| `npm run lint` | ESLint (flat config) sobre API, web y shared |
-| `npm test` | Tests de integración de la API (repositorios mock, sin Atlas) |
-| `npm --workspace @rozenblum/api run test:atlas` | Prueba autenticación, CRUD académico, checkout concurrente y transacciones con Mongoose real en una base aleatoria aislada; la elimina al finalizar |
-| `npm --workspace @rozenblum/api run bootstrap:admin -- correo@ejemplo.com` | Crea el primer administrador y la configuración inicial de forma idempotente; requiere `BOOTSTRAP_ADMIN_PASSWORD` en el entorno |
+| `pnpm run dev` | Levanta API, web y túnel en desarrollo |
+| `pnpm run dev:api` / `pnpm run dev:web` | Levanta una parte desde la raíz |
+| `pnpm run build` | Build de producción (shared + api + web) |
+| `pnpm run typecheck` | Chequeo de tipos en todos los paquetes |
+| `pnpm run lint` | ESLint (flat config) sobre API, web y shared |
+| `pnpm run test` | Tests de integración de la API (repositorios mock, sin Atlas) |
+| `pnpm --dir apps/api run test:atlas` | Prueba autenticación, CRUD académico, checkout concurrente y transacciones con Mongoose real en una base aleatoria aislada; la elimina al finalizar |
+| `pnpm --dir apps/api run bootstrap:admin -- correo@ejemplo.com` | Crea el primer administrador y la configuración inicial de forma idempotente; requiere `BOOTSTRAP_ADMIN_PASSWORD` en el entorno |
 
 ## Modelo de identidad
 
@@ -63,7 +68,17 @@ Las imágenes se almacenan en Cloudinary; MongoDB guarda solo sus URL. La API ne
 
 ## Pagos
 
-Para habilitar Checkout Pro configurá `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`, `MERCADOPAGO_NOTIFICATION_URL` (URL pública completa de `POST /api/payments/mercadopago/webhook`) y `WEB_PUBLIC_URL` en `apps/api/.env`. En producción, ambas URL deben usar HTTPS. La firma secreta se obtiene de la configuración de Webhooks de la aplicación de Mercado Pago; el token y la firma quedan solo en la API. Sin las cuatro variables, la opción de pago en línea no aparece y sigue disponible el pago manual.
+### Probar Mercado Pago localmente
+
+1. En `apps/api/.env`, reemplazá las líneas vacías `MERCADOPAGO_ACCESS_TOKEN=` y `MERCADOPAGO_WEBHOOK_SECRET=` por los valores de prueba que ya quedaron en las líneas comentadas; quitá esas copias comentadas para que haya **una sola línea por variable**. Usá las credenciales de la misma aplicación de Mercado Pago. No compartas estos valores ni los pongas en la web. Dejá `MERCADOPAGO_NOTIFICATION_URL` y `WEB_PUBLIC_URL` vacías: el comando de desarrollo las completa en memoria con la URL temporal.
+2. En la raíz, ejecutá `pnpm run dev`. Esperá a ver `Web local`, `API local` y `URL pública temporal`. Si preferís dos consolas, iniciá primero `pnpm run dev` en `apps/api` y después en `apps/web`.
+3. En la configuración **de prueba** de Webhooks de tu aplicación de Mercado Pago, seleccioná el evento de pagos y poné la dirección `Webhook:` que imprime la consola. Al reiniciar el túnel cambia la dirección y tendrás que actualizarla. La firma secreta de esa configuración debe corresponder a la que activaste en `.env`.
+4. Abrí la web local, elegí un curso publicado y solicitá el pago con Mercado Pago. Pagá con tu cuenta compradora de prueba; la cuenta vendedora corresponde a las credenciales de la API. Al regresar, comprobá el estado de la orden. La API solo activa el aula cuando consulta y verifica el pago recibido en el webhook.
+5. En la consola verás solicitudes HTTP y cambios de estado sin datos sensibles. En el panel admin podés consultar el historial de la orden. Terminá con Ctrl+C y verificá que la web y la API ya no respondan.
+
+El túnel temporal hace pública la web y la API mientras está encendido. No compartas su dirección fuera de la prueba. Para una compra desde otro dispositivo, iniciá todo desde la raíz y abrí la `URL pública temporal` impresa; con dos consolas independientes, usá la web local en el mismo equipo.
+
+Para habilitar Checkout Pro fuera del comando de desarrollo, configurá `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`, `MERCADOPAGO_NOTIFICATION_URL` (URL pública completa de `POST /api/payments/mercadopago/webhook`) y `WEB_PUBLIC_URL` en el entorno de la API. En producción, ambas URL deben usar HTTPS. La firma secreta se obtiene de la configuración de Webhooks de la aplicación de Mercado Pago; el token y la firma quedan solo en la API. Sin las cuatro variables, la opción de pago en línea no aparece y sigue disponible el pago manual.
 
 `POST /api/checkout` acepta `{ courseSlug, nombre, email, dni, paymentMethod? }`, con `paymentMethod` igual a `mercadopago` o `manual`. Si se omite, usa Mercado Pago cuando está configurado; en caso contrario usa manual. Rechaza campos de precio enviados por el cliente: la orden y la preferencia usan el precio en centavos del curso. La respuesta incluye `payment: { provider, preferenceId, url }` para redirigir al comprador cuando corresponde. La orden, inscripción pendiente y conversación se guardan en una transacción de Atlas; un fallo revierte los tres registros. Una preferencia creada antes de un fallo de base puede quedar sin uso, pero no se entrega al comprador.
 
