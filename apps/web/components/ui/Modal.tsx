@@ -33,7 +33,7 @@ export default function Modal({ title, onClose, children, zIndex = 200 }: ModalP
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="w-full max-w-md mx-4 p-6 rounded-lg outline-none"
+        className="w-full max-w-md max-h-[90dvh] overflow-y-auto mx-4 p-6 rounded-lg outline-none"
         style={{
           backgroundColor: "#FAF8F5",
           border: "1px solid rgba(181,138,67,0.3)",

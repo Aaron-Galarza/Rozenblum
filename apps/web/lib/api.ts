@@ -95,3 +95,41 @@ export function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return "Ocurrió un error inesperado.";
 }
+
+export type GalleryImage = {
+  id: string;
+  url: string;
+  thumbnailUrl: string;
+  width: number;
+  height: number;
+  bytes: number;
+  format: string;
+  createdAt: string;
+};
+
+export type GalleryPage = { images: GalleryImage[]; nextCursor: string | null };
+export type ImageCategory = "courses" | "professors" | "lessons" | "brand";
+
+export async function uploadGalleryImage(category: ImageCategory, file: File): Promise<GalleryImage> {
+  const session = getSession();
+  if (!session) throw new ApiClientError(401, "UNAUTHORIZED", "Tu sesión expiró. Volvé a ingresar.");
+  if (file.size === 0 || file.size > 8 * 1024 * 1024 ||
+      !["image/png", "image/jpeg", "image/webp", "image/avif"].includes(file.type)) {
+    throw new ApiClientError(400, "INVALID_IMAGE", "Elegí una imagen PNG, JPEG, WebP o AVIF de hasta 8 MB.");
+  }
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/api/media/${category}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${session.token}`, "content-type": file.type },
+      body: file,
+    });
+  } catch {
+    throw new ApiClientError(0, "NETWORK_ERROR", "No pudimos conectar con el servidor.");
+  }
+  const payload = await response.json() as { data?: GalleryImage; error?: { code: string; message: string } };
+  if (!response.ok || !payload.data) {
+    throw new ApiClientError(response.status, payload.error?.code ?? "UPLOAD_ERROR", payload.error?.message ?? "No se pudo subir la imagen.");
+  }
+  return payload.data;
+}

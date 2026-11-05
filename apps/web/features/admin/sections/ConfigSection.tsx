@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import type { SiteSettingsDTO } from "@rozenblum/shared";
-import { errorMessage } from "../../../lib/api";
+import type { HomeContentDTO, SiteSettingsDTO } from "@rozenblum/shared";
+import { apiFetch, errorMessage } from "../../../lib/api";
 import { useModalA11y } from "../../../lib/use-modal-a11y";
 import Toast from "../../../components/ui/Toast";
+import ImagePicker from "../../../components/ui/ImagePicker";
 
 type SettingsPayload = {
   companyName: string;
@@ -30,6 +31,9 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
   });
   const [privacyText, setPrivacyText] = useState(settings.privacyText);
   const [busy, setBusy] = useState(false);
+  const [homeContent, setHomeContent] = useState<HomeContentDTO | null>(null);
+  const [mediaBusy, setMediaBusy] = useState(false);
+  const [mediaError, setMediaError] = useState("");
   const previewTitleId = useId();
   const previewDialogRef = useModalA11y<HTMLDivElement>(() => setPreviewOpen(false), previewOpen);
 
@@ -42,6 +46,10 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
     });
     setPrivacyText(settings.privacyText);
   }, [settings]);
+
+  useEffect(() => {
+    apiFetch<HomeContentDTO>("/api/content/home").then(setHomeContent).catch((cause) => setMediaError(errorMessage(cause)));
+  }, []);
 
   const showToast = (text: string, error = false) => { setToast({ text, error }); setTimeout(() => setToast(null), 2500); };
 
@@ -69,7 +77,6 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
           <div className="space-y-4">
             {([
               ["Nombre", "companyName", "text"],
-              ["Logo URL", "logoUrl", "text"],
               ["Email de Soporte", "supportEmail", "email"],
               ["WhatsApp de contacto (código de país y número)", "contactWhatsapp", "tel"],
             ] as const).map(([label, key, type]) => (
@@ -86,10 +93,34 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
                 />
               </div>
             ))}
+            <ImagePicker category="brand" label="Logo" value={company.logoUrl} onChange={(logoUrl) => setCompany((previous) => ({ ...previous, logoUrl }))} />
           </div>
           <div className="flex gap-3 mt-5">
             <button disabled={busy} onClick={() => void save("✓ Datos de Empresa guardados correctamente")} className="px-5 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all disabled:opacity-50" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>GUARDAR</button>
           </div>
+        </div>
+
+        <div className="rounded-lg border border-[rgba(23,59,108,0.08)] bg-white p-4 sm:p-6">
+          <h3 className="mb-2 text-lg font-medium text-[#173B6C]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Imagen principal de la portada</h3>
+          <p className="mb-5 text-sm text-[#5b6780]">Elegí una imagen de Cloudinary o subí una nueva. El cambio se aplica al guardar. Las fotos del equipo se editan en Profesores.</p>
+          {mediaError && <p role="alert" className="mb-4 text-sm text-[#991b1b]">{mediaError}</p>}
+          {!homeContent && !mediaError && <p role="status" className="text-sm text-[#173B6C]">Cargando imágenes…</p>}
+          {homeContent && <div className="space-y-6">
+            <ImagePicker category="brand" label="Imagen principal" value={homeContent.brand.heroImage} onChange={(heroImage) => setHomeContent((current) => current ? { ...current, brand: { ...current.brand, heroImage } } : current)} />
+            <button type="button" disabled={mediaBusy} onClick={() => void (async () => {
+              setMediaBusy(true);
+              setMediaError("");
+              try {
+                const updated = await apiFetch<HomeContentDTO>("/api/admin/content/home/images", {
+                  method: "PUT", auth: true,
+                  body: { heroImage: homeContent.brand.heroImage },
+                });
+                setHomeContent(updated);
+                showToast("Imágenes de la portada guardadas");
+              } catch (cause) { setMediaError(errorMessage(cause)); }
+              finally { setMediaBusy(false); }
+            })()} className="min-h-11 rounded bg-[#B58A43] px-5 text-sm font-semibold text-[#173B6C] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#173B6C] disabled:opacity-50">{mediaBusy ? "GUARDANDO…" : "GUARDAR IMÁGENES"}</button>
+          </div>}
         </div>
 
         {/* Payment status */}

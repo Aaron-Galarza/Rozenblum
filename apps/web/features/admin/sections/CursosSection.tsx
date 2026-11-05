@@ -5,13 +5,14 @@ import type { AdminCursoDTO, AdminProfesorDTO, CourseDTO } from "@rozenblum/shar
 import { errorMessage } from "../../../lib/api";
 import Modal from "../../../components/ui/Modal";
 import Toast from "../../../components/ui/Toast";
+import ImagePicker from "../../../components/ui/ImagePicker";
 
 type CursosSectionProps = {
   cursos: AdminCursoDTO[];
   profesores: AdminProfesorDTO[];
-  onCreate: (input: { name: string; profesor: string; description: string; priceCents: number; duration: string; level: string; img?: string }) => Promise<void>;
+  onCreate: (input: { name: string; professorEmail: string; description: string; priceCents: number; duration: string; level: string; img?: string }) => Promise<void>;
   onLoadCourse: (id: number) => Promise<CourseDTO>;
-  onUpdate: (id: number, patch: { title: string; professor: string; description: string; priceCents: number; duration: string; level: string; img?: string }) => Promise<void>;
+  onUpdate: (id: number, patch: { title: string; professorEmail: string; description: string; priceCents: number; duration: string; level: string; img?: string }) => Promise<void>;
   onToggleStatus: (curso: AdminCursoDTO) => Promise<void>;
   onDelete: (curso: AdminCursoDTO) => Promise<void>;
 };
@@ -19,7 +20,7 @@ type ModalState = { type: "ver" | "crear" | "editar"; item?: AdminCursoDTO } | n
 
 export default function CursosSection({ cursos, profesores, onCreate, onLoadCourse, onUpdate, onToggleStatus, onDelete }: CursosSectionProps) {
   const [modal, setModal] = useState<ModalState>(null);
-  const [form, setForm] = useState({ name: "", profesor: "", description: "", price: "", duration: "", level: "", img: "" });
+  const [form, setForm] = useState({ name: "", professorEmail: "", description: "", price: "", duration: "", level: "", img: "" });
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
@@ -45,7 +46,7 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
 
   const saveCurso = () => {
     const price = Number(form.price);
-    if (form.name.trim().length < 3 || form.description.trim().length < 3 || !form.profesor || !form.duration.trim() || !form.level.trim() || !Number.isFinite(price) || price < 0 || !Number.isInteger(price * 100)) {
+    if (form.name.trim().length < 3 || form.description.trim().length < 3 || !profesores.some((p) => p.email === form.professorEmail && p.estado === "Activo") || !form.duration.trim() || !form.level.trim() || !Number.isFinite(price) || price < 0 || !Number.isInteger(price * 100)) {
       setFormError("Completá todos los campos con datos válidos. El precio debe ser positivo y tener hasta dos decimales.");
       return;
     }
@@ -56,12 +57,12 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
     setFormError("");
     void run(async () => {
       const input = {
-        name: form.name.trim(), profesor: form.profesor.trim(), description: form.description.trim(),
+        name: form.name.trim(), professorEmail: form.professorEmail, description: form.description.trim(),
         priceCents: Math.round(price * 100), duration: form.duration.trim(),
         level: form.level.trim(), ...(form.img.trim() ? { img: form.img.trim() } : {}),
       };
       if (modal?.type === "editar" && modal.item) {
-        await onUpdate(modal.item.id, { title: input.name, professor: input.profesor, description: input.description, priceCents: input.priceCents, duration: input.duration, level: input.level, ...(input.img ? { img: input.img } : {}) });
+        await onUpdate(modal.item.id, { title: input.name, professorEmail: input.professorEmail, description: input.description, priceCents: input.priceCents, duration: input.duration, level: input.level, ...(input.img ? { img: input.img } : {}) });
       } else {
         await onCreate(input);
       }
@@ -75,7 +76,7 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
       const full = await onLoadCourse(curso.id);
       setForm({
         name: full.title,
-        profesor: profesores.find((p) => p.email === full.professorId)?.name ?? "",
+        professorEmail: full.professorId ?? "",
         description: full.description,
         price: String(full.priceCents / 100),
         duration: full.duration,
@@ -91,10 +92,11 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
     <>
       <div className="flex items-center justify-between mb-8">
         <h2 className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Gestión de Cursos</h2>
-        <button onClick={() => { setForm({ name: "", profesor: "", description: "", price: "", duration: "", level: "", img: "" }); setFormError(""); setModal({ type: "crear" }); }} className="px-5 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
+        <button disabled={!profesores.some((p) => p.estado === "Activo")} title={profesores.some((p) => p.estado === "Activo") ? undefined : "Primero creá un profesor activo"} onClick={() => { setForm({ name: "", professorEmail: "", description: "", price: "", duration: "", level: "", img: "" }); setFormError(""); setModal({ type: "crear" }); }} className="px-5 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
           + CREAR NUEVO CURSO
         </button>
       </div>
+      {!profesores.some((p) => p.estado === "Activo") && <p className="mb-5 text-xs" style={{ color: "#72132C" }}>Creá un profesor activo antes de crear un curso.</p>}
       <div className="rounded-lg overflow-hidden shadow-sm" style={{ border: "1px solid rgba(23,59,108,0.08)" }}>
         <table className="w-full text-xs">
           <thead><tr style={{ backgroundColor: "#173B6C" }}>
@@ -153,7 +155,14 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
       {(modal?.type === "crear" || modal?.type === "editar") && (
         <Modal title={modal.type === "crear" ? "Crear Nuevo Curso" : "Editar Curso"} onClose={() => setModal(null)}>
           <div className="space-y-4 mb-5">
-            {[["Nombre del curso", "name", "text"], ["Descripción", "description", "text"], ["Precio en ARS", "price", "number"], ["Duración", "duration", "text"], ["Nivel", "level", "text"], ["URL de imagen (opcional)", "img", "url"]].map(([label, key, type]) => (
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="course-profesor" className="text-xs font-medium tracking-wide uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>Profesor asignado *</label>
+              <select id="course-profesor" required value={form.professorEmail} onChange={(e) => setForm((prev) => ({ ...prev, professorEmail: e.target.value }))} className="px-3 py-2.5 text-sm border" style={{ color: "#173B6C", backgroundColor: "#FAF8F5" }}>
+                <option value="">Seleccioná un profesor</option>
+                {profesores.filter((p) => p.estado === "Activo" || p.email === form.professorEmail).map((p) => <option key={p.id} value={p.email}>{p.name} ({p.email})</option>)}
+              </select>
+            </div>
+            {[["Nombre del curso", "name", "text"], ["Descripción", "description", "text"], ["Precio en ARS", "price", "number"], ["Duración", "duration", "text"], ["Nivel", "level", "text"]].map(([label, key, type]) => (
               <div key={key} className="flex flex-col gap-1.5">
                 <label htmlFor={`course-${key}`} className="text-xs font-medium tracking-wide uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>{label}</label>
                 <input
@@ -171,13 +180,7 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
                 />
               </div>
             ))}
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="course-profesor" className="text-xs font-medium tracking-wide uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>Profesor asignado</label>
-              <select id="course-profesor" value={form.profesor} onChange={(e) => setForm((prev) => ({ ...prev, profesor: e.target.value }))} className="px-3 py-2.5 text-sm border" style={{ color: "#173B6C", backgroundColor: "#FAF8F5" }}>
-                <option value="">Seleccioná un profesor</option>
-                {profesores.filter((p) => p.estado === "Activo" || p.name === form.profesor).map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
-              </select>
-            </div>
+            <ImagePicker category="courses" label="Imagen del curso" value={form.img} onChange={(img) => setForm((previous) => ({ ...previous, img }))} />
             {formError && <p role="alert" className="text-xs" style={{ color: "#991b1b" }}>{formError}</p>}
             <p className="text-[11px] leading-relaxed" style={{ color: "rgba(23,59,108,0.5)" }}>
               {modal.type === "crear" ? "Se crea como borrador. Agregá lecciones antes de publicarlo." : "Los cambios se aplicarán al curso existente."}

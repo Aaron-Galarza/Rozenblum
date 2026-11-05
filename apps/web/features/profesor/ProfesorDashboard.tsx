@@ -1,4 +1,5 @@
 "use client";
+import { optimizedImage } from "../../lib/images";
 
 import type { ProfesorCourse } from "../../types";
 
@@ -44,7 +45,7 @@ export default function ProfesorDashboard({ courses, stats, onOpenCourse }: Prof
       <div className="grid sm:grid-cols-3 gap-5">
         {courses.map((c) => (
           <div key={c.id} className="rounded-lg overflow-hidden shadow-sm" style={{ backgroundColor: "#FFFFFF", border: "1px solid rgba(23,59,108,0.08)" }}>
-            <img src={c.img} alt={c.title} className="w-full object-cover" style={{ height: 120 }} />
+            {c.img ? <img src={optimizedImage(c.img, 640)} alt={c.title} loading="lazy" className="w-full object-cover" style={{ height: 120 }} /> : <div className="flex h-[120px] items-center justify-center bg-[#e7e0d5] px-4 text-center text-xs text-[#173B6C]">Curso sin imagen</div>}
             <div className="p-4">
               <h4 className="text-base font-semibold" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{c.title}</h4>
               <p className="text-xs mt-1" style={{ color: "rgba(23,59,108,0.55)" }}>{c.students} alumnos · {c.completion}% completado</p>

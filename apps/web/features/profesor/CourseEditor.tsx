@@ -7,6 +7,7 @@ import type { EditableModule, EditableLesson, ProfesorStudent, SortDir } from ".
 const LessonEditorModal = dynamic(() => import("./RichLessonEditorModal"), { ssr: false });
 import Modal from "../../components/ui/Modal";
 import Toast from "../../components/ui/Toast";
+import ImagePicker from "../../components/ui/ImagePicker";
 
 type LessonPayload = { title: string; type: LessonType; content: LessonBlockDTO[]; document: RichLessonDocument };
 
@@ -41,7 +42,6 @@ type StudentModal = { type: "ver" | "chat"; student: ProfesorStudent } | null;
 
 
 export default function CourseEditor({
-  courseId,
   courseTitle,
   courseDescription,
   courseImage,
@@ -502,8 +502,7 @@ export default function CourseEditor({
             <input id="teacher-course-title" value={courseForm.title} maxLength={180} onChange={(e) => setCourseForm((prev) => ({ ...prev, title: e.target.value }))} className="w-full px-3 py-2 border text-sm" />
             <label className="block text-xs font-medium" htmlFor="teacher-course-description">Descripción</label>
             <textarea id="teacher-course-description" value={courseForm.description} maxLength={2000} onChange={(e) => setCourseForm((prev) => ({ ...prev, description: e.target.value }))} className="w-full px-3 py-2 border text-sm" rows={4} />
-            <label className="block text-xs font-medium" htmlFor="teacher-course-image">URL de imagen</label>
-            <input id="teacher-course-image" type="url" value={courseForm.img} onChange={(e) => setCourseForm((prev) => ({ ...prev, img: e.target.value }))} className="w-full px-3 py-2 border text-sm" />
+            <ImagePicker category="courses" label="Imagen del curso" value={courseForm.img} onChange={(img) => setCourseForm((prev) => ({ ...prev, img }))} />
           </div>
           <div className="flex gap-2">
             <button disabled={busy} onClick={() => {

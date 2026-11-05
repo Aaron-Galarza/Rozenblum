@@ -131,8 +131,8 @@ export default function AdminView() {
               {section === "profesores" && (
                 <ProfesoresSection
                   profesores={overview.profesores}
-                  onCreate={async ({ name, email, password }) => {
-                    await apiFetch("/api/admin/users", { method: "POST", auth: true, body: { role: "profesor", name, email, password } });
+                  onCreate={async ({ name, email, password, img }) => {
+                    await apiFetch("/api/admin/users", { method: "POST", auth: true, body: { role: "profesor", name, email, password, ...(img ? { img } : {}) } });
                     await load();
                   }}
                   onUpdate={async (id, patch) => {
@@ -152,10 +152,6 @@ export default function AdminView() {
               {section === "alumnos" && (
                 <AlumnosSection
                   alumnos={overview.alumnos}
-                  onCreate={async ({ name, email, password }) => {
-                    await apiFetch("/api/admin/users", { method: "POST", auth: true, body: { role: "alumno", name, email, password } });
-                    await load();
-                  }}
                   onUpdate={async (id, patch) => {
                     await apiFetch(`/api/admin/users/${id}`, { method: "PATCH", auth: true, body: patch });
                     await load();
@@ -174,13 +170,13 @@ export default function AdminView() {
                 <CursosSection
                   cursos={overview.cursos}
                   profesores={overview.profesores}
-                  onCreate={async ({ name, profesor, description, priceCents, duration, level, img }) => {
+                  onCreate={async ({ name, professorEmail, description, priceCents, duration, level, img }) => {
                     await apiFetch("/api/admin/courses", {
                       method: "POST",
                       auth: true,
                       body: {
                         title: name,
-                        professor: profesor,
+                        professorEmail,
                         description,
                         status: "draft",
                         priceCents,

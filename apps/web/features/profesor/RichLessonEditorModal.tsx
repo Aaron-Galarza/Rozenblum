@@ -10,8 +10,9 @@ import "@blocknote/core/style.css";
 import "@blocknote/react/style.css";
 import "@blocknote/mantine/style.css";
 import type { LessonBlockDTO, LessonType, RichLessonDocument } from "@rozenblum/shared";
-import { apiFetch, errorMessage } from "../../lib/api";
+import { apiFetch, errorMessage, uploadGalleryImage } from "../../lib/api";
 import { useModalA11y } from "../../lib/use-modal-a11y";
+import ImagePicker from "../../components/ui/ImagePicker";
 import { lessonSchema, noteBlocks, serializeNote, youtubeId, type LessonNoteBlock, type LessonPartialBlock } from "../../lib/lesson-document";
 
 export type LessonEditorPayload = {
@@ -86,14 +87,30 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const [fetchingPreview, setFetchingPreview] = useState(false);
+  const [imagePickerOpen, setImagePickerOpen] = useState(false);
+  const [imageUploads, setImageUploads] = useState(0);
+  const imageUploadsRef = useRef(0);
+  const changeImageUploads = (delta: number) => {
+    imageUploadsRef.current = Math.max(0, imageUploadsRef.current + delta);
+    setImageUploads(imageUploadsRef.current);
+  };
   const initialContent = useMemo(() => noteBlocks(initialDocument, initialBlocks), []);
   const editor = useCreateBlockNote({
     schema: lessonSchema,
     initialContent,
     dictionary: es,
     pasteHandler: ({ event, defaultPasteHandler }) => {
-      if (Array.from(event.clipboardData?.files ?? []).some((file) => file.type.startsWith("image/"))) {
-        setStatus("Las imágenes no están permitidas por ahora.");
+      const pastedImage = Array.from(event.clipboardData?.files ?? []).find((file) => file.type.startsWith("image/"));
+      if (pastedImage) {
+        changeImageUploads(1);
+        setStatus("Subiendo imagen a Cloudinary…");
+        void uploadGalleryImage("lessons", pastedImage)
+          .then((image) => {
+            editor.insertBlocks([{ type: "image", props: { url: image.url } }], editor.getTextCursorPosition().block, "after");
+            setStatus("Imagen insertada. Guardá la lección para conservarla.");
+          })
+          .catch((cause) => setStatus(errorMessage(cause)))
+          .finally(() => changeImageUploads(-1));
         return true;
       }
       const value = event.clipboardData?.getData("text/plain")?.trim() ?? "";
@@ -105,7 +122,7 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
         return true;
       }
       if (/<img\b/i.test(event.clipboardData?.getData("text/html") ?? "")) {
-        setStatus("Las imágenes no están permitidas por ahora.");
+        setStatus("Para insertar imágenes externas, subilas con el botón Imagen.");
         return true;
       }
       return defaultPasteHandler();
@@ -125,7 +142,10 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
   const initiallyHadContent = useRef(hasContent(serializeNote(editor.document)));
   const dirty = getSnapshot() !== savedRef.current;
   const closeDialog = useCallback(() => {
-    if (savingRef.current) return;
+    if (savingRef.current || imageUploadsRef.current > 0) {
+      setStatus("Esperá a que termine la subida de la imagen antes de cerrar.");
+      return;
+    }
     if (getSnapshot() !== savedRef.current && !window.confirm("Hay cambios sin guardar. Si cerrás el editor, se descartarán. ¿Cerrar igualmente?")) return;
     onClose();
   }, [getSnapshot, onClose]);
@@ -140,7 +160,7 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
 
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
-      if (getSnapshot() === savedRef.current) return;
+      if (getSnapshot() === savedRef.current && imageUploadsRef.current === 0) return;
       event.preventDefault();
       event.returnValue = "";
     };
@@ -150,6 +170,7 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
 
   const save = async () => {
     if (savingRef.current) return;
+    if (imageUploadsRef.current > 0) { setStatus("Esperá a que termine la subida antes de guardar."); return; }
     if (pendingUrl) { setStatus("Elegí cómo insertar la URL o cancelala antes de guardar."); return; }
     const next = payload();
     if (!next.title) { setStatus("Escribí un título para la lección."); return; }
@@ -228,7 +249,7 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
     <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="flex h-[90vh] w-full max-w-4xl flex-col rounded-xl bg-[#FAF8F5] shadow-2xl outline-none">
       <div className="flex items-center justify-between border-b-2 border-[#B58A43] bg-white px-6 py-4">
         <div><h2 id={titleId} className="text-xl text-[#173B6C]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{mode === "new" ? "Nueva lección" : "Editar lección"}</h2><p className="text-xs text-[#6c7b90]">{moduleName}</p></div>
-        <div className="flex items-center gap-3"><button type="button" onClick={() => void save()} disabled={saving} className="rounded bg-[#B58A43] px-5 py-2 text-xs font-bold text-[#173B6C] disabled:opacity-50">{saving ? "GUARDANDO..." : "GUARDAR"}</button><button type="button" onClick={closeDialog} disabled={saving} aria-label="Cerrar editor" className="text-2xl text-[#173B6C] disabled:opacity-50">×</button></div>
+        <div className="flex items-center gap-3"><button type="button" onClick={() => void save()} disabled={saving || imageUploads > 0} className="rounded bg-[#B58A43] px-5 py-2 text-xs font-bold text-[#173B6C] disabled:opacity-50">{saving ? "GUARDANDO..." : imageUploads > 0 ? "SUBIENDO…" : "GUARDAR"}</button><button type="button" onClick={closeDialog} disabled={saving || imageUploads > 0} aria-label="Cerrar editor" className="text-2xl text-[#173B6C] disabled:opacity-50">×</button></div>
       </div>
       <div className="flex flex-wrap items-center gap-3 border-b border-[#e5ded2] px-6 py-3">
         <label htmlFor="rich-lesson-title" className="text-xs font-bold text-[#173B6C]">Título</label>
@@ -245,12 +266,14 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
         {toolbarButton("▸ Toggle", () => changeBlock("toggleListItem"), "Bloque desplegable")}
         {toolbarButton("</> Código", () => changeBlock("codeBlock"), "Código")}
         {toolbarButton("🔗", () => { urlAnchorRef.current = editor.getTextCursorPosition().block.id; setPendingUrl("https://"); setUrlMenuPosition({ top: 200, left: Math.max(12, window.innerWidth / 2 - 160) }); }, "Insertar enlace")}
+        {toolbarButton("Imagen", () => setImagePickerOpen((current) => !current), "Insertar imagen de Cloudinary")}
         <span aria-hidden="true" className="mx-1 h-5 border-l border-[#d8c6aa]" />
         {toolbarButton("B", () => editor.toggleStyles({ bold: true }), "Negrita")}
         {toolbarButton("I", () => editor.toggleStyles({ italic: true }), "Cursiva")}
         {toolbarButton("U", () => editor.toggleStyles({ underline: true }), "Subrayado")}
         {toolbarButton("S", () => editor.toggleStyles({ strike: true }), "Tachado")}
       </div>
+      {imagePickerOpen && <div className="max-h-[40vh] overflow-y-auto border-b border-[#e5ded2] bg-white px-6 py-3"><ImagePicker category="lessons" label="Imagen de la lección" value="" onUploadStateChange={(busy) => changeImageUploads(busy ? 1 : -1)} onChange={(url) => { editor.insertBlocks([{ type: "image", props: { url } }], editor.getTextCursorPosition().block, "after"); setImagePickerOpen(false); setStatus("Imagen insertada. Guardá la lección para conservarla."); }} /></div>}
       <p className="px-6 py-2 text-xs text-[#6c7b90]">Enter crea un bloque · / muestra todos los bloques · + añade debajo · ⋮⋮ permite mover y editar el bloque · pegá una URL para elegir cómo insertarla.</p>
       {pendingUrl && !saving && <div role="dialog" aria-label="Opciones para la URL pegada" className="fixed z-[450] w-[min(320px,calc(100vw-24px))] rounded-lg border border-[#B58A43] bg-white p-3 shadow-xl" style={{ top: Math.max(12, urlMenuPosition.top), left: urlMenuPosition.left }}><input autoFocus aria-label="URL para insertar" value={pendingUrl} onChange={(event) => setPendingUrl(event.target.value)} className="mb-2 w-full rounded border border-[#e5ded2] px-2 py-1 text-xs text-[#173B6C]" /><div className="flex flex-wrap gap-2">
         <button type="button" disabled={fetchingPreview} onClick={() => void insertUrl("link")} className="rounded bg-[#173B6C] px-3 py-1.5 text-xs text-white">URL</button>
@@ -260,18 +283,19 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
         <button type="button" disabled={fetchingPreview} onClick={() => void insertUrl("file")} className="rounded border px-3 py-1.5 text-xs">Archivo externo</button>
         <button type="button" onClick={() => setPendingUrl("")} className="px-3 py-1.5 text-xs text-[#72132C]">Cancelar</button>
       </div></div>}
-      <div className="lesson-rich-editor min-h-0 flex-1 px-5 py-4" onKeyDownCapture={handleSpaceShortcut} onDropCapture={(event) => { if (Array.from(event.dataTransfer.files).some((file) => file.type.startsWith("image/"))) { event.preventDefault(); event.stopPropagation(); setStatus("Las imágenes no están permitidas por ahora."); } }}>
+      <div className="lesson-rich-editor min-h-0 flex-1 px-5 py-4" onKeyDownCapture={handleSpaceShortcut} onDropCapture={(event) => { const file = Array.from(event.dataTransfer.files).find((item) => item.type.startsWith("image/")); if (file) { event.preventDefault(); event.stopPropagation(); changeImageUploads(1); setStatus("Subiendo imagen a Cloudinary…"); void uploadGalleryImage("lessons", file).then((image) => { editor.insertBlocks([{ type: "image", props: { url: image.url } }], editor.getTextCursorPosition().block, "after"); setStatus("Imagen insertada. Guardá la lección para conservarla."); }).catch((cause) => setStatus(errorMessage(cause))).finally(() => changeImageUploads(-1)); } }}>
         <BlockNoteView editor={editor} editable={!saving} theme="light" sideMenu={false} slashMenu={false} onChange={() => { setStatus(""); renderChange((value) => value + 1); }}>
           <SideMenuController sideMenu={LessonSideMenu} />
           <SuggestionMenuController triggerCharacter="/" getItems={async (query) => filterSuggestionItems([
             ...getDefaultReactSlashMenuItems(editor).filter((item) => !["Video", "Audio", "File", "Image", es.slash_menu.image.title, es.slash_menu.video.title, es.slash_menu.audio.title, es.slash_menu.file.title].includes(item.title)),
+            { title: "Imagen", subtext: "Elegir o subir a Cloudinary", group: "Multimedia", aliases: ["foto", "imagen"], onItemClick: () => setImagePickerOpen(true) },
             { title: "Video de YouTube", subtext: "Insertar video no listado", group: "Multimedia", aliases: ["youtube", "video"], onItemClick: () => { urlAnchorRef.current = editor.getTextCursorPosition().block.id; setPendingUrl("https://"); setUrlMenuPosition({ top: 200, left: Math.max(12, window.innerWidth / 2 - 160) }); } },
             { title: "Marcador web", subtext: "Insertar enlace como tarjeta", group: "Multimedia", aliases: ["bookmark", "enlace"], onItemClick: () => { urlAnchorRef.current = editor.getTextCursorPosition().block.id; setPendingUrl("https://"); setUrlMenuPosition({ top: 200, left: Math.max(12, window.innerWidth / 2 - 160) }); } },
             { title: "Archivo externo", subtext: "Enlazar PDF o documento por URL", group: "Multimedia", aliases: ["pdf", "documento", "powerpoint"], onItemClick: () => { urlAnchorRef.current = editor.getTextCursorPosition().block.id; setPendingUrl("https://"); setUrlMenuPosition({ top: 200, left: Math.max(12, window.innerWidth / 2 - 160) }); } },
           ], query)} />
         </BlockNoteView>
       </div>
-      <div className="border-t border-[#e5ded2] bg-white px-6 py-2 text-xs text-[#6c7b90]" role="status" aria-live="polite">{status || (dirty ? "Hay cambios sin guardar. Solo se aplican al pulsar GUARDAR." : mode === "edit" ? "Sin cambios pendientes." : "Guardá para crear la lección.")} · Las imágenes no están permitidas por ahora.</div>
+      <div className="border-t border-[#e5ded2] bg-white px-6 py-2 text-xs text-[#6c7b90]" role="status" aria-live="polite">{status || (dirty ? "Hay cambios sin guardar. Solo se aplican al pulsar GUARDAR." : mode === "edit" ? "Sin cambios pendientes." : "Guardá para crear la lección.")}</div>
     </div>
   </div>;
 }

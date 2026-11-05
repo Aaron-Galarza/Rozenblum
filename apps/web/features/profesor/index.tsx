@@ -5,8 +5,6 @@ import type {
   ChatMessageDTO,
   ConversationDTO,
   CourseDTO,
-  LessonBlockDTO,
-  LessonType,
   ModuleDTO,
   TeacherDashboardDTO,
   TeacherStudentDTO,
