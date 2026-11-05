@@ -4,6 +4,7 @@ import {
   ConversationModel,
   CourseModel,
   EnrollmentModel,
+  HomeContentModel,
   OrderModel,
   SettingsModel,
   UserModel,
@@ -26,6 +27,7 @@ import type {
   ConversationRepository,
   CourseRepository,
   EnrollmentRepository,
+  HomeRepository,
   OrderRepository,
   Repositories,
   SettingsRepository,
@@ -369,6 +371,21 @@ export function createMongooseRepositories(): Repositories {
     },
   };
 
+  const home: HomeRepository = {
+    async get() {
+      const doc = await HomeContentModel.findOne({ key: "home" }).select("-_id").lean().exec();
+      return doc ?? null;
+    },
+    async updateHeroImage(previousUrl, nextUrl) {
+      const doc = await HomeContentModel.findOneAndUpdate(
+        { key: "home", "brand.heroImage": previousUrl },
+        { $set: { "brand.heroImage": nextUrl } },
+        { returnDocument: "after" },
+      ).select("-_id").lean().exec();
+      return doc ?? null;
+    },
+  };
+
   return {
     mode: "atlas",
     users,
@@ -378,5 +395,6 @@ export function createMongooseRepositories(): Repositories {
     conversations,
     settings,
     contacts,
+    home,
   };
 }

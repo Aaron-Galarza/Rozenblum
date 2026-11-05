@@ -1,6 +1,6 @@
 import type { HomeContentDTO } from "@rozenblum/shared";
 import { badRequest, notFound } from "../lib/http.js";
-import { HomeContentModel, UserModel } from "../models/index.js";
+import { getRepositories } from "../repositories/index.js";
 import { assertManagedImageUrl } from "./media.js";
 
 /**
@@ -8,37 +8,43 @@ import { assertManagedImageUrl } from "./media.js";
  * accounts so the landing page always reflects the current profile image.
  */
 export async function getHomeContent(): Promise<HomeContentDTO> {
-  const content = await HomeContentModel.findOne({ key: "home" }).select("-_id").lean().exec();
+  const repos = getRepositories();
+  const content = await repos.home.get();
   if (!content) throw notFound("El contenido de inicio no existe.");
-
-  const userIds = (content.team ?? [])
-    .map((member) => member.userId)
-    .filter((id): id is string => Boolean(id));
-  const users = await UserModel.find({ id: { $in: userIds }, role: "profesor" })
-    .select({ id: 1, img: 1 })
-    .lean<{ id: string; img?: string }[]>()
-    .exec();
-  const byId = new Map(users.map((user) => [user.id, user.img]));
+  const team = await Promise.all((content.team ?? []).map(async (member) => {
+    const user = member.userId ? await repos.users.findById(member.userId) : null;
+    return {
+      name: member.name,
+      role: member.role,
+      img: user?.role === "profesor" && user.img ? user.img : member.img,
+    };
+  }));
 
   return {
-    ...content,
     key: "home",
-    team: (content.team ?? []).map((member) => ({
-      ...member,
-      img: byId.get(member.userId ?? "") || member.img,
+    brand: {
+      locationLabel: content.brand.locationLabel,
+      foundedYear: content.brand.foundedYear,
+      heroImage: content.brand.heroImage,
+      metrics: content.brand.metrics.map(({ value, label }) => ({ value, label })),
+      aboutParagraphs: [...content.brand.aboutParagraphs],
+      footerTagline: content.brand.footerTagline,
+    },
+    team,
+    practiceAreas: content.practiceAreas.map((area) => ({
+      title: area.title,
+      desc: area.desc,
+      icon: area.icon,
+      casos: area.casos.map(({ q, a }) => ({ q, a })),
     })),
   };
 }
 
 export async function updateHomeHeroImage(heroImage: string): Promise<HomeContentDTO> {
   assertManagedImageUrl(heroImage, "brand");
-  const current = await HomeContentModel.findOne({ key: "home" }).lean().exec();
+  const current = await getRepositories().home.get();
   if (!current) throw notFound("El contenido de inicio no existe.");
-  const updated = await HomeContentModel.findOneAndUpdate(
-    { key: "home", "brand.heroImage": current.brand.heroImage },
-    { $set: { "brand.heroImage": heroImage } },
-    { returnDocument: "after" },
-  ).select("-_id").lean().exec();
+  const updated = await getRepositories().home.updateHeroImage(current.brand.heroImage, heroImage);
   if (!updated) throw badRequest("El contenido cambió. Recargá la página e intentá nuevamente.");
-  return updated;
+  return getHomeContent();
 }

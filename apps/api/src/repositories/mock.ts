@@ -1,4 +1,4 @@
-import type { OrderStatus, Role } from "@rozenblum/shared";
+import type { HomeContentDTO, OrderStatus, Role } from "@rozenblum/shared";
 import { formatArs, newId, nowIso, slugify } from "../lib/utils.js";
 import type {
   StoredContact,
@@ -15,6 +15,7 @@ import type {
   ConversationRepository,
   CourseRepository,
   EnrollmentRepository,
+  HomeRepository,
   OrderRepository,
   Repositories,
   SettingsRepository,
@@ -31,6 +32,7 @@ type Memory = {
   conversations: StoredConversation[];
   settings: StoredSettings | null;
   contacts: StoredContact[];
+  homeContent: HomeContentDTO | null;
 };
 
 function createMemory(initial: Partial<Memory>): Memory {
@@ -42,6 +44,7 @@ function createMemory(initial: Partial<Memory>): Memory {
     conversations: [],
     settings: null,
     contacts: [],
+    homeContent: null,
     ...clone(initial),
   };
 }
@@ -315,6 +318,17 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
     },
   };
 
+  const home: HomeRepository = {
+    async get() {
+      return db.homeContent ? clone(db.homeContent) : null;
+    },
+    async updateHeroImage(previousUrl, nextUrl) {
+      if (!db.homeContent || db.homeContent.brand.heroImage !== previousUrl) return null;
+      db.homeContent.brand.heroImage = nextUrl;
+      return clone(db.homeContent);
+    },
+  };
+
   return {
     mode: "test",
     users,
@@ -324,5 +338,6 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
     conversations,
     settings,
     contacts,
+    home,
   };
 }

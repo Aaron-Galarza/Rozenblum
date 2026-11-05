@@ -1,4 +1,4 @@
-import type { OrderStatus, Role } from "@rozenblum/shared";
+import type { HomeContentDTO, OrderStatus, Role } from "@rozenblum/shared";
 import type { Pagination } from "../lib/pagination.js";
 import type {
   CourseInput,
@@ -123,6 +123,11 @@ export interface ContactRepository {
   create(input: StoredContact): Promise<StoredContact>;
 }
 
+export interface HomeRepository {
+  get(): Promise<HomeContentDTO | null>;
+  updateHeroImage(previousUrl: string, nextUrl: string): Promise<HomeContentDTO | null>;
+}
+
 export type Repositories = {
   mode: AppMode;
   users: UserRepository;
@@ -132,4 +137,5 @@ export type Repositories = {
   conversations: ConversationRepository;
   settings: SettingsRepository;
   contacts: ContactRepository;
+  home: HomeRepository;
 };
