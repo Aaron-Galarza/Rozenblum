@@ -9,7 +9,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "bootstrap:admin": "tsx src/scripts/bootstrap-admin.ts",
-    "test": "node --import tsx --import ./src/tests/test-env.ts --test ./src/tests/api.test.ts",
+    "test": "node --import tsx --import ./src/tests/test-env.ts --test ./src/tests/api.test.ts ./src/tests/repository-transactions.test.ts",
     "test:atlas": "node --import tsx --test ./src/tests/atlas.test.ts"
   },
   "dependencies": {

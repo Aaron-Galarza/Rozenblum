@@ -3,11 +3,13 @@ import type {
   CheckoutResultDTO,
   OrderDTO,
 } from "@rozenblum/shared";
-import { badRequest, notFound, unauthorized } from "../lib/http.js";
-import { hashPassword, verifyPassword } from "../lib/password.js";
+import { badRequest, notFound } from "../lib/http.js";
+import { hashPassword } from "../lib/password.js";
 import { newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
-import type { StoredEnrollment, StoredOrder, StoredUser } from "../types.js";
+import type { StoredOrder, StoredUser } from "../types.js";
+import { resolveCheckoutParticipants } from "./checkout-eligibility.js";
+import { persistCheckoutRecords } from "./checkout-records.js";
 import { enrollmentToDTO, orderToDTO } from "./mappers.js";
 import { paymentGateway } from "./mercadopago.js";
 
@@ -24,53 +26,8 @@ export async function checkout(
   /** Present when the caller sent a valid session (see `optionalAuth`). */
   actor?: StoredUser,
 ): Promise<CheckoutResultDTO> {
-  const repos = getRepositories();
-  const course = await repos.courses.findBySlug(input.courseSlug);
-  if (!course || course.status !== "published") {
-    throw notFound("El curso solicitado no está disponible.");
-  }
-  const teacher = course.professorEmail
-    ? await repos.users.findByEmail(course.professorEmail)
-    : null;
-  if (!teacher || teacher.role !== "profesor" || teacher.status !== "Activo") {
-    throw notFound("El curso solicitado no está disponible.");
-  }
-
-  const account = await repos.users.findByEmail(input.email);
-  // Identity proof for an existing account: either a valid session for that
-  // very account, or the DNI password. The session path keeps checkout working
-  // after a student rotates the DNI for a strong password.
-  const authenticatedAsAccount =
-    Boolean(actor && account && actor.id === account.id);
-  let dniValid = false;
-  if (account && !authenticatedAsAccount) {
-    dniValid = await verifyPassword(input.dni, account.passwordHash);
-  }
-
-  if (
-    account &&
-    (account.role !== "alumno" ||
-      account.status !== "Activo" ||
-      (!authenticatedAsAccount && !dniValid))
-  ) {
-    throw unauthorized("No pudimos validar la cuenta. Revisá el correo, el DNI o contactá al administrador.");
-  }
-
-  const existingEnrollment = await repos.enrollments.findByStudentAndCourse(
-    input.email,
-    course.legacyId,
-  );
-  if (existingEnrollment) {
-    throw badRequest(
-      existingEnrollment.status === "Pendiente"
-        ? "Ya existe una inscripción pendiente para este correo. Avisanos por WhatsApp para agilizar la validación."
-        : "Este correo ya tiene una inscripción para el curso.",
-    );
-  }
-
-  // The student account is deliberately NOT created here. It is created when
-  // an administrator confirms the payment (see updateAdminOrder), using the
-  // DNI as the initial password.
+  const { course, teacher, account } = await resolveCheckoutParticipants(input, actor);
+  // The account is created only after a verified or manually confirmed payment.
   const reference = `RB-${new Date().getFullYear()}-${newId("ref").slice(4).toUpperCase()}`;
   const gateway = paymentGateway();
   const paymentMethod = input.paymentMethod ?? (gateway ? "mercadopago" : "manual");
@@ -106,41 +63,7 @@ export async function checkout(
     paymentUrl: preference?.url,
   };
 
-  let createdOrder: StoredOrder;
-  let enrollment: StoredEnrollment;
-  try {
-    ({ createdOrder, enrollment } = await repos.withTransaction(async () => {
-      if (await repos.enrollments.findByStudentAndCourse(input.email, course.legacyId)) {
-        throw badRequest("Ya existe una inscripción para este curso y correo.");
-      }
-      const createdOrder = await repos.orders.create(order);
-      const enrollment = await repos.enrollments.create({
-        studentEmail: input.email,
-        studentName: account?.name ?? input.nombre,
-        courseId: course.legacyId,
-        status: "Pendiente",
-        completedLessonIds: [],
-      });
-      const conversation = await repos.conversations.findByStudentAndCourse(input.email, course.legacyId);
-      if (!conversation) {
-        await repos.conversations.create({
-          id: newId("cnv"),
-          courseId: course.legacyId,
-          studentEmail: input.email.toLowerCase(),
-          studentName: account?.name ?? input.nombre,
-          teacherEmail: teacher.email,
-          teacherName: teacher.name,
-          messages: [],
-        });
-      }
-      return { createdOrder, enrollment };
-    }));
-  } catch (error) {
-    if ((error as { code?: number }).code === 11000) {
-      throw badRequest("Ya existe una inscripción para este curso y correo.");
-    }
-    throw error;
-  }
+  const { createdOrder, enrollment } = await persistCheckoutRecords(order, teacher);
 
   return {
     order: orderToDTO(createdOrder),
