@@ -10,6 +10,7 @@ import { login as loginService } from "../services/auth.js";
 import { moduleStatuses } from "../services/mappers.js";
 import { detectImageFormat, isManagedImageUrl, mediaFolder } from "../services/media.js";
 import { setPaymentGatewayForTests, type PaymentSnapshot } from "../services/mercadopago.js";
+import { applyOrderTransition } from "../services/order-transitions.js";
 import { api, startTestServer, type TestServer } from "./helpers.js";
 
 const password = "test-password-12345";
@@ -1271,9 +1272,10 @@ test("signed Mercado Pago events activate once, reject a wrong amount, and revok
     const orderId = checkout.body.data.order.id;
     assert.equal((await repositories.orders.findByReference(orderId))?.montoCents, 123_400);
     assert.equal(await repositories.users.findByEmail("payment@example.test"), null);
-    const notify = async (eventId: string, signatureValid = true, requestedPaymentId = paymentId) => {
+    const notify = async (eventId: string, signatureValid = true, requestedPaymentId = paymentId,
+      timestamp = Date.now()) => {
       const requestId = `request-${eventId}`;
-      const ts = String(Date.now());
+      const ts = String(timestamp);
       const manifest = `id:${requestedPaymentId};request-id:${requestId};ts:${ts};`;
       const hash = createHmac("sha256", secret).update(manifest).digest("hex");
       return api(server.baseUrl, `/api/payments/mercadopago/webhook?data.id=${requestedPaymentId}`, {
@@ -1285,6 +1287,7 @@ test("signed Mercado Pago events activate once, reject a wrong amount, and revok
       });
     };
     assert.equal((await notify("bad-signature", false)).status, 401);
+    assert.equal((await notify("expired-signature", true, paymentId, Date.now() - 360_000)).status, 401);
     payment = { ...payment, amountCents: 1 };
     assert.equal((await notify("bad-amount")).status, 400);
     payment = { ...payment, amountCents: 123_400, currency: "USD" };
@@ -1314,6 +1317,16 @@ test("signed Mercado Pago events activate once, reject a wrong amount, and revok
     assert.equal((await repositories.enrollments.listAll()).filter((item) =>
       item.studentEmail === "payment@example.test" && item.courseId === course.legacyId).length, 1);
     assert.ok(await repositories.users.findByEmail("payment@example.test"));
+    assert.equal((await repositories.paymentEvents.listByOrder(orderId)).length, 1);
+    // A different attempt can reach the transaction after the paid attempt
+    // wins; it must not revoke the enrollment even if its webhook was valid.
+    assert.equal(await applyOrderTransition({
+      reference, status: "Reembolsado", source: "mercadopago",
+      providerEventId: "other-attempt-refund", providerPaymentId: "999999999",
+      paymentStatus: "refunded", reason: "Otro intento reembolsado",
+    }), null);
+    assert.equal((await repositories.orders.findByReference(orderId))?.estado, "Pagado");
+    assert.equal((await repositories.enrollments.findByStudentAndCourse("payment@example.test", course.legacyId))?.status, "Activo");
     assert.equal((await repositories.paymentEvents.listByOrder(orderId)).length, 1);
     payment = { ...payment, status: "in_mediation", statusDetail: "pending" };
     assert.equal((await notify("disputed")).status, 200);

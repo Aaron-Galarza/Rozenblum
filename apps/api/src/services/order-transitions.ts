@@ -4,16 +4,15 @@ import { initialsFromName, newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredOrder, StoredPaymentEvent } from "../types.js";
 
-type Transition = {
+type TransitionBase = {
   reference: string;
   status: OrderStatus;
-  source: "mercadopago" | "manual";
   reason: string;
-  actorId?: string;
-  providerEventId?: string;
-  providerPaymentId?: string;
-  paymentStatus?: string;
 };
+type Transition = TransitionBase & (
+  { source: "manual"; actorId: string; providerEventId?: never; providerPaymentId?: never; paymentStatus?: never }
+  | { source: "mercadopago"; providerEventId: string; providerPaymentId: string; paymentStatus: string; actorId?: never }
+);
 
 function allowedTransition(previous: OrderStatus, next: OrderStatus, source: Transition["source"]): boolean {
   if (previous === next) return true;
@@ -72,6 +71,10 @@ export async function applyOrderTransition(input: Transition): Promise<StoredPay
         if (input.source === "manual" && order.paymentProvider === "mercadopago") {
           throw badRequest("Una orden de Mercado Pago requiere verificación automática.");
         }
+        // Another payment attempt may have won while this notification was
+        // waiting for the transaction. Only the bound payment may revoke it.
+        if (input.source === "mercadopago" && order.paymentId &&
+            order.paymentId !== input.providerPaymentId) return null;
         if (!allowedTransition(order.estado, input.status, input.source)) {
           if (input.source === "manual") throw badRequest("Transición de estado no permitida.");
           // A delayed provider event must never undo a payment or a refund.
