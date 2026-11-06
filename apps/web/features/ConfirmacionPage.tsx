@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { OrderDTO } from "@rozenblum/shared";
 import { apiFetch, errorMessage } from "../lib/api";
 import { usePublicSettings } from "../lib/use-public-settings";
+import { safeHttpUrl } from "../lib/safe-url";
 
 export default function ConfirmacionPage({
   reference,
@@ -19,12 +20,12 @@ export default function ConfirmacionPage({
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!reference) return;
+    if (!reference) { setError("Falta la referencia de la orden para consultar su estado."); return; }
     const receiptEmail = email ?? sessionStorage.getItem(`rozenblum-payment-email:${reference}`);
-    if (!receiptEmail) return;
+    if (!receiptEmail) { setError("Falta el correo de la inscripción para consultar la orden."); return; }
     const query = `?email=${encodeURIComponent(receiptEmail)}`;
     const refresh = () => apiFetch<OrderDTO>(`/api/orders/${encodeURIComponent(reference)}${query}`)
-      .then(setOrder).catch((err) => setError(errorMessage(err)));
+      .then((data) => { setOrder(data); setError(""); }).catch((err) => setError(errorMessage(err)));
     void refresh();
     const timer = window.setInterval(() => { void refresh(); }, 5_000);
     return () => window.clearInterval(timer);
@@ -32,6 +33,7 @@ export default function ConfirmacionPage({
 
   const isMercadoPago = order?.paymentProvider === "mercadopago";
   const isPaid = order?.estado === "Pagado";
+  const paymentUrl = safeHttpUrl(order?.paymentUrl);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: "#FAF8F5", fontFamily: "'Roboto', sans-serif" }}>
@@ -62,11 +64,11 @@ export default function ConfirmacionPage({
             className="text-5xl font-light mb-4"
             style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}
           >
-            {isPaid ? "¡Pago confirmado!" : "¡Inscripción registrada!"}
+            {isPaid ? "¡Pago confirmado!" : order ? "¡Inscripción registrada!" : "Estado de la inscripción"}
           </h1>
 
           <p className="text-base leading-relaxed mb-8" style={{ color: "rgba(23,59,108,0.65)" }}>
-            {isPaid ? "Tu acceso al aula ya está habilitado." : "Tu solicitud fue recibida correctamente."}
+            {isPaid ? "Tu acceso al aula ya está habilitado." : order ? "Tu solicitud fue recibida correctamente." : error ? "No pudimos verificar el estado de tu orden." : "Estamos consultando tu orden."}
           </p>
 
           {/* Status box */}
@@ -79,7 +81,7 @@ export default function ConfirmacionPage({
               <div>
                 <p className="text-sm font-bold mb-1" style={{ color: "#173B6C" }}>{isPaid ? "Acceso habilitado" : "Estado de la inscripción"}</p>
                 <p className="text-sm leading-relaxed" style={{ color: "rgba(23,59,108,0.75)" }}>
-                  {order ? <>Tu orden está <strong>{order.estado}</strong>. {isMercadoPago ? "Mercado Pago informa el resultado automáticamente; esta página se actualiza sola." : "El administrador confirmará el pago acordado con el Estudio."}</> : "Estamos consultando el estado de tu orden."}
+                  {order ? <>Tu orden está <strong>{order.estado}</strong>. {isMercadoPago ? "Mercado Pago informa el resultado automáticamente; esta página se actualiza sola." : "El administrador confirmará el pago acordado con el Estudio."}</> : error ? "No se pudo consultar la orden." : "Estamos consultando el estado de tu orden."}
                 </p>
               </div>
             </div>
@@ -107,12 +109,13 @@ export default function ConfirmacionPage({
                 )}
               </>
             )}
+            {order && error && <p role="alert" className="text-xs mt-3" style={{ color: "#72132C" }}>No se pudo actualizar el estado: {error}</p>}
 
             <div className="h-px my-4" style={{ backgroundColor: "rgba(23,59,108,0.08)" }} />
             <div className="space-y-2">
               {(isMercadoPago ? [
                 "Conservá el número de orden para identificar tu solicitud",
-                "Ingresá con tu correo y DNI cuando el pago esté confirmado",
+                "Ingresá con tus credenciales cuando el pago esté confirmado",
               ] : [
                 "Consultá por WhatsApp las instrucciones de pago",
                 "Conservá el número de orden para identificar tu solicitud",
@@ -127,10 +130,13 @@ export default function ConfirmacionPage({
           </div>
 
           {/* Next steps */}
-          {isMercadoPago && order?.paymentUrl && (
-            <a href={order.paymentUrl} className="block w-full py-4 mb-5 rounded text-sm font-bold tracking-widest" style={{ backgroundColor: "#009EE3", color: "#FFFFFF" }}>
+          {isMercadoPago && paymentUrl && (
+            <a href={paymentUrl} className="block w-full py-4 mb-5 rounded text-sm font-bold tracking-widest" style={{ backgroundColor: "#009EE3", color: "#FFFFFF" }}>
               CONTINUAR PAGO EN MERCADO PAGO
             </a>
+          )}
+          {isMercadoPago && order?.paymentUrl && !paymentUrl && (
+            <p role="alert" className="mb-5 text-sm" style={{ color: "#72132C" }}>El enlace de pago no es válido. Contactanos con tu número de orden.</p>
           )}
 
           {!isMercadoPago && <p className="text-sm mb-6" style={{ color: "rgba(23,59,108,0.7)" }}>

@@ -6,6 +6,7 @@ import type { Course } from "../../types";
 import { apiFetch, errorMessage } from "../../lib/api";
 import { useModalA11y } from "../../lib/use-modal-a11y";
 import { usePublicSettings } from "../../lib/use-public-settings";
+import { safeHttpUrl } from "../../lib/safe-url";
 
 type CheckoutModalProps = {
   course: Course;
@@ -40,8 +41,13 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
         },
       });
       if (result.payment?.url) {
+        const paymentUrl = safeHttpUrl(result.payment.url);
+        if (!paymentUrl) {
+          onSuccess(result.order.externalReference ?? result.order.id, form.email);
+          return;
+        }
         sessionStorage.setItem(`rozenblum-payment-email:${result.order.externalReference ?? result.order.id}`, form.email);
-        window.location.assign(result.payment.url);
+        window.location.assign(paymentUrl);
         return;
       }
       onSuccess(result.order.externalReference ?? result.order.id, form.email);

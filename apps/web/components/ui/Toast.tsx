@@ -9,8 +9,8 @@ type ToastProps = {
 export default function Toast({ message, error = false }: ToastProps) {
   return (
     <div
-      role="status"
-      aria-live="polite"
+      role={error ? "alert" : "status"}
+      aria-live={error ? "assertive" : "polite"}
       className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[400] px-5 py-3 rounded-lg shadow-xl text-sm font-medium"
       style={{
         backgroundColor: error ? "#72132C" : "#173B6C",

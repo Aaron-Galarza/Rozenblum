@@ -1,4 +1,4 @@
-import type { ChangePasswordInput, Role, SessionDTO } from "@rozenblum/shared";
+import type { ChangePasswordInput, LoginInput, SessionDTO } from "@rozenblum/shared";
 import { createToken } from "../lib/token.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { badRequest, unauthorized } from "../lib/http.js";
@@ -13,11 +13,7 @@ import { userToDTO } from "./mappers.js";
  */
 const DUMMY_PASSWORD_HASH = hashPassword("rozenblum-invalid-account");
 
-export async function login(input: {
-  role: Role;
-  email: string;
-  password: string;
-}): Promise<SessionDTO> {
+export async function login(input: LoginInput): Promise<SessionDTO> {
   const repos = getRepositories();
   const email = input.email.toLowerCase();
   const user = await repos.users.findByEmail(email);
@@ -27,7 +23,7 @@ export async function login(input: {
     user?.passwordHash ?? (await DUMMY_PASSWORD_HASH),
   );
 
-  if (!user || user.role !== input.role || user.status !== "Activo" || !validPassword) {
+  if (!user || (input.role !== undefined && user.role !== input.role) || user.status !== "Activo" || !validPassword) {
     throw unauthorized("Correo o contraseña incorrectos.");
   }
 

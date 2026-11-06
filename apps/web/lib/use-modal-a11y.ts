@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const openDialogs: HTMLElement[] = [];
 
 function focusableInside(root: HTMLElement | null): HTMLElement[] {
   if (!root) return [];
@@ -33,16 +34,18 @@ export function useModalA11y<T extends HTMLElement = HTMLDivElement>(
   useEffect(() => {
     if (!enabled) return;
     const node = ref.current;
+    if (!node) return;
     const restore = document.activeElement as HTMLElement | null;
+    openDialogs.push(node);
 
     if (node && !node.contains(document.activeElement)) {
-      const preferred = node.querySelector<HTMLElement>(
-        'input:not([disabled]), textarea:not([disabled]), select:not([disabled])',
-      );
-      (preferred ?? focusableInside(node)[0] ?? node)?.focus();
+      const items = focusableInside(node);
+      const preferred = items.find((item) => item.matches("input, textarea, select"));
+      (preferred ?? items[0] ?? node).focus();
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (openDialogs[openDialogs.length - 1] !== node) return;
       if (event.key === "Escape") {
         if (onEscapeRef.current?.(event)) return;
         event.preventDefault();
@@ -58,7 +61,10 @@ export function useModalA11y<T extends HTMLElement = HTMLDivElement>(
       }
       const first = items[0];
       const last = items[items.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      if (!node.contains(document.activeElement) || document.activeElement === node) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
       } else if (!event.shiftKey && document.activeElement === last) {
@@ -67,12 +73,27 @@ export function useModalA11y<T extends HTMLElement = HTMLDivElement>(
       }
     };
 
+    const handleFocus = (event: FocusEvent) => {
+      if (openDialogs[openDialogs.length - 1] !== node) return;
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || node.contains(target)) return;
+      // BlockNote renders its editor menus in a portal outside the dialog.
+      if (node.closest(".lesson-rich-editor") || node.querySelector(".lesson-rich-editor")) {
+        if (target.closest(".bn-root")) return;
+      }
+      (focusableInside(node)[0] ?? node).focus();
+    };
+
     document.addEventListener("keydown", handleKeyDown, true);
+    document.addEventListener("focusin", handleFocus, true);
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown, true);
+      document.removeEventListener("focusin", handleFocus, true);
+      const index = openDialogs.lastIndexOf(node);
+      if (index !== -1) openDialogs.splice(index, 1);
       document.body.style.overflow = previousOverflow;
       restore?.focus?.();
     };

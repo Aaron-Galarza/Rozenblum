@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { OrderDTO, OrderStatus } from "@rozenblum/shared";
 import { errorMessage } from "../../../lib/api";
 import Toast from "../../../components/ui/Toast";
+import { useToast } from "../../../lib/use-toast";
 import Modal from "../../../components/ui/Modal";
 
 const ORDER_STATUSES: OrderStatus[] = ["Pagado", "Pendiente", "Rechazado", "En disputa", "Reembolsado"];
@@ -36,12 +37,11 @@ export default function PagosSection({ orders, onStatusChange }: PagosSectionPro
   const [estadoFilter, setEstadoFilter] = useState("Todos");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
+  const { toast, showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<{ order: OrderDTO; estado: OrderStatus } | null>(null);
   const [motivo, setMotivo] = useState("");
 
-  const showToast = (text: string, error = false) => { setToast({ text, error }); setTimeout(() => setToast(null), 2500); };
 
   const filtered = orders.filter((o) => {
     const matchMetodo = metodoFilter === "Todos" || o.metodo === metodoFilter;

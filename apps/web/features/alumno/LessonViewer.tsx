@@ -3,6 +3,7 @@
 import type { LessonBlockDTO } from "@rozenblum/shared";
 import dynamic from "next/dynamic";
 import type { Lesson } from "../../types";
+import { safeHttpUrl } from "../../lib/safe-url";
 
 const RichLessonViewer = dynamic(() => import("./RichLessonViewer"), { ssr: false });
 
@@ -55,11 +56,11 @@ function Block({ block }: { block: LessonBlockDTO }) {
         </details>
       );
     case "link":
-      return (
-        <a href={block.content} target="_blank" rel="noopener noreferrer" className="text-sm underline underline-offset-2" style={{ color: "#9A7435" }}>
+      return safeHttpUrl(block.content) ? (
+        <a href={safeHttpUrl(block.content)} target="_blank" rel="noopener noreferrer" className="text-sm underline underline-offset-2" style={{ color: "#9A7435" }}>
           {block.content}
         </a>
-      );
+      ) : <span className="text-sm">Enlace inválido</span>;
     case "code":
       return (
         <pre className="my-3 p-3 rounded text-xs overflow-x-auto" style={{ backgroundColor: "#173B6C", color: "#FAF8F5" }}>
@@ -85,7 +86,7 @@ export default function LessonViewer({
   hasNext,
 }: LessonViewerProps) {
   return (
-    <main className="flex-1 overflow-y-auto">
+    <main className="min-w-0 flex-1 lg:overflow-y-auto">
       {/* Course header gradient */}
       <div className="px-4 py-6 sm:px-10 sm:py-8" style={{ background: "linear-gradient(135deg, #173B6C 0%, #1e4d8c 100%)" }}>
         <h2 className="text-3xl font-bold mb-1" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>{courseTitle}</h2>

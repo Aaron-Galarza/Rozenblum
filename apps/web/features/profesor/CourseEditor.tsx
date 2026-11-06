@@ -7,6 +7,7 @@ import type { EditableModule, EditableLesson, ProfesorStudent, SortDir } from ".
 const LessonEditorModal = dynamic(() => import("./RichLessonEditorModal"), { ssr: false });
 import Modal from "../../components/ui/Modal";
 import Toast from "../../components/ui/Toast";
+import { useToast } from "../../lib/use-toast";
 import ImagePicker from "../../components/ui/ImagePicker";
 
 type LessonPayload = { title: string; type: LessonType; content: LessonBlockDTO[]; document: RichLessonDocument };
@@ -82,13 +83,9 @@ export default function CourseEditor({
   const [statsOpen, setStatsOpen] = useState(false);
   const [courseEditOpen, setCourseEditOpen] = useState(false);
   const [courseForm, setCourseForm] = useState({ title: courseTitle, description: courseDescription, img: courseImage });
-  const [toast, setToast] = useState("");
+  const { toast, showToast } = useToast();
   const [busy, setBusy] = useState(false);
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(""), 2500);
-  };
 
   useEffect(() => {
     if (studentModal?.type === "chat") {
@@ -104,7 +101,7 @@ export default function CourseEditor({
       await action();
       showToast(message);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "No se pudo guardar el cambio.");
+      showToast(error instanceof Error ? error.message : "No se pudo guardar el cambio.", true);
     } finally {
       setBusy(false);
     }
@@ -135,7 +132,7 @@ export default function CourseEditor({
       setChatMessages(updated);
       setChatInput("");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "No se pudo enviar el mensaje.");
+      showToast(error instanceof Error ? error.message : "No se pudo enviar el mensaje.", true);
     }
   };
 
@@ -507,7 +504,7 @@ export default function CourseEditor({
           <div className="flex gap-2">
             <button disabled={busy} onClick={() => {
               if (courseForm.title.trim().length < 3 || courseForm.description.trim().length < 3 || !/^https?:\/\//i.test(courseForm.img)) {
-                showToast("Ingresá un título y descripción válidos y una URL de imagen http(s).");
+                showToast("Ingresá un título y descripción válidos y una URL de imagen http(s).", true);
                 return;
               }
               void run(async () => { await onUpdateCourse({ title: courseForm.title.trim(), description: courseForm.description.trim(), img: courseForm.img.trim() }); setCourseEditOpen(false); }, "✓ Curso actualizado");
@@ -517,7 +514,7 @@ export default function CourseEditor({
         </Modal>
       )}
 
-      {toast && <Toast message={toast} />}
+      {toast && <Toast message={toast.text} error={toast.error} />}
     </>
   );
 }

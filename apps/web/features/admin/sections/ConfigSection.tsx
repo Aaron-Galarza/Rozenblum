@@ -5,6 +5,7 @@ import type { HomeContentDTO, SiteSettingsDTO } from "@rozenblum/shared";
 import { apiFetch, errorMessage } from "../../../lib/api";
 import { useModalA11y } from "../../../lib/use-modal-a11y";
 import Toast from "../../../components/ui/Toast";
+import { useToast } from "../../../lib/use-toast";
 import ImagePicker from "../../../components/ui/ImagePicker";
 
 type SettingsPayload = {
@@ -21,7 +22,7 @@ type ConfigSectionProps = {
 };
 
 export default function ConfigSection({ settings, onSave }: ConfigSectionProps) {
-  const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
+  const { toast, showToast } = useToast();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [company, setCompany] = useState({
     companyName: settings.companyName,
@@ -51,7 +52,6 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
     apiFetch<HomeContentDTO>("/api/content/home").then(setHomeContent).catch((cause) => setMediaError(errorMessage(cause)));
   }, []);
 
-  const showToast = (text: string, error = false) => { setToast({ text, error }); setTimeout(() => setToast(null), 2500); };
 
   const save = async (message: string) => {
     setBusy(true);

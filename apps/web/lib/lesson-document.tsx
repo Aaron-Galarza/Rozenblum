@@ -3,6 +3,7 @@
 import { BlockNoteSchema } from "@blocknote/core";
 import { createReactBlockSpec } from "@blocknote/react";
 import type { LessonBlockDTO, RichLessonDocument } from "@rozenblum/shared";
+import { safeHttpUrl } from "./safe-url";
 
 export function youtubeId(value: string): string | null {
   try {
@@ -44,10 +45,9 @@ const BookmarkBlock = createReactBlockSpec(
   { type: "bookmark", propSchema: { url: { default: "" }, title: { default: "" }, channel: { default: "" }, videoId: { default: "" } }, content: "none" },
   { render: ({ block }) => {
     const { url, title } = block.props;
-    let safe = false;
-    try { safe = ["https:", "http:"].includes(new URL(url).protocol); } catch { /* invalid URL */ }
+    const safe = safeHttpUrl(url);
     return <div contentEditable={false} className="my-3 w-full min-w-0 overflow-hidden rounded-lg border border-[#d8c6aa] bg-white">
-      {safe ? <a href={url} target="_blank" rel="noopener noreferrer" className="flex min-w-0 flex-col gap-4 p-3 text-[#173B6C] no-underline hover:bg-[#faf8f5] sm:flex-row">
+      {safe ? <a href={safe} target="_blank" rel="noopener noreferrer" className="flex min-w-0 flex-col gap-4 p-3 text-[#173B6C] no-underline hover:bg-[#faf8f5] sm:flex-row">
         {/^[A-Za-z0-9_-]{11}$/.test(block.props.videoId) && <img src={`https://i.ytimg.com/vi/${block.props.videoId}/hqdefault.jpg`} alt="" loading="lazy" className="aspect-video w-full shrink-0 rounded object-cover sm:w-44" />}
         <span className="min-w-0 self-center"><strong className="block break-words text-sm leading-snug">{title || url}</strong>{block.props.channel && <span className="mt-1 block text-xs text-[#64748b]">{block.props.channel}</span>}<span className="mt-2 block break-all text-[11px] text-[#7a8493]">{url}</span></span>
       </a> : <span className="block p-4">Enlace inválido</span>}
@@ -71,7 +71,9 @@ export function legacyToBlockNote(blocks: LessonBlockDTO[] = []): LessonPartialB
       case "quote": return [{ type: "quote", content }];
       case "code": return [{ type: "codeBlock", content }];
       case "toggle": return [{ type: "toggleListItem", content, children: block.toggleContent ? [{ type: "paragraph", content: block.toggleContent }] : [] }];
-      case "link": return [{ type: "paragraph", content: [{ type: "link", href: content, content }] }];
+      case "link": return safeHttpUrl(content)
+        ? [{ type: "paragraph", content: [{ type: "link", href: content, content }] }]
+        : [{ type: "paragraph", content }];
       default: return [{ type: "paragraph", content }];
     }
   });

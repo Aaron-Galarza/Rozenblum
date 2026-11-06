@@ -3,10 +3,13 @@
 export function LoadingScreen({ label = "Cargando..." }: { label?: string }) {
   return (
     <div
+      role="status"
+      aria-live="polite"
       className="min-h-[60vh] flex flex-col items-center justify-center gap-4"
       style={{ backgroundColor: "#FAF8F5", fontFamily: "'Roboto', sans-serif" }}
     >
       <svg
+        aria-hidden="true"
         className="animate-spin w-8 h-8"
         viewBox="0 0 24 24"
         fill="none"

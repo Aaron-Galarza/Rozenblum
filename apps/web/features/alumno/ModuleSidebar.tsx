@@ -35,7 +35,7 @@ export default function ModuleSidebar({
   const router = useRouter();
 
   return (
-    <aside className="w-72 flex-shrink-0 overflow-y-auto" style={{ backgroundColor: "#FFFFFF", borderRight: "1px solid #E0E0E0" }}>
+    <aside className="w-full max-h-[40vh] flex-shrink-0 overflow-y-auto lg:w-72 lg:max-h-none" style={{ backgroundColor: "#FFFFFF", borderRight: "1px solid #E0E0E0" }}>
       <div className="p-4">
         <button
           onClick={() => router.push("/catalogo")}

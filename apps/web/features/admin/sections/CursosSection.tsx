@@ -5,6 +5,7 @@ import type { AdminCursoDTO, AdminProfesorDTO, CourseDTO } from "@rozenblum/shar
 import { errorMessage } from "../../../lib/api";
 import Modal from "../../../components/ui/Modal";
 import Toast from "../../../components/ui/Toast";
+import { useToast } from "../../../lib/use-toast";
 import ImagePicker from "../../../components/ui/ImagePicker";
 
 type CursosSectionProps = {
@@ -21,11 +22,10 @@ type ModalState = { type: "ver" | "crear" | "editar"; item?: AdminCursoDTO } | n
 export default function CursosSection({ cursos, profesores, onCreate, onLoadCourse, onUpdate, onToggleStatus, onDelete }: CursosSectionProps) {
   const [modal, setModal] = useState<ModalState>(null);
   const [form, setForm] = useState({ name: "", professorEmail: "", description: "", price: "", duration: "", level: "", img: "" });
-  const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
+  const { toast, showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
 
-  const showToast = (text: string, error = false) => { setToast({ text, error }); setTimeout(() => setToast(null), 2500); };
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);

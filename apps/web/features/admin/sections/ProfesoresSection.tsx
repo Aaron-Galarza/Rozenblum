@@ -5,6 +5,7 @@ import type { AdminProfesorDTO } from "@rozenblum/shared";
 import { errorMessage } from "../../../lib/api";
 import Modal from "../../../components/ui/Modal";
 import Toast from "../../../components/ui/Toast";
+import { useToast } from "../../../lib/use-toast";
 import ImagePicker from "../../../components/ui/ImagePicker";
 
 const inputStyle: React.CSSProperties = { border: "1px solid rgba(23,59,108,0.2)", borderRadius: 4, color: "#173B6C", backgroundColor: "#FAF8F5" };
@@ -21,10 +22,9 @@ type ModalState = { type: "ver" | "editar" | "crear"; item?: AdminProfesorDTO } 
 export default function ProfesoresSection({ profesores, onCreate, onUpdate, onToggleStatus, onDelete }: ProfesoresSectionProps) {
   const [modal, setModal] = useState<ModalState>(null);
   const [form, setForm] = useState({ name: "", email: "", password: "", img: "" });
-  const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
+  const { toast, showToast } = useToast();
   const [busy, setBusy] = useState(false);
 
-  const showToast = (text: string, error = false) => { setToast({ text, error }); setTimeout(() => setToast(null), 2500); };
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);

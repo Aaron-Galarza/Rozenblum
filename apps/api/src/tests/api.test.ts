@@ -145,7 +145,7 @@ test("health and request IDs work without a live database in isolated tests", as
   assert.ok(response.headers.get("x-request-id"));
 });
 
-test("login requires a valid email, password, and role", async () => {
+test("login authenticates without a role and remains compatible with existing clients", async () => {
   const missing = await api(server.baseUrl, "/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ role: "admin", email: adminEmail }),
@@ -156,6 +156,22 @@ test("login requires a valid email, password, and role", async () => {
     body: JSON.stringify({ role: "admin", email: adminEmail, password: "wrong" }),
   });
   assert.equal(wrong.status, 401);
+  const unified = await api<{ data: { token: string; user: { role: string } } }>(server.baseUrl, "/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email: adminEmail, password }),
+  });
+  assert.equal(unified.status, 200);
+  assert.equal(unified.body.data.user.role, "admin");
+  assert.ok(unified.body.data.token);
+  for (const [role, email, candidate] of [
+    ["alumno", studentEmail, studentDni],
+    ["profesor", teacherEmail, password],
+    ["admin", adminEmail, password],
+  ] as const) {
+    const result = await loginService({ email, password: candidate });
+    assert.equal(result.user.role, role);
+  }
+  await assert.rejects(loginService({ role: "admin", email: studentEmail, password: studentDni }));
   assert.equal(loginSchema.safeParse({
     role: "admin", email: adminEmail, password: "x".repeat(129),
   }).success, false);

@@ -1,7 +1,9 @@
-import type { ApiFailure, SessionDTO, UserDTO } from "@rozenblum/shared";
+import type { SessionDTO, UserDTO } from "@rozenblum/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const SESSION_KEY = "rozenblum.session";
+export const SESSION_CHANGED = "rozenblum:session-changed";
+let sessionRevision = 0;
 
 export type Session = SessionDTO;
 export type SessionUser = UserDTO;
@@ -25,7 +27,8 @@ export function getSession(): Session | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Session;
-    if (!parsed?.token || !parsed?.user) return null;
+    if (typeof parsed?.token !== "string" || !parsed.token || !parsed.user ||
+        !["alumno", "profesor", "admin"].includes(parsed.user.role)) return null;
     return parsed;
   } catch {
     return null;
@@ -34,13 +37,68 @@ export function getSession(): Session | null {
 
 export function saveSession(session: Session) {
   window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  sessionRevision += 1;
+  window.dispatchEvent(new Event(SESSION_CHANGED));
 }
 
 export function clearSession() {
   window.localStorage.removeItem(SESSION_KEY);
+  sessionRevision += 1;
+  window.dispatchEvent(new Event(SESSION_CHANGED));
+}
+
+function redirectToLogin(expired = false) {
+  if (window.location.pathname !== "/login") {
+    const next = window.location.pathname + window.location.search;
+    window.location.assign(`/login?next=${encodeURIComponent(next)}${expired ? "&session=expired" : ""}`);
+  }
+}
+
+function invalidateSession(token: string, revision: number) {
+  if (typeof window === "undefined" || sessionRevision !== revision || getSession()?.token !== token) return;
+  clearSession();
+  redirectToLogin(true);
+}
+
+function handleMissingSession() {
+  if (typeof window === "undefined") return;
+  clearSession();
+  redirectToLogin();
 }
 
 type RequestOptions = Omit<RequestInit, "body"> & { body?: unknown; auth?: boolean };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function responseData<T>(
+  response: Response,
+  fallback = { code: "ERROR", message: "Ocurrió un error inesperado." },
+): Promise<T> {
+  let payload: unknown;
+  try {
+    const text = await response.text();
+    payload = text ? JSON.parse(text) : undefined;
+  } catch {
+    // A failed read or invalid JSON is handled below without exposing the body.
+  }
+
+  if (!response.ok) {
+    const failure = isRecord(payload) && isRecord(payload.error) ? payload.error : undefined;
+    throw new ApiClientError(
+      response.status,
+      typeof failure?.code === "string" ? failure.code : fallback.code,
+      typeof failure?.message === "string" ? failure.message : fallback.message,
+      failure?.details,
+    );
+  }
+
+  if (!isRecord(payload) || !Object.hasOwn(payload, "data")) {
+    throw new ApiClientError(response.status, "INVALID_RESPONSE", "El servidor devolvió una respuesta inválida.");
+  }
+  return payload.data as T;
+}
 
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { body, auth = false, headers, ...rest } = options;
@@ -48,13 +106,17 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   const method = rest.method ?? "GET";
   const requestHeaders = new Headers(headers);
   requestHeaders.set("content-type", "application/json");
+  let requestToken: string | undefined;
+  const requestRevision = sessionRevision;
 
   if (auth) {
     const session = getSession();
     if (!session) {
+      handleMissingSession();
       throw new ApiClientError(401, "UNAUTHORIZED", "Tu sesión expiró. Volvé a ingresar.");
     }
     requestHeaders.set("authorization", `Bearer ${session.token}`);
+    requestToken = session.token;
   }
 
   let response: Response;
@@ -65,7 +127,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    if (process.env.NODE_ENV === "development") console.debug("[api]", method, path.split("?")[0], "network_error");
+    if (process.env.NODE_ENV === "development") console.debug("[api]", method, "network_error");
     throw new ApiClientError(
       0,
       "NETWORK_ERROR",
@@ -74,28 +136,16 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   }
 
   if (process.env.NODE_ENV === "development") {
-    console.debug("[api]", method, path.split("?")[0], response.status,
+    console.debug("[api]", method, response.status,
       `${Math.round(performance.now() - started)}ms`, response.headers.get("x-request-id") ?? "");
   }
 
+  if (response.status === 401 && requestToken) invalidateSession(requestToken, requestRevision);
   if (response.status === 204) {
     return undefined as T;
   }
 
-  const text = await response.text();
-  const payload = text ? (JSON.parse(text) as { data?: T } & ApiFailure) : undefined;
-
-  if (!response.ok) {
-    const failure = payload as ApiFailure | undefined;
-    throw new ApiClientError(
-      response.status,
-      failure?.error?.code ?? "ERROR",
-      failure?.error?.message ?? "Ocurrió un error inesperado.",
-      failure?.error?.details,
-    );
-  }
-
-  return (payload as { data: T }).data;
+  return responseData<T>(response);
 }
 
 export function errorMessage(error: unknown): string {
@@ -121,7 +171,11 @@ export type ImageCategory = "courses" | "professors" | "lessons" | "brand";
 export async function uploadGalleryImage(category: ImageCategory, file: File): Promise<GalleryImage> {
   const started = performance.now();
   const session = getSession();
-  if (!session) throw new ApiClientError(401, "UNAUTHORIZED", "Tu sesión expiró. Volvé a ingresar.");
+  const requestRevision = sessionRevision;
+  if (!session) {
+    handleMissingSession();
+    throw new ApiClientError(401, "UNAUTHORIZED", "Tu sesión expiró. Volvé a ingresar.");
+  }
   if (file.size === 0 || file.size > 8 * 1024 * 1024 ||
       !["image/png", "image/jpeg", "image/webp", "image/avif"].includes(file.type)) {
     throw new ApiClientError(400, "INVALID_IMAGE", "Elegí una imagen PNG, JPEG, WebP o AVIF de hasta 8 MB.");
@@ -141,9 +195,13 @@ export async function uploadGalleryImage(category: ImageCategory, file: File): P
     console.debug("[api]", "POST", `/api/media/${category}`, response.status,
       `${Math.round(performance.now() - started)}ms`, response.headers.get("x-request-id") ?? "");
   }
-  const payload = await response.json() as { data?: GalleryImage; error?: { code: string; message: string } };
-  if (!response.ok || !payload.data) {
-    throw new ApiClientError(response.status, payload.error?.code ?? "UPLOAD_ERROR", payload.error?.message ?? "No se pudo subir la imagen.");
+  if (response.status === 401) invalidateSession(session.token, requestRevision);
+  const data = await responseData<GalleryImage>(response, {
+    code: "UPLOAD_ERROR",
+    message: "No se pudo subir la imagen.",
+  });
+  if (!data) {
+    throw new ApiClientError(response.status, "UPLOAD_ERROR", "No se pudo subir la imagen.");
   }
-  return payload.data;
+  return data;
 }

@@ -1,12 +1,8 @@
 // ── Shared TypeScript types ────────────────────────────────────────────────────
 import type { ReactNode } from "react";
-import type { LessonBlockDTO } from "@rozenblum/shared";
+import type { ChatMessageDTO, CourseSyllabusModule, LessonDTO } from "@rozenblum/shared";
 
-export type CourseModule = {
-  mod: number;
-  title: string;
-  lessons: string[];
-};
+export type CourseModule = CourseSyllabusModule;
 
 export type Course = {
   id: number;
@@ -43,15 +39,7 @@ export type PracticeArea = {
   casos: PracticeAreaCase[];
 };
 
-export type Lesson = {
-  id: string;
-  title: string;
-  type: string;
-  done: boolean;
-  highlight?: boolean;
-  content?: LessonBlockDTO[];
-  document?: import("@rozenblum/shared").RichLessonDocument;
-};
+export type Lesson = Omit<LessonDTO, "position">;
 
 export type CourseModuleView = {
   id: number;
@@ -60,12 +48,7 @@ export type CourseModuleView = {
   lessons: Lesson[];
 };
 
-export type ChatMessage = {
-  id: string;
-  from: string;
-  text: string;
-  time: string;
-};
+export type ChatMessage = ChatMessageDTO;
 
 export type ProfesorStudent = {
   name: string;

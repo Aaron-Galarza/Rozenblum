@@ -12,6 +12,7 @@ import { apiFetch, errorMessage } from "../../lib/api";
 import { useSession } from "../../lib/use-session";
 import { EmptyState, ErrorPanel, LoadingScreen } from "../../components/ui/AsyncState";
 import Toast from "../../components/ui/Toast";
+import { useToast } from "../../lib/use-toast";
 
 export default function AlumnoView() {
   const { session, ready } = useSession("alumno");
@@ -25,12 +26,10 @@ export default function AlumnoView() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [chatSending, setChatSending] = useState(false);
-  const [toast, setToast] = useState("");
-
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(""), 2600);
-  };
+  const { toast, showToast } = useToast(2600);
+  const [chatError, setChatError] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatRetry, setChatRetry] = useState(0);
 
   const enrollment = useMemo(
     () => enrollments.find((item) => item.id === selectedEnrollmentId) ?? null,
@@ -99,12 +98,15 @@ export default function AlumnoView() {
     );
 
     setMessages([]);
+    setChatError("");
+    setChatLoading(true);
     let active = true;
     apiFetch<ChatMessageDTO[]>(`/api/student/enrollments/${enrollment.id}/messages`, { auth: true })
       .then((data) => { if (active) setMessages(data.map((message) => ({ ...message, from: message.from }))); })
-      .catch(() => { if (active) setMessages([]); });
+      .catch((err) => { if (active) setChatError(errorMessage(err)); })
+      .finally(() => { if (active) setChatLoading(false); });
     return () => { active = false; };
-  }, [enrollment?.id]);
+  }, [enrollment?.id, chatRetry]);
 
   const toggleModule = (id: number) =>
     setExpandedModules((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]));
@@ -145,7 +147,7 @@ export default function AlumnoView() {
           : `✓ Lección completada · ${updated.progress}% del curso`,
       );
     } catch (err) {
-      showToast(errorMessage(err));
+      showToast(errorMessage(err), true);
     } finally {
       setSaving(false);
     }
@@ -161,9 +163,10 @@ export default function AlumnoView() {
         { method: "POST", auth: true, body: { text } },
       );
       setMessages(updated.map((message) => ({ ...message, from: message.from })));
+      setChatError("");
       setChatMsg("");
     } catch (err) {
-      showToast(errorMessage(err));
+      showToast(errorMessage(err), true);
     } finally {
       setChatSending(false);
     }
@@ -206,7 +209,7 @@ export default function AlumnoView() {
         />
       ) : (
         <>
-          <div className="flex flex-1 overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
             <ModuleSidebar
               modules={modules}
               expandedModules={expandedModules}
@@ -243,6 +246,9 @@ export default function AlumnoView() {
 
             <ChatSidebar
               messages={messages}
+              loading={chatLoading}
+              error={chatError}
+              onRetry={() => setChatRetry((value) => value + 1)}
               chatMsg={chatMsg}
               onChatMsgChange={setChatMsg}
               onSend={() => void sendMessage()}
@@ -257,7 +263,7 @@ export default function AlumnoView() {
         </>
       )}
 
-      {toast && <Toast message={toast} />}
+      {toast && <Toast message={toast.text} error={toast.error} />}
 
       <SimpleFooter />
     </div>
