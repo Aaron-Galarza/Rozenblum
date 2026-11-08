@@ -10,6 +10,7 @@ import Toast from "../../components/ui/Toast";
 import { useToast } from "../../lib/use-toast";
 import ImagePicker from "../../components/ui/ImagePicker";
 import { useLiveChat } from "../../lib/use-live-chat";
+import { useChatScroll } from "../../lib/use-chat-scroll";
 
 type LessonPayload = { title: string; type: LessonType; content: LessonBlockDTO[]; document: RichLessonDocument };
 
@@ -87,6 +88,7 @@ export default function CourseEditor({
     : null;
   const { messages: chatMessages, loading: chatLoading, sending: chatSending,
     error: chatError, sendMessage: postChatMessage, retry: retryChat } = useLiveChat(chatPath);
+  const chatScroll = useChatScroll<HTMLDivElement>(chatMessages, chatPath);
 
   const run = async (action: () => Promise<void>, message: string) => {
     if (busy) return;
@@ -427,26 +429,26 @@ export default function CourseEditor({
 
       {/* Student "Chat" modal */}
       {studentModal?.type === "chat" && (
-        <Modal title={`Chat con ${studentModal.student.name}`} onClose={() => setStudentModal(null)}>
+        <Modal title={`Chat con ${studentModal.student.name}`} onClose={() => setStudentModal(null)} variant="chat">
           {chatLoading && <p role="status" className="mb-3 text-xs" style={{ color: "#173B6C" }}>Cargando mensajes...</p>}
           {chatError && (
             <div role="alert" className="mb-3 text-xs" style={{ color: "#72132C" }}>
               {chatError} <button type="button" onClick={retryChat} className="underline">Reintentar</button>
             </div>
           )}
-          <div className="space-y-3 max-h-56 overflow-y-auto mb-3">
+          <div ref={chatScroll.ref} onScroll={chatScroll.onScroll} role="log" aria-label="Mensajes de la conversación" className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain py-2 pr-1">
             {!chatLoading && !chatError && chatMessages.length === 0 && (
               <p className="text-xs" style={{ color: "rgba(23,59,108,0.55)" }}>No hay mensajes todavía.</p>
             )}
             {chatMessages.map((msg) => (
               <div key={msg.id} className={`flex ${msg.from === "prof" ? "justify-end" : "justify-start"}`}>
-                <div className="px-3 py-2 text-xs rounded-lg max-w-[85%]" style={msg.from === "prof" ? { backgroundColor: "#B58A43", color: "#FAF8F5" } : { backgroundColor: "#F0F0F0", color: "#173B6C" }}>
+                <div className="max-w-[85%] break-words rounded-lg px-3 py-2 text-sm leading-relaxed" style={msg.from === "prof" ? { backgroundColor: "#B58A43", color: "#FAF8F5" } : { backgroundColor: "#F0F0F0", color: "#173B6C" }}>
                   {msg.text}
                 </div>
               </div>
             ))}
           </div>
-          <div className="flex gap-2">
+          <div className="flex shrink-0 gap-2 border-t border-[#e5ded2] pt-4">
             <input
               autoFocus
               aria-label={`Mensaje para ${studentModal.student.name}`}
@@ -454,14 +456,14 @@ export default function CourseEditor({
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !chatSending) void sendChat(); }}
               placeholder="Escribe tu respuesta..."
-              className="flex-1 px-3 py-2 text-xs outline-none"
+              className="min-w-0 flex-1 px-3 py-2 text-base outline-none sm:text-sm"
               style={{ border: "1px solid rgba(23,59,108,0.2)", borderRadius: 4, color: "#173B6C" }}
               onFocus={(e) => (e.currentTarget.style.borderColor = "#B58A43")}
               onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(23,59,108,0.2)")}
             />
             <button type="button" onClick={() => void sendChat()} disabled={chatSending || !chatInput.trim()}
               aria-label={chatSending ? "Enviando mensaje" : "Enviar mensaje"}
-              className="px-3 py-2 text-xs font-bold hover:brightness-110 transition-all disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-11 min-w-11 px-3 py-2 text-sm font-bold hover:brightness-110 transition-all disabled:cursor-not-allowed disabled:opacity-60"
               style={{ backgroundColor: "#B58A43", color: "#173B6C", borderRadius: 4 }}>
               {chatSending ? "…" : "→"}
             </button>

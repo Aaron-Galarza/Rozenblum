@@ -156,7 +156,7 @@ export default function AlumnoView() {
   if (!ready) return <LoadingScreen label="Verificando sesión..." />;
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: "#FAF8F5", fontFamily: "'Roboto', sans-serif" }}>
+    <div className="flex h-dvh flex-col overflow-hidden" style={{ backgroundColor: "#FAF8F5", fontFamily: "'Roboto', sans-serif" }}>
       <ClassroomHeader
         breadcrumb={
           enrollment && selectedLesson ? (
@@ -226,6 +226,7 @@ export default function AlumnoView() {
             />
 
             <ChatSidebar
+              conversationKey={chatPath}
               messages={messages}
               loading={chatLoading}
               sending={chatSending}

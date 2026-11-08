@@ -1,6 +1,7 @@
 "use client";
 
 import type { ChatMessage } from "../../types";
+import { useChatScroll } from "../../lib/use-chat-scroll";
 
 type ChatSidebarProps = {
   messages: ChatMessage[];
@@ -11,24 +12,26 @@ type ChatSidebarProps = {
   sending: boolean;
   error: string;
   onRetry: () => void;
+  conversationKey: string | null;
 };
 
-export default function ChatSidebar({ messages, chatMsg, onChatMsgChange, onSend, loading, sending, error, onRetry }: ChatSidebarProps) {
+export default function ChatSidebar({ messages, chatMsg, onChatMsgChange, onSend, loading, sending, error, onRetry, conversationKey }: ChatSidebarProps) {
+  const chatScroll = useChatScroll<HTMLDivElement>(messages, conversationKey);
   return (
-    <aside className="w-full min-h-72 flex-shrink-0 flex flex-col lg:w-80 lg:min-h-0" style={{ backgroundColor: "#FFFFFF", borderLeft: "2px solid #B58A43" }}>
+    <aside className="flex h-[min(34rem,65dvh)] min-h-64 w-full flex-shrink-0 flex-col lg:h-auto lg:min-h-0 lg:w-80" style={{ backgroundColor: "#FFFFFF", borderLeft: "2px solid #B58A43" }}>
       <div className="px-5 py-4 flex-shrink-0" style={{ borderBottom: "1px solid rgba(23,59,108,0.08)" }}>
         <h4 className="text-lg font-semibold" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Contactar al Profesor</h4>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={chatScroll.ref} onScroll={chatScroll.onScroll} role="log" aria-label="Mensajes de la conversación" className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">
         {loading ? <p role="status" className="text-sm">Cargando mensajes...</p> : error ? (
           <div role="alert" className="text-sm"><p>{error}</p><button type="button" onClick={onRetry} className="underline">Reintentar</button></div>
         ) : messages.length === 0 ? <p className="text-sm">Todavía no hay mensajes.</p> : null}
         {messages.map((msg) => (
           <div key={msg.id} className={`flex flex-col ${msg.from === "me" ? "items-end" : "items-start"}`}>
             <div
-              className="px-4 py-3 text-sm leading-relaxed max-w-[90%] rounded-lg"
+              className="max-w-[90%] break-words rounded-lg px-4 py-3 text-sm leading-relaxed"
               style={msg.from === "me"
                 ? { backgroundColor: "#B58A43", color: "#FAF8F5" }
                 : { backgroundColor: "#F0F0F0", color: "#173B6C" }}
