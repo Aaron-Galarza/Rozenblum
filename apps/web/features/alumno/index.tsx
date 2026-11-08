@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { ChatMessageDTO, EnrollmentDTO } from "@rozenblum/shared";
-import type { ChatMessage, CourseModuleView, Lesson } from "../../types";
+import type { EnrollmentDTO } from "@rozenblum/shared";
+import type { CourseModuleView, Lesson } from "../../types";
 import ClassroomHeader from "../../components/layout/ClassroomHeader";
 import SimpleFooter from "../../components/layout/SimpleFooter";
 import ModuleSidebar from "./ModuleSidebar";
@@ -13,6 +13,7 @@ import { useSession } from "../../lib/use-session";
 import { EmptyState, ErrorPanel, LoadingScreen } from "../../components/ui/AsyncState";
 import Toast from "../../components/ui/Toast";
 import { useToast } from "../../lib/use-toast";
+import { useLiveChat } from "../../lib/use-live-chat";
 
 export default function AlumnoView() {
   const { session, ready } = useSession("alumno");
@@ -20,21 +21,21 @@ export default function AlumnoView() {
   const [selectedEnrollmentId, setSelectedEnrollmentId] = useState<string>("");
   const [selectedLessonId, setSelectedLessonId] = useState<string>("");
   const [expandedModules, setExpandedModules] = useState<number[]>([]);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatMsg, setChatMsg] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [chatSending, setChatSending] = useState(false);
   const { toast, showToast } = useToast(2600);
-  const [chatError, setChatError] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatRetry, setChatRetry] = useState(0);
 
   const enrollment = useMemo(
     () => enrollments.find((item) => item.id === selectedEnrollmentId) ?? null,
     [enrollments, selectedEnrollmentId],
   );
+  const chatPath = enrollment && enrollment.status !== "Pendiente" && enrollment.status !== "Revocado"
+    ? `/api/student/enrollments/${encodeURIComponent(enrollment.id)}/messages`
+    : null;
+  const { messages, loading: chatLoading, sending: chatSending, error: chatError,
+    sendMessage: postChatMessage, retry: retryChat } = useLiveChat(chatPath);
 
   const modules: CourseModuleView[] = useMemo(
     () =>
@@ -84,10 +85,7 @@ export default function AlumnoView() {
   }, [ready]);
 
   useEffect(() => {
-    if (!enrollment) {
-      setMessages([]);
-      return;
-    }
+    if (!enrollment) return;
     const firstAvailable = enrollment.modules
       .filter((mod) => mod.status !== "locked")
       .flatMap((mod) => mod.lessons)[0];
@@ -97,16 +95,7 @@ export default function AlumnoView() {
         : firstAvailable?.id ?? "",
     );
 
-    setMessages([]);
-    setChatError("");
-    setChatLoading(true);
-    let active = true;
-    apiFetch<ChatMessageDTO[]>(`/api/student/enrollments/${enrollment.id}/messages`, { auth: true })
-      .then((data) => { if (active) setMessages(data.map((message) => ({ ...message, from: message.from }))); })
-      .catch((err) => { if (active) setChatError(errorMessage(err)); })
-      .finally(() => { if (active) setChatLoading(false); });
-    return () => { active = false; };
-  }, [enrollment?.id, chatRetry]);
+  }, [enrollment]);
 
   const toggleModule = (id: number) =>
     setExpandedModules((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]));
@@ -156,19 +145,10 @@ export default function AlumnoView() {
   const sendMessage = async () => {
     if (!enrollment || !chatMsg.trim() || chatSending) return;
     const text = chatMsg.trim();
-    setChatSending(true);
     try {
-      const updated = await apiFetch<ChatMessageDTO[]>(
-        `/api/student/enrollments/${enrollment.id}/messages`,
-        { method: "POST", auth: true, body: { text } },
-      );
-      setMessages(updated.map((message) => ({ ...message, from: message.from })));
-      setChatError("");
-      setChatMsg("");
+      if (await postChatMessage(text)) setChatMsg((current) => current.trim() === text ? "" : current);
     } catch (err) {
       showToast(errorMessage(err), true);
-    } finally {
-      setChatSending(false);
     }
   };
 
@@ -247,8 +227,9 @@ export default function AlumnoView() {
             <ChatSidebar
               messages={messages}
               loading={chatLoading}
+              sending={chatSending}
               error={chatError}
-              onRetry={() => setChatRetry((value) => value + 1)}
+              onRetry={retryChat}
               chatMsg={chatMsg}
               onChatMsgChange={setChatMsg}
               onSend={() => void sendMessage()}

@@ -1,6 +1,6 @@
 // ── Shared TypeScript types ────────────────────────────────────────────────────
 import type { ReactNode } from "react";
-import type { ChatMessageDTO, CourseSyllabusModule, LessonDTO } from "@rozenblum/shared";
+import type { ChatMessageDTO, CourseSyllabusModule, LessonDTO, TeacherStudentDTO } from "@rozenblum/shared";
 
 export type CourseModule = CourseSyllabusModule;
 
@@ -50,13 +50,7 @@ export type CourseModuleView = {
 
 export type ChatMessage = ChatMessageDTO;
 
-export type ProfesorStudent = {
-  name: string;
-  email: string;
-  progress: number;
-  last: string;
-  msgs: number;
-};
+export type ProfesorStudent = TeacherStudentDTO;
 
 export type ProfesorNotification = {
   icon: string;

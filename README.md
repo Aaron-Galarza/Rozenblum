@@ -115,6 +115,10 @@ El contenido de inicio y los ajustes son fuentes distintas: `site_content` conti
 
 El token vence a las ocho horas. Las rutas de alumno, profesor y administrador exigen el rol correspondiente; un rol válido sin permiso devuelve `403`. El login y el cambio de contraseña están limitados por IP a 20 solicitudes cada 15 minutos; al superar el límite devuelve `429`. El checkout está limitado a 15 solicitudes cada 10 minutos.
 
+### Chat del aula
+
+Cada conversación pertenece a una inscripción y un curso. El alumno usa `GET/POST /api/student/enrollments/:id/messages`; el profesor usa `GET/POST /api/teacher/courses/:courseId/students/:enrollmentId/messages`. El profesor puede iniciar el chat de una inscripción activa. La web consulta únicamente la conversación abierta cada 3 segundos mientras la pestaña está visible y la actualiza al volver a ella. No requiere WebSockets ni un servicio adicional; los mensajes pueden tardar unos segundos en aparecer según la red.
+
 ## Primer administrador
 
 No existe un endpoint público para crear administradores. En una base nueva:

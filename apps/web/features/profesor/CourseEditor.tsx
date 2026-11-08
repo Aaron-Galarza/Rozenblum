@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import dynamic from "next/dynamic";
-import type { ChatMessageDTO, ConversationDTO, LessonBlockDTO, LessonType, RichLessonDocument } from "@rozenblum/shared";
+import type { LessonBlockDTO, LessonType, RichLessonDocument } from "@rozenblum/shared";
 import type { EditableModule, EditableLesson, ProfesorStudent, SortDir } from "../../types";
 const LessonEditorModal = dynamic(() => import("./RichLessonEditorModal"), { ssr: false });
 import Modal from "../../components/ui/Modal";
 import Toast from "../../components/ui/Toast";
 import { useToast } from "../../lib/use-toast";
 import ImagePicker from "../../components/ui/ImagePicker";
+import { useLiveChat } from "../../lib/use-live-chat";
 
 type LessonPayload = { title: string; type: LessonType; content: LessonBlockDTO[]; document: RichLessonDocument };
 
@@ -20,7 +21,6 @@ type CourseEditorProps = {
   published: boolean;
   modules: EditableModule[];
   students: ProfesorStudent[];
-  conversations: ConversationDTO[];
   expandedModules: number[];
   sortCol: string;
   sortDir: SortDir;
@@ -36,7 +36,6 @@ type CourseEditorProps = {
   onUpdateLesson: (moduleId: number, lessonId: string, payload: LessonPayload) => Promise<void>;
   onDeleteLesson: (moduleId: number, lessonId: string) => Promise<void>;
   onMoveLesson: (moduleId: number, lessonId: string, dir: "up" | "down") => Promise<void>;
-  onSendMessage: (conversationId: string, text: string) => Promise<ChatMessageDTO[]>;
 };
 
 type StudentModal = { type: "ver" | "chat"; student: ProfesorStudent } | null;
@@ -50,7 +49,6 @@ export default function CourseEditor({
   published,
   modules,
   students,
-  conversations,
   expandedModules,
   sortCol,
   sortDir,
@@ -66,7 +64,6 @@ export default function CourseEditor({
   onUpdateLesson,
   onDeleteLesson,
   onMoveLesson,
-  onSendMessage,
 }: CourseEditorProps) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorMode, setEditorMode] = useState<"new" | "edit">("new");
@@ -77,7 +74,6 @@ export default function CourseEditor({
   } | null>(null);
   const [studentModal, setStudentModal] = useState<StudentModal>(null);
   const [chatInput, setChatInput] = useState("");
-  const [chatMessages, setChatMessages] = useState<ChatMessageDTO[]>([]);
   const [showNewModule, setShowNewModule] = useState(false);
   const [newModuleTitle, setNewModuleTitle] = useState("");
   const [renaming, setRenaming] = useState<{ id: number; title: string } | null>(null);
@@ -86,15 +82,11 @@ export default function CourseEditor({
   const [courseForm, setCourseForm] = useState({ title: courseTitle, description: courseDescription, img: courseImage });
   const { toast, showToast } = useToast();
   const [busy, setBusy] = useState(false);
-
-  const selectedConversation = studentModal?.type === "chat"
-    ? conversations.find((item) => item.courseId === courseId &&
-      item.peerEmail.toLowerCase() === studentModal.student.email.toLowerCase())
-    : undefined;
-
-  useEffect(() => {
-    setChatMessages(selectedConversation?.messages ?? []);
-  }, [studentModal, selectedConversation]);
+  const chatPath = studentModal?.type === "chat"
+    ? `/api/teacher/courses/${courseId}/students/${encodeURIComponent(studentModal.student.id)}/messages`
+    : null;
+  const { messages: chatMessages, loading: chatLoading, sending: chatSending,
+    error: chatError, sendMessage: postChatMessage, retry: retryChat } = useLiveChat(chatPath);
 
   const run = async (action: () => Promise<void>, message: string) => {
     if (busy) return;
@@ -122,16 +114,10 @@ export default function CourseEditor({
   };
 
   const sendChat = async () => {
-    if (!chatInput.trim() || !studentModal) return;
-    if (!selectedConversation) {
-      showToast("Todavía no hay una conversación con este alumno.");
-      return;
-    }
+    if (!chatInput.trim() || !studentModal || chatSending) return;
     const text = chatInput.trim();
     try {
-      const updated = await onSendMessage(selectedConversation.id, text);
-      setChatMessages(updated);
-      setChatInput("");
+      if (await postChatMessage(text)) setChatInput((current) => current.trim() === text ? "" : current);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "No se pudo enviar el mensaje.", true);
     }
@@ -389,7 +375,7 @@ export default function CourseEditor({
                   <td className="px-4 py-3">
                     <div className="flex gap-3">
                       <button onClick={() => setStudentModal({ type: "ver", student: s })} className="text-xs font-medium underline underline-offset-1 hover:opacity-60" style={{ color: "#173B6C" }}>Ver</button>
-                      <button onClick={() => setStudentModal({ type: "chat", student: s })} className="text-xs font-medium underline underline-offset-1 hover:opacity-60" style={{ color: "#173B6C" }}>Chat</button>
+                      <button onClick={() => { setChatInput(""); setStudentModal({ type: "chat", student: s }); }} className="text-xs font-medium underline underline-offset-1 hover:opacity-60" style={{ color: "#173B6C" }}>Chat</button>
                     </div>
                   </td>
                 </tr>
@@ -442,8 +428,14 @@ export default function CourseEditor({
       {/* Student "Chat" modal */}
       {studentModal?.type === "chat" && (
         <Modal title={`Chat con ${studentModal.student.name}`} onClose={() => setStudentModal(null)}>
+          {chatLoading && <p role="status" className="mb-3 text-xs" style={{ color: "#173B6C" }}>Cargando mensajes...</p>}
+          {chatError && (
+            <div role="alert" className="mb-3 text-xs" style={{ color: "#72132C" }}>
+              {chatError} <button type="button" onClick={retryChat} className="underline">Reintentar</button>
+            </div>
+          )}
           <div className="space-y-3 max-h-56 overflow-y-auto mb-3">
-            {chatMessages.length === 0 && (
+            {!chatLoading && !chatError && chatMessages.length === 0 && (
               <p className="text-xs" style={{ color: "rgba(23,59,108,0.55)" }}>No hay mensajes todavía.</p>
             )}
             {chatMessages.map((msg) => (
@@ -457,17 +449,21 @@ export default function CourseEditor({
           <div className="flex gap-2">
             <input
               autoFocus
+              aria-label={`Mensaje para ${studentModal.student.name}`}
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") void sendChat(); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && !chatSending) void sendChat(); }}
               placeholder="Escribe tu respuesta..."
               className="flex-1 px-3 py-2 text-xs outline-none"
               style={{ border: "1px solid rgba(23,59,108,0.2)", borderRadius: 4, color: "#173B6C" }}
               onFocus={(e) => (e.currentTarget.style.borderColor = "#B58A43")}
               onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(23,59,108,0.2)")}
             />
-            <button onClick={() => void sendChat()} className="px-3 py-2 text-xs font-bold hover:brightness-110 transition-all" style={{ backgroundColor: "#B58A43", color: "#173B6C", borderRadius: 4 }}>
-              →
+            <button type="button" onClick={() => void sendChat()} disabled={chatSending || !chatInput.trim()}
+              aria-label={chatSending ? "Enviando mensaje" : "Enviar mensaje"}
+              className="px-3 py-2 text-xs font-bold hover:brightness-110 transition-all disabled:cursor-not-allowed disabled:opacity-60"
+              style={{ backgroundColor: "#B58A43", color: "#173B6C", borderRadius: 4 }}>
+              {chatSending ? "…" : "→"}
             </button>
           </div>
         </Modal>

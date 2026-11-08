@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type {
-  ChatMessageDTO,
-  ConversationDTO,
   CourseDTO,
   ModuleDTO,
   TeacherDashboardDTO,
@@ -41,7 +39,6 @@ export default function ProfesorView() {
   const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
   const [structure, setStructure] = useState<Structure | null>(null);
   const [students, setStudents] = useState<TeacherStudentDTO[]>([]);
-  const [conversations, setConversations] = useState<ConversationDTO[]>([]);
   const [expandedModules, setExpandedModules] = useState<number[]>([]);
   const [sortCol, setSortCol] = useState("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -54,12 +51,8 @@ export default function ProfesorView() {
     setLoading(true);
     setError("");
     try {
-      const [dashboardData, conversationsData] = await Promise.all([
-        apiFetch<TeacherDashboardDTO>("/api/teacher/dashboard", { auth: true }),
-        apiFetch<ConversationDTO[]>("/api/teacher/conversations", { auth: true }),
-      ]);
+      const dashboardData = await apiFetch<TeacherDashboardDTO>("/api/teacher/dashboard", { auth: true });
       setDashboard(dashboardData);
-      setConversations(conversationsData);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -77,14 +70,12 @@ export default function ProfesorView() {
     setCourseLoading(true);
     setCourseError("");
     try {
-      const [structureData, studentData, conversationData] = await Promise.all([
+      const [structureData, studentData] = await Promise.all([
         apiFetch<Structure>(`/api/teacher/courses/${courseId}`, { auth: true }),
         apiFetch<TeacherStudentDTO[]>(`/api/teacher/courses/${courseId}/students`, { auth: true }),
-        apiFetch<ConversationDTO[]>("/api/teacher/conversations", { auth: true }),
       ]);
       setStructure(structureData);
       setStudents(studentData);
-      setConversations(conversationData);
       setExpandedModules(structureData.modules.slice(0, 1).map((mod) => mod.id));
     } catch (err) {
       setCourseError(errorMessage(err));
@@ -211,7 +202,6 @@ export default function ProfesorView() {
               published={structure.course.status === "published"}
               modules={toEditableModules(structure.modules)}
               students={sortedStudents}
-              conversations={conversations}
               expandedModules={expandedModules}
               sortCol={sortCol}
               sortDir={sortDir}
@@ -271,13 +261,6 @@ export default function ProfesorView() {
                   await moduleApi(`/modules/${moduleId}/lessons/reorder`, "PUT", { ids }),
                 );
               }}
-              onSendMessage={async (conversationId, text): Promise<ChatMessageDTO[]> =>
-                apiFetch<ChatMessageDTO[]>(`/api/teacher/conversations/${conversationId}/messages`, {
-                  method: "POST",
-                  auth: true,
-                  body: { text },
-                })
-              }
             />
           ) : (
             <EmptyState

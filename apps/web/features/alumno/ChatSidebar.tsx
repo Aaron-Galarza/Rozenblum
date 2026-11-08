@@ -8,11 +8,12 @@ type ChatSidebarProps = {
   onChatMsgChange: (val: string) => void;
   onSend: () => void;
   loading: boolean;
+  sending: boolean;
   error: string;
   onRetry: () => void;
 };
 
-export default function ChatSidebar({ messages, chatMsg, onChatMsgChange, onSend, loading, error, onRetry }: ChatSidebarProps) {
+export default function ChatSidebar({ messages, chatMsg, onChatMsgChange, onSend, loading, sending, error, onRetry }: ChatSidebarProps) {
   return (
     <aside className="w-full min-h-72 flex-shrink-0 flex flex-col lg:w-80 lg:min-h-0" style={{ backgroundColor: "#FFFFFF", borderLeft: "2px solid #B58A43" }}>
       <div className="px-5 py-4 flex-shrink-0" style={{ borderBottom: "1px solid rgba(23,59,108,0.08)" }}>
@@ -54,9 +55,10 @@ export default function ChatSidebar({ messages, chatMsg, onChatMsgChange, onSend
         />
         <button
           type="button"
-          aria-label="Enviar mensaje"
+          aria-label={sending ? "Enviando mensaje" : "Enviar mensaje"}
+          disabled={sending || !chatMsg.trim()}
           onClick={onSend}
-          className="w-10 h-10 flex items-center justify-center rounded-full transition-all duration-200 hover:scale-105"
+          className="w-10 h-10 flex items-center justify-center rounded-full transition-all duration-200 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
           style={{ backgroundColor: "#B58A43", color: "#FAF8F5" }}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
