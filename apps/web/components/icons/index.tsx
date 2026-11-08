@@ -1,3 +1,31 @@
+import type { SVGProps } from "react";
+
+type SmallIconProps = SVGProps<SVGSVGElement>;
+
+const smallIconProps = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true as const };
+
+export const IconLock = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>;
+export const IconLink = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2" /><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2" /></svg>;
+export const IconInfo = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg>;
+export const IconSearch = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></svg>;
+export const IconGraduation = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><path d="m2 9 10-5 10 5-10 5L2 9Z" /><path d="M6 11v6c3.5 3 8.5 3 12 0v-6M22 9v7" /></svg>;
+export const IconBell = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M10 21h4" /></svg>;
+export const IconMail = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 7 9-7" /></svg>;
+
+export function IconAdminNav({ name, ...props }: SmallIconProps & { name: "dashboard" | "profesores" | "alumnos" | "cursos" | "pagos" | "consultas" | "reportes" | "config" }) {
+  const paths = {
+    dashboard: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
+    profesores: <><circle cx="9" cy="8" r="3" /><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 8h5M19.5 5.5v5" /></>,
+    alumnos: <><circle cx="12" cy="8" r="3" /><path d="M5 20v-2a7 7 0 0 1 14 0v2" /></>,
+    cursos: <><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v17H6.5A2.5 2.5 0 0 1 4 17.5v-12Z" /><path d="M4 17.5A2.5 2.5 0 0 1 6.5 15H20" /></>,
+    pagos: <><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20M6 15h4" /></>,
+    consultas: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 7 9-7" /></>,
+    reportes: <><path d="M3 20h18M6 16v-5M12 16V4M18 16V9" /></>,
+    config: <><circle cx="12" cy="12" r="3" /><path d="M10 2h4l.7 2.4 2 .8L19 4l3 3-1.2 2.3.8 2L24 12l-2.4.7-.8 2L22 17l-3 3-2.3-1.2-2 .8L14 22h-4l-.7-2.4-2-.8L5 20l-3-3 1.2-2.3-.8-2L0 12l2.4-.7.8-2L2 7l3-3 2.3 1.2 2-.8L10 2Z" transform="translate(2 2) scale(.83)" /></>,
+  };
+  return <svg {...smallIconProps} {...props}>{paths[name]}</svg>;
+}
+
 export const IconBriefcase = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" className="w-9 h-9">
     <rect x="2" y="7" width="20" height="14" rx="2" />

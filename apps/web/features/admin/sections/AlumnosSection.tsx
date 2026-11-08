@@ -6,6 +6,7 @@ import { errorMessage } from "../../../lib/api";
 import Modal from "../../../components/ui/Modal";
 import Toast from "../../../components/ui/Toast";
 import { useToast } from "../../../lib/use-toast";
+import { IconSearch } from "../../../components/icons";
 
 const inputStyle: React.CSSProperties = { border: "1px solid rgba(23,59,108,0.2)", borderRadius: 4, color: "#173B6C", backgroundColor: "#FAF8F5" };
 
@@ -79,16 +80,19 @@ export default function AlumnosSection({ alumnos, onUpdate, onToggleStatus, onDe
           <option value="Activo">Activo</option>
           <option value="Suspendido">Suspendido</option>
         </select>
+        <div className="relative">
+        <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#173B6C]/55" />
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="🔍 Buscar alumno..."
-          className="px-3 py-2 text-xs outline-none"
+          placeholder="Buscar alumno..."
+          className="py-2 pl-9 pr-3 text-xs outline-none"
           style={{ border: "1px solid rgba(23,59,108,0.2)", color: "#173B6C", backgroundColor: "#FAF8F5", minWidth: 180 }}
           onFocus={(e) => (e.currentTarget.style.borderColor = "#B58A43")}
           onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(23,59,108,0.2)")}
         />
+        </div>
         {(search || estadoFilter !== "Todos") && (
           <button onClick={() => { setSearch(""); setEstadoFilter("Todos"); }} className="text-xs underline hover:opacity-60 transition-opacity" style={{ color: "#B58A43" }}>
             Limpiar filtros

@@ -1,12 +1,12 @@
 import type { AdminSection } from "../../types";
 
-export const NAV_ITEMS: { key: AdminSection; label: string; emoji: string }[] = [
-  { key: "dashboard", label: "Dashboard", emoji: "📊" },
-  { key: "profesores", label: "Profesores", emoji: "👨‍🏫" },
-  { key: "alumnos", label: "Alumnos", emoji: "👨‍🎓" },
-  { key: "cursos", label: "Cursos", emoji: "📚" },
-  { key: "pagos", label: "Pagos / Órdenes", emoji: "💳" },
-  { key: "consultas", label: "Consultas", emoji: "✉️" },
-  { key: "reportes", label: "Reportes", emoji: "📈" },
-  { key: "config", label: "Configuración", emoji: "⚙️" },
+export const NAV_ITEMS: { key: AdminSection; label: string }[] = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "profesores", label: "Profesores" },
+  { key: "alumnos", label: "Alumnos" },
+  { key: "cursos", label: "Cursos" },
+  { key: "pagos", label: "Pagos / Órdenes" },
+  { key: "consultas", label: "Consultas" },
+  { key: "reportes", label: "Reportes" },
+  { key: "config", label: "Configuración" },
 ];

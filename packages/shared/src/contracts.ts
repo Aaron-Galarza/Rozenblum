@@ -493,7 +493,7 @@ export type TeacherCourseDTO = {
 
 export type TeacherNotificationDTO = {
   id: string;
-  icon: string;
+  icon: "enrollment" | "message";
   text: string;
   time: string;
 };

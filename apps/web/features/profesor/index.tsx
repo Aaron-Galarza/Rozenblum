@@ -9,6 +9,7 @@ import type {
 } from "@rozenblum/shared";
 import type { EditableModule, ProfesorCourse, ProfesorTab, SortDir } from "../../types";
 import ClassroomHeader from "../../components/layout/ClassroomHeader";
+import { IconBell, IconMail } from "../../components/icons";
 import SimpleFooter from "../../components/layout/SimpleFooter";
 import ProfesorDashboard from "./ProfesorDashboard";
 import CourseEditor from "./CourseEditor";
@@ -172,7 +173,7 @@ export default function ProfesorView() {
             <summary className="cursor-pointer text-sm font-medium text-[#173B6C]">Notificaciones ({dashboard?.notifications.length ?? 0})</summary>
             {(dashboard?.notifications ?? []).length === 0
               ? <p className="mt-3 text-xs text-[#64748b]">Sin novedades por ahora.</p>
-              : (dashboard?.notifications ?? []).map((notification) => <p key={notification.id} className="mt-3 text-xs text-[#173B6C]">{notification.icon} {notification.text}</p>)}
+              : (dashboard?.notifications ?? []).map((notification) => <p key={notification.id} className="mt-3 text-xs text-[#173B6C]">{notification.text}</p>)}
           </details>
           {loading ? (
             <LoadingScreen label="Cargando panel..." />
@@ -281,7 +282,7 @@ export default function ProfesorView() {
             )}
             {(dashboard?.notifications ?? []).map((n) => (
               <div key={n.id} className="flex items-start gap-3 px-5 py-4 hover:opacity-80 transition-opacity cursor-pointer" style={{ backgroundColor: "transparent" }}>
-                <span className="text-base flex-shrink-0 mt-0.5">{n.icon}</span>
+                <span className="mt-0.5 shrink-0 text-[#B58A43]" aria-hidden="true">{n.icon === "message" ? <IconMail className="h-4 w-4" /> : <IconBell className="h-4 w-4" />}</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs leading-relaxed" style={{ color: "#173B6C" }}>{n.text}</p>
                   <p className="text-[10px] mt-1" style={{ color: "rgba(23,59,108,0.45)" }}>{n.time}</p>

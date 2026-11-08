@@ -106,7 +106,7 @@ export async function getTeacherDashboard(user: StoredUser): Promise<TeacherDash
   for (const order of orders.filter((item) => courseIds.has(item.courseId)).slice(0, 2)) {
     notifications.push({
       id: `ord_${order.id}`,
-      icon: "🔔",
+      icon: "enrollment",
       text: `Nuevo alumno inscripto: ${order.alumno} — ${order.curso}`,
       time: formatTime(order.createdAt),
     });
@@ -117,7 +117,7 @@ export async function getTeacherDashboard(user: StoredUser): Promise<TeacherDash
     .slice(0, 2)) {
     notifications.push({
       id: `msg_${conversation.id}`,
-      icon: "✉️",
+      icon: "message",
       text: `Nuevo mensaje de ${conversation.studentName}`,
       time: formatTime(conversation.messages.at(-1)?.createdAt ?? new Date().toISOString()),
     });

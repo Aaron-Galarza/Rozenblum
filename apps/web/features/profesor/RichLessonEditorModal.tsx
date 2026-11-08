@@ -13,6 +13,7 @@ import type { LessonBlockDTO, LessonType, RichLessonDocument } from "@rozenblum/
 import { apiFetch, errorMessage, uploadGalleryImage } from "../../lib/api";
 import { useModalA11y } from "../../lib/use-modal-a11y";
 import ImagePicker from "../../components/ui/ImagePicker";
+import { IconLink } from "../../components/icons";
 import { lessonSchema, noteBlocks, serializeNote, youtubeId, type LessonNoteBlock, type LessonPartialBlock } from "../../lib/lesson-document";
 
 export type LessonEditorPayload = {
@@ -206,7 +207,7 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
     const anchor = urlAnchorRef.current ? editor.getBlock(urlAnchorRef.current) : undefined;
     editor.focus();
     if (kind === "link") editor.insertInlineContent([{ type: "link", content: url, href: url }]);
-    if (kind === "mention") editor.insertInlineContent([{ type: "link", content: preview ? `▶ ${preview.title} · ${preview.channel}` : `@${new URL(url).hostname}`, href: url }]);
+    if (kind === "mention") editor.insertInlineContent([{ type: "link", content: preview ? `${preview.title} · ${preview.channel}` : `@${new URL(url).hostname}`, href: url }]);
     if (kind === "bookmark") {
       editor.insertBlocks([{ type: "bookmark", props: { url, title: preview?.title ?? new URL(url).hostname, channel: preview?.channel ?? "", videoId: preview?.videoId ?? "" } }], anchor ?? editor.getTextCursorPosition().block, "after");
     }
@@ -265,7 +266,7 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
         {toolbarButton("Cita", () => changeBlock("quote"))}
         {toolbarButton("▸ Toggle", () => changeBlock("toggleListItem"), "Bloque desplegable")}
         {toolbarButton("</> Código", () => changeBlock("codeBlock"), "Código")}
-        {toolbarButton("🔗", () => { urlAnchorRef.current = editor.getTextCursorPosition().block.id; setPendingUrl("https://"); setUrlMenuPosition({ top: 200, left: Math.max(12, window.innerWidth / 2 - 160) }); }, "Insertar enlace")}
+        <button type="button" title="Insertar enlace" aria-label="Insertar enlace" onMouseDown={(event) => event.preventDefault()} onClick={() => { urlAnchorRef.current = editor.getTextCursorPosition().block.id; setPendingUrl("https://"); setUrlMenuPosition({ top: 200, left: Math.max(12, window.innerWidth / 2 - 160) }); }} className="rounded px-2 py-1 text-xs font-semibold text-[#173B6C] hover:bg-[#eee7dc] focus-visible:outline-2 focus-visible:outline-[#B58A43]"><IconLink className="h-4 w-4" /></button>
         {toolbarButton("Imagen", () => setImagePickerOpen((current) => !current), "Insertar imagen de Cloudinary")}
         <span aria-hidden="true" className="mx-1 h-5 border-l border-[#d8c6aa]" />
         {toolbarButton("B", () => editor.toggleStyles({ bold: true }), "Negrita")}

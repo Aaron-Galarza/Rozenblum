@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { AdminOverviewDTO, CourseDTO, CourseDetailDTO, OrderStatus } from "@rozenblum/shared";
 import type { AdminSection } from "../../types";
 import { NAV_ITEMS } from "./nav";
+import { IconAdminNav } from "../../components/icons";
 import { usePublicSettings } from "../../lib/use-public-settings";
 import SimpleFooter from "../../components/layout/SimpleFooter";
 import { apiFetch, clearSession, errorMessage } from "../../lib/api";
@@ -89,7 +90,7 @@ export default function AdminView() {
         {/* ── SIDEBAR ── */}
         <aside className="w-full shrink-0 overflow-x-auto lg:w-60 lg:overflow-x-hidden lg:overflow-y-auto" style={{ backgroundColor: "#173B6C" }}>
           <nav aria-label="Secciones de administración" className="flex w-max py-2 lg:block lg:w-auto lg:py-6">
-            {NAV_ITEMS.map(({ key, label, emoji }) => (
+            {NAV_ITEMS.map(({ key, label }) => (
               <button
                 key={key}
                 onClick={() => setSection(key)}
@@ -102,7 +103,7 @@ export default function AdminView() {
                   fontFamily: "'Roboto', sans-serif",
                 }}
               >
-                <span>{emoji}</span>
+                <IconAdminNav name={key} className="h-4 w-4 shrink-0" />
                 <span>{label}</span>
               </button>
             ))}

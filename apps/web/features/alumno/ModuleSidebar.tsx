@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import type { CourseModuleView, Lesson } from "../../types";
-import { TypeIcon } from "../../components/icons";
+import { IconLock, TypeIcon } from "../../components/icons";
 import { optimizedImage } from "../../lib/images";
 
 type ModuleSidebarProps = {
@@ -95,7 +95,7 @@ export default function ModuleSidebar({
                 <span className="flex items-center gap-2">
                   {mod.status === "completed" && <span style={{ color: "#22c55e" }}>✓</span>}
                   {mod.status === "in_progress" && <span style={{ color: "#B58A43" }}>●</span>}
-                  {mod.status === "locked" && <span style={{ color: "rgba(23,59,108,0.3)" }}>🔒</span>}
+                  {mod.status === "locked" && <IconLock className="h-3.5 w-3.5 shrink-0 text-[#173B6C]/30" />}
                   <span className="leading-tight">{mod.title}</span>
                 </span>
                 {mod.status !== "locked" && (

@@ -14,6 +14,7 @@ import { EmptyState, ErrorPanel, LoadingScreen } from "../../components/ui/Async
 import Toast from "../../components/ui/Toast";
 import { useToast } from "../../lib/use-toast";
 import { useLiveChat } from "../../lib/use-live-chat";
+import { IconGraduation } from "../../components/icons";
 
 export default function AlumnoView() {
   const { session, ready } = useSession("alumno");
@@ -132,7 +133,7 @@ export default function AlumnoView() {
       }
       showToast(
         updated.progress >= 100
-          ? "🎓 Curso completado"
+          ? "Curso completado"
           : `✓ Lección completada · ${updated.progress}% del curso`,
       );
     } catch (err) {
@@ -237,7 +238,8 @@ export default function AlumnoView() {
           </div>
 
           {enrollment.progress >= 100 && (
-            <p className="px-6 py-2 text-xs text-center" style={{ color: "#173B6C", backgroundColor: "#F5EBD8" }}>
+            <p className="flex items-center justify-center gap-2 px-6 py-2 text-xs text-center" style={{ color: "#173B6C", backgroundColor: "#F5EBD8" }}>
+              <IconGraduation className="h-4 w-4 shrink-0" />
               Curso completado. La emisión de certificados estará disponible próximamente.
             </p>
           )}
