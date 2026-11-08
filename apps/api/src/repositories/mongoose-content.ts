@@ -9,18 +9,13 @@ export function createMongooseContentRepositories() {
   const settings: SettingsRepository = {
     async get() {
       const doc = await SettingsModel.findOne({}).lean().exec();
-      if (!doc) throw new Error("La configuración del sitio no existe en Atlas.");
-      return clean<StoredSettings>(doc);
+      return doc ? clean<StoredSettings>(doc) : null;
     },
     async update(patch) {
-      const current = await SettingsModel.findOne({}).lean().exec();
-      if (!current) {
-        throw new Error("La configuración del sitio no existe en Atlas.");
-      }
       const doc = await SettingsModel.findOneAndUpdate(
         {},
         { $set: { ...patch, updatedAt: nowIso() } },
-        { returnDocument: "after" },
+        { returnDocument: "after", upsert: true },
       )
         .lean()
         .exec();

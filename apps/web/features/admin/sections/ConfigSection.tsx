@@ -17,7 +17,7 @@ type SettingsPayload = {
 };
 
 type ConfigSectionProps = {
-  settings: SiteSettingsDTO;
+  settings: SiteSettingsDTO | null;
   onSave: (input: SettingsPayload) => Promise<void>;
 };
 
@@ -25,12 +25,12 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
   const { toast, showToast } = useToast();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [company, setCompany] = useState({
-    companyName: settings.companyName,
-    supportEmail: settings.supportEmail,
-    contactWhatsapp: settings.contactWhatsapp,
-    logoUrl: settings.logoUrl,
+    companyName: settings?.companyName ?? "",
+    supportEmail: settings?.supportEmail ?? "",
+    contactWhatsapp: settings?.contactWhatsapp ?? "",
+    logoUrl: settings?.logoUrl ?? "",
   });
-  const [privacyText, setPrivacyText] = useState(settings.privacyText);
+  const [privacyText, setPrivacyText] = useState(settings?.privacyText ?? "");
   const [busy, setBusy] = useState(false);
   const [homeContent, setHomeContent] = useState<HomeContentDTO | null>(null);
   const [mediaBusy, setMediaBusy] = useState(false);
@@ -40,12 +40,12 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
 
   useEffect(() => {
     setCompany({
-      companyName: settings.companyName,
-      supportEmail: settings.supportEmail,
-      contactWhatsapp: settings.contactWhatsapp,
-      logoUrl: settings.logoUrl,
+      companyName: settings?.companyName ?? "",
+      supportEmail: settings?.supportEmail ?? "",
+      contactWhatsapp: settings?.contactWhatsapp ?? "",
+      logoUrl: settings?.logoUrl ?? "",
     });
-    setPrivacyText(settings.privacyText);
+    setPrivacyText(settings?.privacyText ?? "");
   }, [settings]);
 
   useEffect(() => {
@@ -70,6 +70,7 @@ export default function ConfigSection({ settings, onSave }: ConfigSectionProps) 
   return (
     <>
       <h2 className="text-3xl font-light mb-8" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Configuración</h2>
+      {!settings && <p role="status" className="mb-5 text-sm text-[#173B6C]">Configurá los datos del sitio para habilitar su información pública. Completá todos los campos y guardá.</p>}
       <div className="space-y-8 max-w-2xl">
         {/* Company data */}
         <div className="p-6 rounded-lg" style={{ backgroundColor: "#FFFFFF", border: "1px solid rgba(23,59,108,0.08)" }}>

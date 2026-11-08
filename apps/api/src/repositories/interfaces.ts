@@ -132,7 +132,7 @@ export interface ConversationRepository {
 }
 
 export interface SettingsRepository {
-  get(): Promise<StoredSettings>;
+  get(): Promise<StoredSettings | null>;
   update(patch: Partial<StoredSettings>): Promise<StoredSettings>;
 }
 

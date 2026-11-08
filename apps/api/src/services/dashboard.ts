@@ -372,7 +372,7 @@ export async function getAdminOverview(): Promise<AdminOverviewDTO> {
     orders: orders.map(orderToDTO),
     inscripciones,
     reportes,
-    settings: settingsToDTO(settings, env.paymentsConfigured),
+    settings: settings ? settingsToDTO(settings, env.paymentsConfigured) : null,
   };
 }
 

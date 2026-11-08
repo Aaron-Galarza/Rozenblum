@@ -408,7 +408,7 @@ export type AdminOverviewDTO = {
   orders: OrderDTO[];
   inscripciones: AdminInscripcionDTO[];
   reportes: AdminReportesDTO;
-  settings: SiteSettingsDTO;
+  settings: SiteSettingsDTO | null;
 };
 
 export type AdminUserInput = {

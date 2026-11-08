@@ -5,12 +5,10 @@ import { clone, type Memory } from "./mock-memory.js";
 export function createMockContentRepositories(db: Memory) {
   const settings: SettingsRepository = {
     async get() {
-      if (!db.settings) throw new Error("Falta configuración de prueba.");
-      return clone(db.settings);
+      return db.settings ? clone(db.settings) : null;
     },
     async update(patch) {
-      if (!db.settings) throw new Error("Falta configuración de prueba.");
-      db.settings = { ...db.settings, ...clone(patch), updatedAt: nowIso() };
+      db.settings = { ...db.settings, ...clone(patch), updatedAt: nowIso() } as NonNullable<typeof db.settings>;
       return clone(db.settings);
     },
   };
