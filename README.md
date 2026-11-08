@@ -108,7 +108,7 @@ El contenido de inicio y los ajustes son fuentes distintas: `site_content` conti
 
 | Método y ruta | Acceso | Resultado |
 | --- | --- | --- |
-| `POST /api/auth/login` | Público; body `{ role, email, password }` | `200` con `{ data: { token, user } }`; credenciales o rol incorrectos devuelven el mismo `401` |
+| `POST /api/auth/login` | Público; body `{ email, password }` | `200` con `{ data: { token, user } }`; la API toma el rol de la cuenta en Atlas y las credenciales incorrectas devuelven `401` |
 | `GET /api/auth/session` | Token `Authorization: Bearer <token>` | `200` con el usuario actual; `401` si el token falta, expiró o fue revocado; `403` si la cuenta está suspendida |
 | `POST /api/auth/password` | Token `Authorization: Bearer <token>`; body `{ currentPassword, newPassword }` | `200` con una sesión nueva; `400` si la clave actual no coincide o la nueva es inválida; `401` sin sesión válida |
 | `POST /api/auth/logout` | Público | `204`; el cliente borra su token local. Este endpoint no revoca el token en el servidor |

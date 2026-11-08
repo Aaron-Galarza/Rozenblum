@@ -23,7 +23,7 @@ export async function login(input: LoginInput): Promise<SessionDTO> {
     user?.passwordHash ?? (await DUMMY_PASSWORD_HASH),
   );
 
-  if (!user || (input.role !== undefined && user.role !== input.role) || user.status !== "Activo" || !validPassword) {
+  if (!user || user.status !== "Activo" || !validPassword) {
     throw unauthorized("Correo o contraseña incorrectos.");
   }
 

@@ -25,14 +25,11 @@ export type SessionDTO = {
 };
 
 export type LoginInput = {
-  /** Optional for existing clients; authorization always uses the stored role. */
-  role?: Role;
   email: string;
   password: string;
 };
 
 export const loginSchema = z.object({
-  role: roleSchema.optional(),
   email: z.string().trim().email(),
   /**
    * The password of every student account is their DNI. Staff accounts keep a

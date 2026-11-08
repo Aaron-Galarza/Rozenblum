@@ -59,7 +59,7 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     });
     server = await startTestServer();
     const adminLogin = await api<{ data: { token: string } }>(server.baseUrl, "/api/auth/login", {
-      method: "POST", body: JSON.stringify({ role: "admin", email: "admin@example.test", password: adminPassword }),
+      method: "POST", body: JSON.stringify({ email: "admin@example.test", password: adminPassword }),
     });
     assert.equal(adminLogin.status, 200);
     const settings = await api<{ data: { companyName: string; paymentsConfigured: boolean } }>(
@@ -190,7 +190,7 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     assert.equal(JSON.stringify(publicDetail.body).includes("PRIVATE BLOCKNOTE"), false);
     assert.equal(JSON.stringify(publicDetail.body).includes("professor@example.test"), false);
     const teacherLogin = await api<{ data: { token: string } }>(server.baseUrl, "/api/auth/login", {
-      method: "POST", body: JSON.stringify({ role: "profesor", email: professor.email, password: adminPassword }),
+      method: "POST", body: JSON.stringify({ email: professor.email, password: adminPassword }),
     });
     assert.equal(teacherLogin.status, 200);
     const draft = await api<{ data: { id: number } }>(server.baseUrl, "/api/admin/courses", {
@@ -259,7 +259,7 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     assert.ok(await repositories.enrollments.findById(otherEnrollment.id));
 
     const studentLogin = await api<{ data: { token: string } }>(server.baseUrl, "/api/auth/login", {
-      method: "POST", body: JSON.stringify({ role: "alumno", email: student.email, password: studentPassword }),
+      method: "POST", body: JSON.stringify({ email: student.email, password: studentPassword }),
     });
     assert.equal(studentLogin.status, 200);
     const studentToken = studentLogin.body.data.token;
@@ -328,7 +328,7 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     assert.equal(buyer?.passwordHash, rawOrder.dniPasswordHash);
     assert.equal((await repositories.enrollments.findById(checkout.body.data.enrollment.id))?.status, "Activo");
     const buyerLogin = await api(server.baseUrl, "/api/auth/login", {
-      method: "POST", body: JSON.stringify({ role: "alumno", email: "buyer@example.test", password: buyerDni }),
+      method: "POST", body: JSON.stringify({ email: "buyer@example.test", password: buyerDni }),
     });
     assert.equal(buyerLogin.status, 200);
     const suspended = await api(server.baseUrl, `/api/admin/users/${student.id}`, {

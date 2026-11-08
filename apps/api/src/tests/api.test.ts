@@ -71,7 +71,7 @@ async function login(
 
   const response = await api<{ data: { token: string } }>(server.baseUrl, "/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ role, email, password: candidate }),
+    body: JSON.stringify({ email, password: candidate }),
   });
   assert.equal(response.status, 200);
   sessionTokens.set(cacheKey, response.body.data.token);
@@ -79,14 +79,13 @@ async function login(
 }
 
 async function rawLogin(
-  role: "alumno" | "profesor" | "admin",
   email: string,
   candidate: string,
 ) {
   return api<{ data: { token: string } | null; error?: { message: string } }>(
     server.baseUrl,
     "/api/auth/login",
-    { method: "POST", body: JSON.stringify({ role, email, password: candidate }) },
+    { method: "POST", body: JSON.stringify({ email, password: candidate }) },
   );
 }
 
@@ -145,15 +144,15 @@ test("health and request IDs work without a live database in isolated tests", as
   assert.ok(response.headers.get("x-request-id"));
 });
 
-test("login authenticates without a role and remains compatible with existing clients", async () => {
+test("login uses the stored role without requiring or trusting a client role", async () => {
   const missing = await api(server.baseUrl, "/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ role: "admin", email: adminEmail }),
+    body: JSON.stringify({ email: adminEmail }),
   });
   assert.equal(missing.status, 400);
   const wrong = await api(server.baseUrl, "/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ role: "admin", email: adminEmail, password: "wrong" }),
+    body: JSON.stringify({ email: adminEmail, password: "wrong" }),
   });
   assert.equal(wrong.status, 401);
   const unified = await api<{ data: { token: string; user: { role: string } } }>(server.baseUrl, "/api/auth/login", {
@@ -171,16 +170,21 @@ test("login authenticates without a role and remains compatible with existing cl
     const result = await loginService({ email, password: candidate });
     assert.equal(result.user.role, role);
   }
-  await assert.rejects(loginService({ role: "admin", email: studentEmail, password: studentDni }));
+  const legacy = await api<{ data: { user: { role: string } } }>(server.baseUrl, "/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ role: "admin", email: studentEmail, password: studentDni }),
+  });
+  assert.equal(legacy.status, 200);
+  assert.equal(legacy.body.data.user.role, "alumno");
   assert.equal(loginSchema.safeParse({
-    role: "admin", email: adminEmail, password: "x".repeat(129),
+    email: adminEmail, password: "x".repeat(129),
   }).success, false);
   const token = await login("admin", adminEmail);
   const session = await api(server.baseUrl, "/api/auth/session", { token });
   assert.equal(session.status, 200);
   for (const email of ["missing@example.test", studentEmail]) {
     await assert.rejects(
-      loginService({ role: "admin", email, password }),
+      loginService({ email, password }),
       (error: unknown) => {
         const candidate = error as { status?: number; message?: string };
         return candidate.status === 401 && candidate.message === "Correo o contraseña incorrectos.";
@@ -915,7 +919,7 @@ test("suspended accounts and revoked tokens cannot access private routes", async
     initials: "SM", passwordHash: await hashPassword(suspendPassword),
   });
 
-  const initial = await rawLogin("alumno", user.email, suspendPassword);
+  const initial = await rawLogin(user.email, suspendPassword);
   assert.equal(initial.status, 200);
   const token = initial.body.data!.token;
   assert.equal((await api(server.baseUrl, "/api/student/enrollments", { token })).status, 200);
@@ -924,14 +928,14 @@ test("suspended accounts and revoked tokens cannot access private routes", async
     method: "PATCH", token: adminToken, body: JSON.stringify({ status: "Suspendido" }),
   })).status, 200);
   assert.equal((await api(server.baseUrl, "/api/auth/session", { token })).status, 401);
-  assert.equal((await rawLogin("alumno", user.email, suspendPassword)).status, 401);
+  assert.equal((await rawLogin(user.email, suspendPassword)).status, 401);
 
   assert.equal((await api(server.baseUrl, `/api/admin/users/${user.id}`, {
     method: "PATCH", token: adminToken, body: JSON.stringify({ status: "Activo" }),
   })).status, 200);
   // Reactivating does not resurrect tokens issued before the suspension.
   assert.equal((await api(server.baseUrl, "/api/auth/session", { token })).status, 401);
-  assert.equal((await rawLogin("alumno", user.email, suspendPassword)).status, 200);
+  assert.equal((await rawLogin(user.email, suspendPassword)).status, 200);
 
   assert.equal((await api(server.baseUrl, "/api/auth/session", { token: "invalid.token" })).status, 401);
 });
@@ -945,7 +949,7 @@ test("changing a staff password revokes previous sessions", async () => {
     initials: "RP", passwordHash: await hashPassword(originalPassword),
   });
 
-  const first = await rawLogin("profesor", user.email, originalPassword);
+  const first = await rawLogin(user.email, originalPassword);
   assert.equal(first.status, 200);
   const token = first.body.data!.token;
   assert.equal((await api(server.baseUrl, "/api/auth/session", { token })).status, 200);
@@ -955,8 +959,8 @@ test("changing a staff password revokes previous sessions", async () => {
   });
   assert.equal(changed.status, 200);
   assert.equal((await api(server.baseUrl, "/api/auth/session", { token })).status, 401);
-  assert.equal((await rawLogin("profesor", user.email, originalPassword)).status, 401);
-  assert.equal((await rawLogin("profesor", user.email, nextPassword)).status, 200);
+  assert.equal((await rawLogin(user.email, originalPassword)).status, 401);
+  assert.equal((await rawLogin(user.email, nextPassword)).status, 200);
 });
 
 test("concurrent password changes increment the session version atomically", async () => {
@@ -985,7 +989,7 @@ test("users can change their own password and receive a fresh session", async ()
     passwordHash: await hashPassword(initialPassword),
   });
 
-  const first = await loginService({ role: "profesor", email: user.email, password: initialPassword });
+  const first = await loginService({ email: user.email, password: initialPassword });
   const oldToken = first.token;
 
   const wrongCurrent = await api(server.baseUrl, "/api/auth/password", {
@@ -1009,9 +1013,9 @@ test("users can change their own password and receive a fresh session", async ()
   assert.equal((await api(server.baseUrl, "/api/auth/session", { token: oldToken })).status, 401);
   assert.equal((await api(server.baseUrl, "/api/auth/session", { token: freshToken })).status, 200);
   await assert.rejects(
-    loginService({ role: "profesor", email: user.email, password: initialPassword }),
+    loginService({ email: user.email, password: initialPassword }),
   );
-  const nextSession = await loginService({ role: "profesor", email: user.email, password: nextPassword });
+  const nextSession = await loginService({ email: user.email, password: nextPassword });
   assert.equal(nextSession.user.email, user.email);
 
   const repeated = await api(server.baseUrl, "/api/auth/password", {
@@ -1034,15 +1038,15 @@ test("a student can replace the DNI password with a strong one", async () => {
     passwordHash: await hashPassword(dni),
   });
 
-  const session = await loginService({ role: "alumno", email, password: dni });
+  const session = await loginService({ email, password: dni });
   const changed = await api(server.baseUrl, "/api/auth/password", {
     method: "POST",
     token: session.token,
     body: JSON.stringify({ currentPassword: dni, newPassword: nextPassword }),
   });
   assert.equal(changed.status, 200);
-  await assert.rejects(loginService({ role: "alumno", email, password: dni }));
-  const nextSession = await loginService({ role: "alumno", email, password: nextPassword });
+  await assert.rejects(loginService({ email, password: dni }));
+  const nextSession = await loginService({ email, password: nextPassword });
   assert.equal(nextSession.user.email, email);
 
   // Buying another course after rotating the password: the DNI is no longer
@@ -1092,7 +1096,7 @@ test("error envelopes always include the request id and malformed JSON is a 400"
   const invalid = await api<{ error: { code: string; requestId?: string } }>(
     server.baseUrl,
     "/api/auth/login",
-    { method: "POST", body: JSON.stringify({ role: "admin", email: "not-an-email" }) },
+    { method: "POST", body: JSON.stringify({ email: "not-an-email" }) },
   );
   assert.equal(invalid.status, 400);
   assert.equal(invalid.body.error.code, "BAD_REQUEST");
@@ -1166,7 +1170,7 @@ test("reassigning a course professor moves its conversations", async () => {
   assert.equal(moved?.teacherName, newProfessor.name);
 
   const newToken = (
-    await loginService({ role: "profesor", email: newProfessor.email, password })
+    await loginService({ email: newProfessor.email, password })
   ).token;
   const list = await api<{ data: { id: string }[] }>(server.baseUrl, "/api/teacher/conversations", {
     token: newToken,
@@ -1221,7 +1225,7 @@ test("login is rate limited after repeated invalid attempts", async () => {
     const response = await api(server.baseUrl, "/api/auth/login", { method: "POST", headers: {
       "x-forwarded-for": `198.51.100.${attempt + 1}`,
     }, body: JSON.stringify({
-      role: "admin", email: adminEmail, password: "invalid",
+      email: adminEmail, password: "invalid",
     }) });
     if (response.status === 429) limited = true;
   }
