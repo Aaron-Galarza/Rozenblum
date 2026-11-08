@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { usePublicSettings } from "../../lib/use-public-settings";
+import { BRAND_NAME } from "@rozenblum/shared";
+import BrandLogo from "../ui/BrandLogo";
 
 type PublicHeaderProps = {
   onLogoClick?: () => void;
@@ -10,7 +11,6 @@ type PublicHeaderProps = {
 
 export default function PublicHeader({ onLogoClick, rightSlot }: PublicHeaderProps) {
   const router = useRouter();
-  const settings = usePublicSettings();
 
   return (
     <header
@@ -18,9 +18,9 @@ export default function PublicHeader({ onLogoClick, rightSlot }: PublicHeaderPro
       style={{ backgroundColor: "#FAF8F5", borderBottom: "1px solid rgba(23,59,108,0.1)" }}
     >
       <button onClick={onLogoClick ?? (() => router.push("/"))} className="flex items-center gap-3">
-        {settings?.logoUrl && <img src={settings.logoUrl} alt={settings.companyName} className="h-10 w-auto object-contain" />}
+        <BrandLogo className="h-10 w-auto object-contain" />
         <span className="hidden sm:block text-sm font-medium" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>
-          {settings?.companyName ?? "Estudio Jurídico"}
+          {BRAND_NAME}
         </span>
       </button>
 

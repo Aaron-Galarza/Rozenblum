@@ -42,12 +42,12 @@ Completá `MONGODB_URI`, `AUTH_SECRET` y las tres variables `CLOUDINARY_*` en `a
 | `pnpm run lint` | ESLint (flat config) sobre API, web y shared |
 | `pnpm run test` | Tests de integración de la API (repositorios mock, sin Atlas) |
 | `pnpm --dir apps/api run test:atlas` | Prueba autenticación, CRUD académico, checkout concurrente y transacciones con Mongoose real en una base aleatoria aislada; la elimina al finalizar |
-| `pnpm --dir apps/api run bootstrap:admin -- correo@ejemplo.com` | Crea el primer administrador y la configuración inicial de forma idempotente; requiere `BOOTSTRAP_ADMIN_PASSWORD` en el entorno |
+| `pnpm --dir apps/api run bootstrap:admin -- correo@ejemplo.com` | Crea el primer administrador de forma idempotente; requiere `BOOTSTRAP_ADMIN_PASSWORD` en el entorno |
 
 ## Modelo de identidad
 
 - El checkout registra una **solicitud**, no crea la cuenta. Recibe nombre, correo y DNI; guarda en la orden únicamente un hash `scrypt` con sal del DNI. El DNI legible no se conserva en usuarios ni órdenes ni se devuelve por la API.
-- Con Mercado Pago configurado, el checkout crea una preferencia y entrega la URL de pago. El webhook firmado consulta el pago al proveedor; solo un importe y moneda coincidentes con la orden activan la inscripción y crean la cuenta de alumno. Para pagos manuales, el administrador puede confirmar la orden indicando un motivo escrito. El alumno inicia sesión con su correo y el DNI que informó.
+- El checkout crea una preferencia de Mercado Pago y entrega la URL de pago. El webhook firmado consulta el pago al proveedor; solo un importe y moneda coincidentes con la orden activan la inscripción y crean la cuenta de alumno. El alumno inicia sesión con su correo y el DNI que informó.
 - **Ningún alumno se crea a mano.** Antes de aprobar el pago solo existen la orden y la inscripción pendiente.
 - El correo no requiere validación. La contraseña se almacena con `scrypt` asíncrono y sal aleatoria por credencial (`scrypt$<sal>$<hash>`).
 - **Cambio de contraseña:** cualquier usuario autenticado puede cambiar la suya con `POST /api/auth/password` indicando la clave actual. El cambio incrementa `sessionVersion`, revoca todos los tokens anteriores y devuelve una sesión nueva para no forzar otro login.
@@ -64,7 +64,7 @@ Publicar un curso publica todas sus lecciones. Módulos, lecciones y cursos se p
 
 ## Imágenes
 
-Las imágenes se almacenan en Cloudinary; MongoDB guarda solo sus URL. La API necesita `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` y `CLOUDINARY_API_SECRET` en `apps/api/.env`; estas variables nunca se exponen al navegador. El panel permite elegir imágenes existentes o subir PNG, JPEG, WebP o AVIF de hasta 8 MB. Las carpetas previstas son `Rozenblum/courses`, `Rozenblum/professors`, `Rozenblum/lessons` y `Rozenblum/brand`.
+Las imágenes se almacenan en Cloudinary; MongoDB guarda solo sus URL. La API necesita `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` y `CLOUDINARY_API_SECRET` en `apps/api/.env`; estas variables nunca se exponen al navegador. El panel permite elegir imágenes existentes o subir PNG, JPEG, WebP o AVIF de hasta 8 MB para cursos, profesores y lecciones. El logo y la portada institucional usan imágenes fijas de `Rozenblum/brand`.
 
 ## Pagos
 
@@ -78,15 +78,15 @@ Las imágenes se almacenan en Cloudinary; MongoDB guarda solo sus URL. La API ne
 
 El túnel temporal hace pública la web y la API mientras está encendido. No compartas su dirección fuera de la prueba. Para una compra desde otro dispositivo, iniciá todo desde la raíz y abrí la `URL pública temporal` impresa; con dos consolas independientes, usá la web local en el mismo equipo.
 
-Para habilitar Checkout Pro fuera del comando de desarrollo, configurá `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`, `MERCADOPAGO_NOTIFICATION_URL` (URL pública completa de `POST /api/payments/mercadopago/webhook`) y `WEB_PUBLIC_URL` en el entorno de la API. En producción, ambas URL deben usar HTTPS. La firma secreta se obtiene de la configuración de Webhooks de la aplicación de Mercado Pago; el token y la firma quedan solo en la API. Sin las cuatro variables, la opción de pago en línea no aparece y sigue disponible el pago manual.
+Para habilitar Checkout Pro fuera del comando de desarrollo, configurá `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`, `MERCADOPAGO_NOTIFICATION_URL` (URL pública completa de `POST /api/payments/mercadopago/webhook`) y `WEB_PUBLIC_URL` en el entorno de la API. En producción, ambas URL deben usar HTTPS. La firma secreta se obtiene de la configuración de Webhooks de la aplicación de Mercado Pago; el token y la firma quedan solo en la API. Si falta la configuración, el checkout público queda deshabilitado; en producción la API no inicia.
 
-`POST /api/checkout` acepta `{ courseSlug, nombre, email, dni, paymentMethod? }`, con `paymentMethod` igual a `mercadopago` o `manual`. Si se omite, usa Mercado Pago cuando está configurado; en caso contrario usa manual. Rechaza campos de precio enviados por el cliente: la orden y la preferencia usan el precio en centavos del curso. La respuesta incluye `payment: { provider, preferenceId, url }` para redirigir al comprador cuando corresponde. La orden, inscripción pendiente y conversación se guardan en una transacción de Atlas; un fallo revierte los tres registros. Una preferencia creada antes de un fallo de base puede quedar sin uso, pero no se entrega al comprador.
+`POST /api/checkout` acepta `{ courseSlug, nombre, email, dni }` y siempre requiere Mercado Pago. Rechaza campos de precio enviados por el cliente: la orden y la preferencia usan el precio en centavos del curso. La respuesta incluye `payment: { provider, preferenceId, url }` para redirigir al comprador. La orden, inscripción pendiente y conversación se guardan en una transacción de Atlas; un fallo revierte los tres registros. Una preferencia creada antes de un fallo de base puede quedar sin uso, pero no se entrega al comprador.
 
 El webhook valida la firma y su antigüedad, consulta el pago con el SDK oficial y comprueba referencia, ARS e importe exacto. Registra un `PaymentEvent` único por notificación y aplica cambios de estado junto con la cuenta y la inscripción dentro de una transacción. Los avisos duplicados o tardíos no reactivan una orden reembolsada. Una disputa bloquea el aula y pasa la orden a `En disputa`; si Mercado Pago confirma nuevamente el pago, el aula se reactiva. Un reembolso confirmado revoca el acceso de forma definitiva. `PATCH /api/admin/orders/:id` solo admite órdenes manuales y exige `{ estado, motivo }` (motivo de 5 a 500 caracteres); rechaza cambios inválidos como Pagado → Pendiente. `GET /api/admin/orders/:id/events` devuelve la auditoría de actor, motivo, fecha y estado anterior, solo al administrador. Las órdenes de Mercado Pago no se pueden aprobar manualmente.
 
 La prueba de integración usa un proveedor simulado y la de Atlas verifica transacciones y compras simultáneas. Para cerrar la aceptación de sandbox hay que configurar credenciales de prueba, un webhook público y ejecutar un pago, un reembolso y un contracargo de ensayo.
 
-`GET /api/media/:category` lista la galería y `POST /api/media/:category` recibe los bytes de la imagen. Ambas rutas requieren sesión de profesor o administrador; solo el administrador gestiona `professors` y `brand`. `GET /api/courses/latest` devuelve el curso publicado creado más recientemente, con su temario público y sin cuerpos de lecciones. La portada consulta este endpoint para el destacado.
+`GET /api/media/:category` lista la galería y `POST /api/media/:category` recibe los bytes de la imagen. Ambas rutas requieren sesión de profesor o administrador; solo el administrador gestiona `professors`. `GET /api/courses/latest` devuelve el curso publicado creado más recientemente, con su temario público y sin cuerpos de lecciones. La portada consulta este endpoint para el destacado.
 
 ## API pública y contacto
 
@@ -97,12 +97,11 @@ Las respuestas correctas usan `{ "data": ... }`; los errores incluyen `code`, `m
 | `GET /api/courses` | `200` con los cursos publicados; `[]` si no hay. No incluye borradores, correo de acceso del profesor ni cuerpos de lecciones. |
 | `GET /api/courses/latest` | `200` con detalle público del curso publicado más reciente; `404` si no hay publicados. |
 | `GET /api/courses/:slug` | `200` con datos, profesor y esquema de módulos/lecciones, sin contenido de lecciones; `404` para slug inexistente o borrador. |
-| `GET /api/content/home` | `200` con contenido institucional de `site_content`, fotos actuales de profesores vinculados y sin IDs internos; `404` si falta el documento `home`. |
-| `GET /api/settings` | `200` con nombre, correo de soporte, WhatsApp, logo, privacidad y disponibilidad del proveedor de pagos; nunca devuelve claves. |
+| `GET /api/content/home` | `200` con contenido institucional de `site_content`, fotos actuales de profesores vinculados y sin IDs internos; si falta el documento, devuelve la marca predefinida y listas vacías. |
 | `POST /api/contact` | Body `{ name, email, message }`; `201` con ID y acuse de recepción, `400` si no valida, `429` tras 10 solicitudes en 10 minutos por IP. Guarda el mensaje en Atlas para consulta administrativa; no envía correo ni garantiza un plazo de respuesta. |
 | `GET /api/admin/contacts?limit=...&offset=...` | Sólo admin: `200` con mensajes ordenados por fecha, `401` sin sesión, `403` con otro rol. `limit` y `offset` son opcionales. No hay estados de atención ni envío de correos en este MVP. |
 
-El contenido de inicio y los ajustes son fuentes distintas: `site_content` contiene textos e imágenes institucionales; `settings` contiene nombre, soporte, WhatsApp, logo y privacidad. La dirección, el teléfono, el horario y la matrícula aún aparecen como texto fijo en el frontend y requieren revisión en su bloque correspondiente.
+`site_content` conserva los textos institucionales y las áreas de práctica. El logo y la imagen principal están predefinidos en Cloudinary. La dirección, el teléfono, el horario y la matrícula aún aparecen como texto fijo en el frontend y requieren revisión en su bloque correspondiente.
 
 ### Autenticación de la API
 
@@ -129,7 +128,7 @@ npm --workspace @rozenblum/api run bootstrap:admin -- admin@estudio.com
 Remove-Item Env:BOOTSTRAP_ADMIN_PASSWORD
 ```
 
-El script es idempotente: si ya existe ese administrador no modifica su cuenta; si existe otro administrador, se detiene. También crea el documento de configuración del sitio si falta, sin publicar un teléfono o texto legal ficticios. Completá esos datos desde el panel antes de usar el sitio públicamente. Requiere `MONGODB_URI` y `AUTH_SECRET` válidos. La clave no se pasa por línea de comandos para evitar que quede en el historial o la lista de procesos.
+El script es idempotente: si ya existe ese administrador no modifica su cuenta; si existe otro administrador, se detiene. Requiere `MONGODB_URI` y `AUTH_SECRET` válidos. La clave no se pasa por línea de comandos para evitar que quede en el historial o la lista de procesos.
 
 ## Entorno
 

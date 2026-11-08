@@ -1,8 +1,20 @@
-import type { HomeContentDTO } from "@rozenblum/shared";
-import { badRequest, notFound } from "../lib/http.js";
+import { BRAND_HERO_URL, type HomeContentDTO } from "@rozenblum/shared";
 import { getRepositories } from "../repositories/index.js";
 import type { Repositories } from "../repositories/interfaces.js";
-import { assertManagedImageUrl } from "./media.js";
+
+const EMPTY_HOME: HomeContentDTO = {
+  key: "home",
+  brand: {
+    locationLabel: "Resistencia, Chaco",
+    foundedYear: "2004",
+    heroImage: BRAND_HERO_URL,
+    metrics: [],
+    aboutParagraphs: [],
+    footerTagline: "",
+  },
+  team: [],
+  practiceAreas: [],
+};
 
 /**
  * Public home content. Team photos are resolved from the linked professor
@@ -11,8 +23,7 @@ import { assertManagedImageUrl } from "./media.js";
 export async function getHomeContent(): Promise<HomeContentDTO> {
   const repos = getRepositories();
   const content = await repos.home.get();
-  if (!content) throw notFound("El contenido de inicio no existe.");
-  return toPublicHomeContent(content, repos);
+  return content ? toPublicHomeContent(content, repos) : EMPTY_HOME;
 }
 
 async function toPublicHomeContent(content: HomeContentDTO, repos: Repositories): Promise<HomeContentDTO> {
@@ -32,7 +43,7 @@ async function toPublicHomeContent(content: HomeContentDTO, repos: Repositories)
     brand: {
       locationLabel: content.brand.locationLabel,
       foundedYear: content.brand.foundedYear,
-      heroImage: content.brand.heroImage,
+      heroImage: BRAND_HERO_URL,
       metrics: content.brand.metrics.map(({ value, label }) => ({ value, label })),
       aboutParagraphs: [...content.brand.aboutParagraphs],
       footerTagline: content.brand.footerTagline,
@@ -45,14 +56,4 @@ async function toPublicHomeContent(content: HomeContentDTO, repos: Repositories)
       casos: area.casos.map(({ q, a }) => ({ q, a })),
     })),
   };
-}
-
-export async function updateHomeHeroImage(heroImage: string): Promise<HomeContentDTO> {
-  const repos = getRepositories();
-  assertManagedImageUrl(heroImage, "brand");
-  const current = await repos.home.get();
-  if (!current) throw notFound("El contenido de inicio no existe.");
-  const updated = await repos.home.updateHeroImage(current.brand.heroImage, heroImage);
-  if (!updated) throw badRequest("El contenido cambió. Recargá la página e intentá nuevamente.");
-  return toPublicHomeContent(updated, repos);
 }

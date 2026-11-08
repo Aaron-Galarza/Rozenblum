@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHmac, scryptSync } from "node:crypto";
 import { after, before, test } from "node:test";
-import { loginSchema } from "@rozenblum/shared";
+import { BRAND_HERO_URL, loginSchema } from "@rozenblum/shared";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { createMockRepositories } from "../repositories/mock.js";
 import { setRepositoriesForTests } from "../repositories/index.js";
@@ -33,15 +33,14 @@ const repositories = createMockRepositories({
     team: [{ name: "Test profesor", role: "Docente", img: "https://example.test/team.jpg" }],
     practiceAreas: [{ title: "Derecho", desc: "Área de prueba", icon: "briefcase", casos: [] }],
   },
-  settings: {
-    companyName: "Test Company",
-    supportEmail: "support@example.test",
-    contactWhatsapp: "5491112345678",
-    logoUrl: "",
-    privacyText: "Test privacy text for the isolated API tests.",
-    updatedAt: new Date().toISOString(),
-  },
 });
+
+const checkoutGateway = {
+  async createPreference(input: { reference: string }) {
+    return { id: `pref-${input.reference}`, url: "https://www.mercadopago.com.ar/checkout/test" };
+  },
+  async getPayment(): Promise<PaymentSnapshot> { throw new Error("No se consultan pagos en este proveedor de prueba."); },
+};
 
 test("asynchronous scrypt verifies hashes created by the previous synchronous implementation", async () => {
   const salt = "00112233445566778899aabbccddeeff";
@@ -91,6 +90,7 @@ async function rawLogin(
 
 before(async () => {
   setRepositoriesForTests(repositories);
+  setPaymentGatewayForTests(checkoutGateway);
   for (const [role, email] of [
     ["alumno", studentEmail],
     ["profesor", teacherEmail],
@@ -135,6 +135,7 @@ before(async () => {
 });
 
 after(async () => {
+  setPaymentGatewayForTests(null);
   await server?.close();
 });
 
@@ -206,20 +207,23 @@ test("published courses expose metadata while lesson content remains private", a
   assert.equal(JSON.stringify(detail.body).includes(teacherEmail), false);
 });
 
-test("home content uses the injected repository and an absent document returns 404", async () => {
+test("home content uses the injected repository and keeps the fixed brand without a document", async () => {
   const home = await api<{ data: { brand: { locationLabel: string; heroImage: string } } }>(
     server.baseUrl, "/api/content/home",
   );
   assert.equal(home.status, 200);
   assert.equal(home.body.data.brand.locationLabel, "Buenos Aires");
+  assert.equal(home.body.data.brand.heroImage, BRAND_HERO_URL);
   assert.equal(JSON.stringify(home.body).includes("userId"), false);
   assert.equal(JSON.stringify(home.body).includes("_id"), false);
 
   const withoutHome = createMockRepositories();
   setRepositoriesForTests(withoutHome);
   try {
-    const missing = await api(server.baseUrl, "/api/content/home");
-    assert.equal(missing.status, 404);
+    const empty = await api<{ data: { brand: { heroImage: string }; team: unknown[] } }>(server.baseUrl, "/api/content/home");
+    assert.equal(empty.status, 200);
+    assert.equal(empty.body.data.brand.heroImage, BRAND_HERO_URL);
+    assert.deepEqual(empty.body.data.team, []);
   } finally {
     setRepositoriesForTests(repositories);
   }
@@ -256,14 +260,7 @@ test("image gallery requires authentication and restricts folder and file types"
   assert.equal(detectImageFormat(Buffer.from("<svg onload=alert(1)>")), null);
   assert.equal((await api(server.baseUrl, "/api/media/courses")).status, 401);
   const teacherToken = await login("profesor", teacherEmail);
-  assert.equal((await api(server.baseUrl, "/api/media/brand", { token: teacherToken })).status, 403);
-  assert.equal((await api(server.baseUrl, "/api/admin/content/home/images", {
-    method: "PUT", token: teacherToken, body: JSON.stringify({ heroImage: "https://example.test/hero.jpg" }),
-  })).status, 403);
-  const adminToken = await login("admin", adminEmail);
-  assert.equal((await api(server.baseUrl, "/api/admin/content/home/images", {
-    method: "PUT", token: adminToken, body: JSON.stringify({ heroImage: "https://example.test/hero.jpg" }),
-  })).status, 400);
+  assert.equal((await api(server.baseUrl, "/api/media/brand", { token: teacherToken })).status, 400);
   const invalid = await fetch(`${server.baseUrl}/api/media/courses`, {
     method: "POST",
     headers: { "content-type": "image/png", authorization: `Bearer ${teacherToken}` },
@@ -339,7 +336,7 @@ test("student progress unlocks modules and teacher edits stay role guarded", asy
   assert.equal(forbidden.status, 403);
 });
 
-test("checkout, receipt, and admin payment activation work together", async () => {
+test("checkout and receipt keep the order pending until Mercado Pago confirms it", async () => {
   const otherCourse = await repositories.courses.create({
     title: "Second Test Course", description: "Additional isolated checkout course.",
     priceCents: 200_000, duration: "On-Demand", level: "Inicial", img: "https://example.test/second.jpg",
@@ -354,21 +351,17 @@ test("checkout, receipt, and admin payment activation work together", async () =
   const receipt = await api(server.baseUrl, `/api/orders/${checkout.body.data.order.externalReference}?email=${studentEmail}`);
   assert.equal(receipt.status, 200);
   const adminToken = await login("admin", adminEmail);
-  const paid = await api(server.baseUrl, `/api/admin/orders/${checkout.body.data.order.id}`, {
+  const manualApproval = await api(server.baseUrl, `/api/admin/orders/${checkout.body.data.order.id}`, {
     method: "PATCH", token: adminToken, body: JSON.stringify({ estado: "Pagado", motivo: "Pago manual verificado" }),
   });
-  assert.equal(paid.status, 200);
+  assert.equal(manualApproval.status, 400);
   const enrollment = await repositories.enrollments.findById(checkout.body.data.enrollment.id);
-  assert.equal(enrollment?.status, "Activo");
+  assert.equal(enrollment?.status, "Pendiente");
   const events = await api<{ data: { actorId?: string; reason: string; previousStatus: string; nextStatus: string }[] }>(
     server.baseUrl, `/api/admin/orders/${checkout.body.data.order.id}/events`, { token: adminToken },
   );
   assert.equal(events.status, 200);
-  assert.equal(events.body.data.length, 1);
-  assert.equal(events.body.data[0]?.reason, "Pago manual verificado");
-  assert.equal(events.body.data[0]?.previousStatus, "Pendiente");
-  assert.equal(events.body.data[0]?.nextStatus, "Pagado");
-  assert.equal(events.body.data[0]?.actorId, (await repositories.users.findByEmail(adminEmail))?.id);
+  assert.equal(events.body.data.length, 0);
   assert.equal((await api(server.baseUrl, `/api/admin/orders/${checkout.body.data.order.id}`, {
     method: "PATCH", token: adminToken,
     body: JSON.stringify({ estado: "Reembolsado" }),
@@ -377,6 +370,24 @@ test("checkout, receipt, and admin payment activation work together", async () =
     method: "PATCH", token: adminToken,
     body: JSON.stringify({ estado: "Pendiente", motivo: "Intento de reversión inválida" }),
   })).status, 400);
+});
+
+test("checkout refuses an unavailable provider without creating a manual order", async () => {
+  const course = (await repositories.courses.listPublished())[0];
+  assert.ok(course);
+  const before = (await repositories.orders.list()).length;
+  setPaymentGatewayForTests(null);
+  try {
+    const response = await api(server.baseUrl, "/api/checkout", {
+      method: "POST", body: JSON.stringify({
+        courseSlug: course.slug, nombre: "Provider Unavailable", email: "unavailable@example.test", dni: "30123456",
+      }),
+    });
+    assert.equal(response.status, 503);
+    assert.equal((await repositories.orders.list()).length, before);
+  } finally {
+    setPaymentGatewayForTests(checkoutGateway);
+  }
 });
 
 test("admin can create professors but never students", async () => {
@@ -757,15 +768,8 @@ test("teacher chat stays in the selected course and can start before the student
     new Set(["Student first", "Teacher first"]));
 });
 
-test("admin settings and paginated lists use repository data", async () => {
+test("admin paginated lists use repository data", async () => {
   const token = await login("admin", adminEmail);
-  const saved = await api(server.baseUrl, "/api/admin/settings", { method: "PUT", token, body: JSON.stringify({
-    companyName: "Updated Test Company", supportEmail: "support@example.test",
-    contactWhatsapp: "5491112345678", logoUrl: "", privacyText: "Updated test privacy policy text.",
-  }) });
-  assert.equal(saved.status, 200);
-  const publicSettings = await api<{ data: { companyName: string } }>(server.baseUrl, "/api/settings");
-  assert.equal(publicSettings.body.data.companyName, "Updated Test Company");
   const users = await api<{ data: Record<string, unknown>[] }>(server.baseUrl, "/api/admin/users?role=alumno&limit=1&offset=0", { token });
   assert.equal(users.status, 200);
   assert.equal(users.body.data.length, 1);
@@ -773,24 +777,7 @@ test("admin settings and paginated lists use repository data", async () => {
   assert.equal("dni" in users.body.data[0], false);
 });
 
-test("admin branding changes are visible through the public home endpoint", async () => {
-  const token = await login("admin", adminEmail);
-  const heroImage = "https://res.cloudinary.com/test-cloud/image/upload/v1/Rozenblum/brand/new-hero.jpg";
-  const updated = await api<{ data: { brand: { heroImage: string } } }>(
-    server.baseUrl, "/api/admin/content/home/images", {
-      method: "PUT", token, body: JSON.stringify({ heroImage }),
-    },
-  );
-  assert.equal(updated.status, 200);
-  assert.equal(updated.body.data.brand.heroImage, heroImage);
-  const publicHome = await api<{ data: { brand: { heroImage: string } } }>(
-    server.baseUrl, "/api/content/home",
-  );
-  assert.equal(publicHome.body.data.brand.heroImage, heroImage);
-});
-
 test("checkout waits for payment, then creates the student with the DNI password", async () => {
-  const token = await login("admin", adminEmail);
   const course = (await repositories.courses.listPublished()).find((item) => item.legacyId !== courseId);
   assert.ok(course);
   const buyerDni = "28999888";
@@ -808,10 +795,12 @@ test("checkout waits for payment, then creates the student with the DNI password
   assert.equal(JSON.stringify(pendingOrder).includes(buyerDni), false);
   assert.equal(JSON.stringify(created.body).includes(pendingOrder.dniPasswordHash), false);
 
-  const paid = await api(server.baseUrl, `/api/admin/orders/${pendingOrder?.externalReference ?? created.body.data.order.id}`, {
-    method: "PATCH", token, body: JSON.stringify({ estado: "Pagado", motivo: "Transferencia confirmada" }),
+  const paid = await applyOrderTransition({
+    reference: pendingOrder.externalReference, status: "Pagado", source: "mercadopago",
+    providerEventId: "test-buyer-approved", providerPaymentId: "12345001",
+    paymentStatus: "approved", reason: "Mercado Pago confirmó el cobro",
   });
-  assert.equal(paid.status, 200);
+  assert.ok(paid);
   const newStudent = await repositories.users.findByEmail("buyer@example.test");
   assert.equal(newStudent?.role, "alumno");
   assert.equal(JSON.stringify(newStudent).includes(buyerDni), false);
@@ -821,10 +810,12 @@ test("checkout waits for payment, then creates the student with the DNI password
   const enrolled = await repositories.enrollments.findById(created.body.data.enrollment.id);
   assert.equal(enrolled?.status, "Activo");
 
-  const revoked = await api(server.baseUrl, `/api/admin/orders/${created.body.data.order.id}`, {
-    method: "PATCH", token, body: JSON.stringify({ estado: "Reembolsado", motivo: "Devolución acordada" }),
+  const revoked = await applyOrderTransition({
+    reference: pendingOrder.externalReference, status: "Reembolsado", source: "mercadopago",
+    providerEventId: "test-buyer-refunded", providerPaymentId: "12345001",
+    paymentStatus: "refunded", reason: "Mercado Pago devolvió el cobro",
   });
-  assert.equal(revoked.status, 200);
+  assert.ok(revoked);
   assert.equal((await repositories.enrollments.findById(created.body.data.enrollment.id))?.status, "Revocado");
 });
 
@@ -867,8 +858,7 @@ test("text fields, prices, IDs and lesson blocks reject invalid boundaries", asy
     { path: "/api/admin/courses", method: "POST", token: adminToken, body: { title: "Valid title", description: "Valid description", priceCents: -1, professorEmail: teacherEmail, duration: "Online", level: "Inicial" } },
     { path: "/api/admin/courses", method: "POST", token: adminToken, body: { title: "Valid title", description: "Valid description", priceCents: 1000, professorEmail: teacherEmail, duration: "Online", level: "Inicial", img: "data:image/png;base64,AAAA" } },
     { path: "/api/admin/users", method: "POST", token: adminToken, body: { role: "profesor", name: "New Professor", email: "new@example.test", password: "short" } },
-    { path: "/api/admin/settings", method: "PUT", token: adminToken, body: { companyName: "Test Company", supportEmail: "support@example.test", contactWhatsapp: "abc", logoUrl: "", privacyText: "A complete privacy policy" } },
-    { path: "/api/admin/settings", method: "PUT", token: adminToken, body: { companyName: "Test Company", supportEmail: "support@example.test", contactWhatsapp: "5491112345678", logoUrl: "javascript:alert(1)", privacyText: "A complete privacy policy" } },
+    { path: "/api/checkout", method: "POST", body: { courseSlug: "test-course", nombre: "Valid Buyer", email: "buyer@example.test", dni: "30123456", paymentMethod: "manual" } },
     { path: "/api/admin/orders/unknown", method: "PATCH", token: adminToken, body: { estado: "Unknown" } },
   ];
   for (const item of cases) {
@@ -1317,7 +1307,7 @@ test("checkout rolls back an order when enrollment persistence fails", async () 
     const response = await api(server.baseUrl, "/api/checkout", {
       method: "POST", body: JSON.stringify({
         courseSlug: course.slug, nombre: "Rollback Student", email: "rollback@example.test",
-        dni: "32123456", paymentMethod: "manual",
+        dni: "32123456",
       }),
     });
     assert.equal(response.status, 500);
@@ -1439,7 +1429,7 @@ test("signed Mercado Pago events activate once, reject a wrong amount, and revok
     assert.equal((await notify("late-approved")).status, 200);
     assert.equal((await repositories.orders.findByReference(orderId))?.estado, "Reembolsado");
   } finally {
-    setPaymentGatewayForTests(null);
+    setPaymentGatewayForTests(checkoutGateway);
   }
 });
 

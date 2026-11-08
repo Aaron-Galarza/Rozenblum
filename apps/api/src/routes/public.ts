@@ -3,7 +3,7 @@ import { checkoutSchema, contactSchema } from "@rozenblum/shared";
 import { badRequest, sendData } from "../lib/http.js";
 import { listPublishedCourses, getLatestPublishedCourse, getPublishedCourseDetail } from "../services/courses.js";
 import { checkout, getOrderReceipt } from "../services/checkout.js";
-import { submitContact, getPublicSettings } from "../services/contact.js";
+import { submitContact } from "../services/contact.js";
 import { optionalAuth } from "../middleware/auth.js";
 import { asyncRoute, parseBody } from "./helpers.js";
 import { getHomeContent } from "../services/home.js";
@@ -84,12 +84,5 @@ publicRouter.post(
       },
       201,
     );
-  }),
-);
-
-publicRouter.get(
-  "/settings",
-  asyncRoute(async (_req, res) => {
-    sendData(res, await getPublicSettings());
   }),
 );

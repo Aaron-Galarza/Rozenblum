@@ -12,7 +12,7 @@ export const IconGraduation = (props: SmallIconProps) => <svg {...smallIconProps
 export const IconBell = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M10 21h4" /></svg>;
 export const IconMail = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 7 9-7" /></svg>;
 
-export function IconAdminNav({ name, ...props }: SmallIconProps & { name: "dashboard" | "profesores" | "alumnos" | "cursos" | "pagos" | "consultas" | "reportes" | "config" }) {
+export function IconAdminNav({ name, ...props }: SmallIconProps & { name: "dashboard" | "profesores" | "alumnos" | "cursos" | "pagos" | "consultas" | "reportes" }) {
   const paths = {
     dashboard: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
     profesores: <><circle cx="9" cy="8" r="3" /><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 8h5M19.5 5.5v5" /></>,
@@ -21,7 +21,6 @@ export function IconAdminNav({ name, ...props }: SmallIconProps & { name: "dashb
     pagos: <><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20M6 15h4" /></>,
     consultas: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 7 9-7" /></>,
     reportes: <><path d="M3 20h18M6 16v-5M12 16V4M18 16V9" /></>,
-    config: <><circle cx="12" cy="12" r="3" /><path d="M10 2h4l.7 2.4 2 .8L19 4l3 3-1.2 2.3.8 2L24 12l-2.4.7-.8 2L22 17l-3 3-2.3-1.2-2 .8L14 22h-4l-.7-2.4-2-.8L5 20l-3-3 1.2-2.3-.8-2L0 12l2.4-.7.8-2L2 7l3-3 2.3 1.2 2-.8L10 2Z" transform="translate(2 2) scale(.83)" /></>,
   };
   return <svg {...smallIconProps} {...props}>{paths[name]}</svg>;
 }

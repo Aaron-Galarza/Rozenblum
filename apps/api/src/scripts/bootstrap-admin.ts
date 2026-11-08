@@ -7,11 +7,10 @@
  *   BOOTSTRAP_ADMIN_PASSWORD=<secret> npm --workspace @rozenblum/api run bootstrap:admin -- admin@estudio.com
  *
  * Re-running it with the same administrator is a no-op. A different email
- * cannot create another administrator through this bootstrap. It also creates
- * the site settings document when missing, without publishing fake contact data.
+ * cannot create another administrator through this bootstrap.
  */
 import { connectDatabase, disconnectDatabase } from "../config/database.js";
-import { SettingsModel, UserModel } from "../models/index.js";
+import { UserModel } from "../models/index.js";
 import { hashPassword } from "../lib/password.js";
 import { initialsFromName, newId, nowIso } from "../lib/utils.js";
 
@@ -52,18 +51,6 @@ async function main() {
       passwordHash: await hashPassword(password),
       sessionVersion: 0,
       createdAt: nowIso(),
-    });
-  }
-
-  const settings = await SettingsModel.findOne({}).lean().exec();
-  if (!settings) {
-    await SettingsModel.create({
-      companyName: "Estudio Jurídico Rozenblum",
-      supportEmail: email,
-      contactWhatsapp: "",
-      logoUrl: "",
-      privacyText: "",
-      updatedAt: nowIso(),
     });
   }
 

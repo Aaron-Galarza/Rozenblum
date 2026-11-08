@@ -12,7 +12,6 @@ import type {
 import { formatArs } from "../lib/utils.js";
 import { forbidden, notFound } from "../lib/http.js";
 import type { Pagination } from "../lib/pagination.js";
-import { env } from "../config/env.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredCourse, StoredEnrollment, StoredOrder, StoredUser } from "../types.js";
 import {
@@ -22,7 +21,6 @@ import {
   computeProgress,
   enrollmentToDTO,
   orderToDTO,
-  settingsToDTO,
 } from "./mappers.js";
 import { canManageCourse } from "./courses.js";
 
@@ -245,12 +243,11 @@ function buildReportes(
 
 export async function getAdminOverview(): Promise<AdminOverviewDTO> {
   const repos = getRepositories();
-  const [users, courses, enrollments, orders, settings] = await Promise.all([
+  const [users, courses, enrollments, orders] = await Promise.all([
     repos.users.list(),
     repos.courses.list(),
     repos.enrollments.listAll(),
     repos.orders.list(),
-    repos.settings.get(),
   ]);
 
   const alumnosUsers = users.filter((user) => user.role === "alumno");
@@ -372,7 +369,6 @@ export async function getAdminOverview(): Promise<AdminOverviewDTO> {
     orders: orders.map(orderToDTO),
     inscripciones,
     reportes,
-    settings: settings ? settingsToDTO(settings, env.paymentsConfigured) : null,
   };
 }
 

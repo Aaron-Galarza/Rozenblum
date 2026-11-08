@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { ApiError, badRequest, forbidden } from "../lib/http.js";
 import { env } from "../config/env.js";
 
-export const MEDIA_CATEGORIES = ["courses", "professors", "lessons", "brand"] as const;
+export const MEDIA_CATEGORIES = ["courses", "professors", "lessons"] as const;
 export type MediaCategory = (typeof MEDIA_CATEGORIES)[number];
 export const MEDIA_ROOT = "Rozenblum";
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;

@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { test } from "node:test";
 import mongoose from "mongoose";
+import { BRAND_HERO_URL } from "@rozenblum/shared";
 import { env } from "../config/env.js";
 import { hashPassword } from "../lib/password.js";
-import { ContactModel, CourseModel, EnrollmentModel, HomeContentModel, PaymentEventModel, SettingsModel } from "../models/index.js";
+import { ContactModel, CourseModel, EnrollmentModel, HomeContentModel, PaymentEventModel } from "../models/index.js";
+import { setPaymentGatewayForTests } from "../services/mercadopago.js";
+import { applyOrderTransition } from "../services/order-transitions.js";
 import { createMongooseRepositories } from "../repositories/mongoose.js";
 import type { StoredPaymentEvent } from "../types.js";
 import { api, startTestServer } from "./helpers.js";
@@ -17,6 +20,12 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
   let server: Awaited<ReturnType<typeof startTestServer>> | undefined;
 
   try {
+    setPaymentGatewayForTests({
+      async createPreference(input) {
+        return { id: `pref-${input.reference}`, url: "https://www.mercadopago.com.ar/checkout/test" };
+      },
+      async getPayment() { throw new Error("No se consulta el proveedor en esta prueba."); },
+    });
     await mongoose.connect(env.MONGODB_URI, {
       dbName: databaseName,
       serverSelectionTimeoutMS: 10_000,
@@ -42,16 +51,10 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
       initials: "TP", passwordHash: await hashPassword(adminPassword),
       img: "https://example.test/current-professor.jpg",
     });
-    await SettingsModel.create({
-      companyName: "Atlas Test Studio", supportEmail: "support@example.test",
-      contactWhatsapp: "5491112345678", logoUrl: "", privacyText: "Test privacy policy",
-      updatedAt: new Date().toISOString(),
-    });
     await HomeContentModel.create({
       key: "home",
       brand: {
         locationLabel: "Resistencia", foundedYear: "2020",
-        heroImage: `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/image/upload/v1/Rozenblum/brand/original.jpg`,
         metrics: [], aboutParagraphs: ["Atlas content"], footerTagline: "Test studio",
       },
       team: [{ name: "Test Professor", role: "Docente", img: "https://example.test/old-professor.jpg", userId: professor.id }],
@@ -62,30 +65,14 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
       method: "POST", body: JSON.stringify({ email: "admin@example.test", password: adminPassword }),
     });
     assert.equal(adminLogin.status, 200);
-    const settings = await api<{ data: { companyName: string; paymentsConfigured: boolean } }>(
-      server.baseUrl, "/api/settings",
-    );
-    assert.equal(settings.status, 200);
-    assert.equal(settings.body.data.companyName, "Atlas Test Studio");
-    assert.equal(typeof settings.body.data.paymentsConfigured, "boolean");
-    const home = await api<{ data: { team: { img: string; userId?: string }[] } }>(
+    const home = await api<{ data: { brand: { heroImage: string }; team: { img: string; userId?: string }[] } }>(
       server.baseUrl, "/api/content/home",
     );
     assert.equal(home.status, 200);
+    assert.equal(home.body.data.brand.heroImage, BRAND_HERO_URL);
     assert.equal(home.body.data.team[0]?.img, "https://example.test/current-professor.jpg");
     assert.equal(home.body.data.team[0]?.userId, undefined);
     assert.equal(JSON.stringify(home.body).includes('"_id"'), false);
-    const nextHero = `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/image/upload/v1/Rozenblum/brand/updated.jpg`;
-    const updatedHome = await api<{ data: { brand: { heroImage: string } } }>(
-      server.baseUrl, "/api/admin/content/home/images", {
-        method: "PUT", token: adminLogin.body.data.token,
-        body: JSON.stringify({ heroImage: nextHero }),
-      },
-    );
-    assert.equal(updatedHome.status, 200);
-    assert.equal((await api<{ data: { brand: { heroImage: string } } }>(
-      server.baseUrl, "/api/content/home",
-    )).body.data.brand.heroImage, nextHero);
     const contact = await api<{ data: { id: string; message: string } }>(
       server.baseUrl, "/api/contact", {
         method: "POST", body: JSON.stringify({
@@ -281,7 +268,7 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     const simultaneous = await Promise.all([0, 1].map(() => api(server!.baseUrl, "/api/checkout", {
       method: "POST", body: JSON.stringify({
         courseSlug: course.slug, nombre: "Concurrent Buyer", email: "concurrent-buyer@example.test",
-        dni: "27123456", paymentMethod: "manual",
+        dni: "27123456",
       }),
     })));
     assert.deepEqual(simultaneous.map((response) => response.status).sort(), [201, 400]);
@@ -302,14 +289,15 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     assert.equal(await repositories.orders.findByReference(rollbackReference), null);
     assert.equal(rawOrder.dni, undefined);
     assert.notEqual(rawOrder.dniPasswordHash, buyerDni);
-    const paid = await api(server.baseUrl, `/api/admin/orders/${checkout.body.data.order.id}`, {
-      method: "PATCH", token: adminLogin.body.data.token,
-      body: JSON.stringify({ estado: "Pagado", motivo: "Transferencia confirmada en ensayo" }),
+    const paid = await applyOrderTransition({
+      reference: sourceOrder.externalReference, status: "Pagado", source: "mercadopago",
+      providerEventId: "atlas-payment-approved", providerPaymentId: "123456789",
+      paymentStatus: "approved", reason: "Mercado Pago confirmó el cobro en ensayo",
     });
-    assert.equal(paid.status, 200);
+    assert.ok(paid);
     const paymentEvents = await PaymentEventModel.find({ orderId: checkout.body.data.order.id }).lean().exec();
     assert.equal(paymentEvents.length, 1);
-    assert.equal(paymentEvents[0]?.reason, "Transferencia confirmada en ensayo");
+    assert.equal(paymentEvents[0]?.reason, "Mercado Pago confirmó el cobro en ensayo");
     assert.equal(paymentEvents[0]?.previousStatus, "Pendiente");
     assert.equal(paymentEvents[0]?.nextStatus, "Pagado");
     await PaymentEventModel.init();
@@ -338,6 +326,7 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     assert.equal((await api(server.baseUrl, "/api/auth/session", { token: studentToken })).status, 401);
     assert.equal((await repositories.users.findById(student.id))?.sessionVersion, 1);
   } finally {
+    setPaymentGatewayForTests(null);
     await server?.close();
     if (mongoose.connection.db?.databaseName === databaseName) {
       await mongoose.connection.dropDatabase();

@@ -6,7 +6,7 @@ import type { AdminOverviewDTO, CourseDTO, CourseDetailDTO, OrderStatus } from "
 import type { AdminSection } from "../../types";
 import { NAV_ITEMS } from "./nav";
 import { IconAdminNav } from "../../components/icons";
-import { usePublicSettings } from "../../lib/use-public-settings";
+import BrandLogo from "../../components/ui/BrandLogo";
 import SimpleFooter from "../../components/layout/SimpleFooter";
 import { apiFetch, clearSession, errorMessage } from "../../lib/api";
 import { useSession } from "../../lib/use-session";
@@ -18,10 +18,8 @@ import CursosSection from "./sections/CursosSection";
 import PagosSection from "./sections/PagosSection";
 import ConsultasSection from "./sections/ConsultasSection";
 import ReportesSection from "./sections/ReportesSection";
-import ConfigSection from "./sections/ConfigSection";
 
 export default function AdminView() {
-  const settings = usePublicSettings();
   const router = useRouter();
   const { session, ready } = useSession("admin");
   const [section, setSection] = useState<AdminSection>("dashboard");
@@ -61,7 +59,7 @@ export default function AdminView() {
       {/* ── HEADER ── */}
       <header className="flex-shrink-0 flex items-center justify-between px-6 h-[70px] z-40" style={{ backgroundColor: "#FAF8F5", borderBottom: "2px solid #B58A43" }}>
         <button onClick={() => router.push("/")} className="flex items-center gap-3">
-          {settings?.logoUrl && <img src={settings.logoUrl} alt={settings.companyName} className="h-9 w-auto object-contain" />}
+          <BrandLogo className="h-9 w-auto object-contain" />
         </button>
         <h1 className="text-lg font-medium hidden sm:block" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{pageTitle}</h1>
         <div className="flex items-center gap-4">
@@ -215,15 +213,6 @@ export default function AdminView() {
               )}
               {section === "consultas" && <ConsultasSection />}
               {section === "reportes" && <ReportesSection reportes={overview.reportes} />}
-              {section === "config" && (
-                <ConfigSection
-                  settings={overview.settings}
-                  onSave={async (input) => {
-                    await apiFetch("/api/admin/settings", { method: "PUT", auth: true, body: input });
-                    await load();
-                  }}
-                />
-              )}
             </>
           ) : null}
         </main>

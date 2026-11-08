@@ -186,7 +186,7 @@ export default function AlumnoView() {
       ) : !enrollment || !selectedLesson ? (
         <EmptyState
           title="Todavía no tenés cursos activos"
-          message="Cuando se valide tu inscripción, tus cursos van a aparecer acá. Si ya pagaste, escribinos por WhatsApp desde la pantalla de confirmación."
+          message="Cuando Mercado Pago confirme tu inscripción, tus cursos van a aparecer acá. Podés consultar el estado de tu orden en la pantalla de confirmación."
         />
       ) : (
         <>

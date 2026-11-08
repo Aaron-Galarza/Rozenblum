@@ -1,12 +1,10 @@
 import { Router } from "express";
-import { z } from "zod";
 import {
   adminCoursePatchSchema,
   adminUserPatchSchema,
   adminUserSchema,
   coursePayloadSchema,
   orderStatusSchema,
-  siteSettingsSchema,
 } from "@rozenblum/shared";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { sendData, notFound } from "../lib/http.js";
@@ -18,12 +16,10 @@ import {
   listAdminUsers,
   updateAdminOrder,
   updateAdminUser,
-  updateSettings,
 } from "../services/admin.js";
 import { getAdminOverview, listAdminEnrollments } from "../services/dashboard.js";
 import { createEmptyCourseForAdmin, deleteCourse, updateCourse } from "../services/courses.js";
 import { listContacts } from "../services/contact.js";
-import { updateHomeHeroImage } from "../services/home.js";
 import { asyncRoute, numericParam, parseBody } from "./helpers.js";
 
 export const adminRouter = Router();
@@ -123,21 +119,4 @@ adminRouter.patch(
 
 adminRouter.get("/orders/:id/events", asyncRoute(async (req, res) => {
   sendData(res, await getAdminOrderEvents(req.params.id));
-}));
-
-adminRouter.put(
-  "/settings",
-  asyncRoute(async (req, res) => {
-    const input = parseBody(siteSettingsSchema, req.body);
-    sendData(res, await updateSettings(input));
-  }),
-);
-
-const homeImagesSchema = z.object({
-  heroImage: z.string().url().max(1000),
-}).strict();
-
-adminRouter.put("/content/home/images", asyncRoute(async (req, res) => {
-  const input = parseBody(homeImagesSchema, req.body);
-  sendData(res, await updateHomeHeroImage(input.heroImage));
 }));

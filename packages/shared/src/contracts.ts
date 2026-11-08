@@ -317,12 +317,11 @@ export type OrderDTO = {
 
 export const checkoutSchema = z.object({
   courseSlug: z.string().min(1),
-  paymentMethod: z.enum(["mercadopago", "manual"]).optional(),
   nombre: z.string().trim().min(3).max(120),
   email: z.string().trim().email(),
   /**
    * Hashed with a unique salt on the order. No account is created here: the
-   * student account is created after an administrator confirms payment.
+   * student account is created after Mercado Pago confirms payment.
    */
   dni: dniSchema,
 }).strict();
@@ -332,7 +331,7 @@ export type CheckoutInput = z.infer<typeof checkoutSchema>;
 export type CheckoutResultDTO = {
   order: OrderDTO;
   enrollment: EnrollmentDTO | null;
-  payment?: { provider: "mercadopago"; preferenceId: string; url: string };
+  payment: { provider: "mercadopago"; preferenceId: string; url: string };
   message: string;
 };
 
@@ -350,17 +349,6 @@ export type ChatMessageDTO = {
 export const messagePayloadSchema = z.object({
   text: z.string().trim().min(1).max(2000),
 });
-
-export type SiteSettingsDTO = {
-  companyName: string;
-  supportEmail: string;
-  contactWhatsapp: string;
-  logoUrl: string;
-  privacyText: string;
-  paymentProvider: "mercadopago";
-  /** Computed on the API from env; secrets are never returned. */
-  paymentsConfigured: boolean;
-};
 
 export type HomeContentDTO = {
   key: "home";
@@ -381,17 +369,6 @@ export type HomeContentDTO = {
   }[];
 };
 
-export const siteSettingsSchema = z.object({
-  companyName: z.string().trim().min(2).max(120),
-  supportEmail: z.string().trim().email(),
-  contactWhatsapp: z.string().trim().regex(/^\d{8,18}$/),
-  logoUrl: z.string().trim().max(500).refine(
-    (value) => value === "" || safeDocumentUrl(value),
-    "El logo debe usar http o https.",
-  ),
-  privacyText: z.string().trim().min(10).max(10000),
-});
-
 export const contactSchema = z.object({
   name: z.string().trim().min(3).max(120),
   email: z.string().trim().email(),
@@ -408,7 +385,6 @@ export type AdminOverviewDTO = {
   orders: OrderDTO[];
   inscripciones: AdminInscripcionDTO[];
   reportes: AdminReportesDTO;
-  settings: SiteSettingsDTO | null;
 };
 
 export type AdminUserInput = {

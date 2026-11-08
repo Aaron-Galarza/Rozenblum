@@ -22,7 +22,7 @@ let testGateway: PaymentGateway | null = null;
 let testWebhookSecret: string | null = null;
 
 export function setPaymentGatewayForTests(gateway: PaymentGateway | null, webhookSecret: string | null = null) {
-  if (!env.isTest) throw new Error("El proveedor de pruebas solo se usa en tests.");
+  if (env.isProduction) throw new Error("El proveedor de pruebas no se usa en producción.");
   testGateway = gateway;
   testWebhookSecret = webhookSecret;
 }

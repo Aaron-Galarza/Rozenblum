@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { clearSession } from "../../lib/api";
-import { usePublicSettings } from "../../lib/use-public-settings";
+import { BRAND_NAME } from "@rozenblum/shared";
+import BrandLogo from "../ui/BrandLogo";
 
 type ClassroomHeaderProps = {
   breadcrumb?: React.ReactNode;
@@ -14,7 +15,6 @@ type ClassroomHeaderProps = {
 
 export default function ClassroomHeader({ breadcrumb, notificationCount = 0, userInitials, userName }: ClassroomHeaderProps) {
   const router = useRouter();
-  const settings = usePublicSettings();
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const logout = () => {
@@ -25,8 +25,8 @@ export default function ClassroomHeader({ breadcrumb, notificationCount = 0, use
   return (
     <header className="flex-shrink-0 flex items-center justify-between px-6 h-[70px] z-40" style={{ backgroundColor: "#FAF8F5", borderBottom: "2px solid #B58A43" }}>
       <button onClick={() => router.push("/")} className="flex items-center gap-3">
-        {settings?.logoUrl && <img src={settings.logoUrl} alt="Logo" className="h-9 w-auto object-contain" />}
-        <span className="hidden sm:block text-sm font-medium" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{settings?.companyName ?? "Estudio Jurídico"}</span>
+        <BrandLogo className="h-9 w-auto object-contain" />
+        <span className="hidden sm:block text-sm font-medium" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{BRAND_NAME}</span>
       </button>
       {breadcrumb && (
         <p className="text-xs hidden md:block" style={{ color: "#173B6C", opacity: 0.7 }}>

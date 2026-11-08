@@ -144,7 +144,7 @@ export default function CourseDetail({ course, professor, onBack, onBuy }: Cours
             {/* Info box */}
             <div className="p-4 rounded mb-6" style={{ backgroundColor: "#E8EDF3", border: "1px solid rgba(23,59,108,0.12)" }}>
               <p className="text-xs leading-relaxed" style={{ color: "#173B6C" }}>
-                <span className="inline-flex items-center gap-1 font-bold"><IconInfo className="h-3.5 w-3.5" /> Importante:</span> Este formulario registra una solicitud pendiente y no realiza cobros. Al finalizar, comunicate por WhatsApp para coordinar el pago. Un administrador habilitará el acceso después de confirmarlo.
+                <span className="inline-flex items-center gap-1 font-bold"><IconInfo className="h-3.5 w-3.5" /> Importante:</span> La inscripción se paga en Mercado Pago. El acceso al aula se activa automáticamente cuando Mercado Pago confirma el pago.
               </p>
             </div>
 

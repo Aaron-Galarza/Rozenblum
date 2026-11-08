@@ -12,7 +12,7 @@ export function createMongooseRepositories(): Repositories {
   const { courses } = createMongooseCoursesRepositories();
   const { orders, paymentEvents } = createMongoosePaymentsRepositories();
   const { conversations } = createMongooseConversationsRepositories();
-  const { settings, contacts, home } = createMongooseContentRepositories();
+  const { contacts, home } = createMongooseContentRepositories();
 
   return {
     mode: "atlas",
@@ -23,7 +23,6 @@ export function createMongooseRepositories(): Repositories {
     orders,
     paymentEvents,
     conversations,
-    settings,
     contacts,
     home,
   };

@@ -8,5 +8,4 @@ export const NAV_ITEMS: { key: AdminSection; label: string }[] = [
   { key: "pagos", label: "Pagos / Órdenes" },
   { key: "consultas", label: "Consultas" },
   { key: "reportes", label: "Reportes" },
-  { key: "config", label: "Configuración" },
 ];

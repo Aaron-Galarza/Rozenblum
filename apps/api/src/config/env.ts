@@ -34,6 +34,9 @@ const paymentFields = [raw.MERCADOPAGO_ACCESS_TOKEN, raw.MERCADOPAGO_WEBHOOK_SEC
 if (paymentFields.some(Boolean) && !paymentFields.every(Boolean)) {
   throw new Error("Mercado Pago requiere access token, firma webhook y URL públicas de notificación y web.");
 }
+if (raw.NODE_ENV === "production" && !paymentFields.every(Boolean)) {
+  throw new Error("Configurá Mercado Pago antes de iniciar la API en producción.");
+}
 if (paymentFields.every(Boolean) && raw.NODE_ENV === "production" &&
   (!raw.MERCADOPAGO_NOTIFICATION_URL!.startsWith("https://") ||
     !raw.WEB_PUBLIC_URL!.startsWith("https://"))) {

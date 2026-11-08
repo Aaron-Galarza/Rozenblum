@@ -3,7 +3,7 @@ import type {
   CheckoutResultDTO,
   OrderDTO,
 } from "@rozenblum/shared";
-import { badRequest, notFound } from "../lib/http.js";
+import { ApiError, badRequest, notFound } from "../lib/http.js";
 import { logger } from "../lib/logger.js";
 import { hashPassword } from "../lib/password.js";
 import { newId, nowIso } from "../lib/utils.js";
@@ -28,22 +28,17 @@ export async function checkout(
   actor?: StoredUser,
 ): Promise<CheckoutResultDTO> {
   const { course, teacher, account } = await resolveCheckoutParticipants(input, actor);
-  // The account is created only after a verified or manually confirmed payment.
+  // The account is created only after Mercado Pago confirms the payment.
   const reference = `RB-${new Date().getFullYear()}-${newId("ref").slice(4).toUpperCase()}`;
   const gateway = paymentGateway();
-  const paymentMethod = input.paymentMethod ?? (gateway ? "mercadopago" : "manual");
-  if (paymentMethod === "mercadopago" && !gateway) {
-    throw badRequest("Mercado Pago no está configurado. Elegí pago manual.");
-  }
-  if (paymentMethod === "mercadopago" && course.priceCents <= 0) {
+  if (!gateway) throw new ApiError(503, "PAYMENTS_NOT_CONFIGURED", "Mercado Pago no está disponible en este momento. Intentá más tarde.");
+  if (course.priceCents <= 0) {
     throw badRequest("Este curso no tiene un importe válido para Mercado Pago.");
   }
-  const preference = paymentMethod === "mercadopago"
-    ? await gateway!.createPreference({
-        reference, courseId: course.legacyId, title: course.title,
-        priceCents: course.priceCents, email: input.email.toLowerCase(),
-      })
-    : null;
+  const preference = await gateway.createPreference({
+    reference, courseId: course.legacyId, title: course.title,
+    priceCents: course.priceCents, email: input.email.toLowerCase(),
+  });
   const order: StoredOrder = {
     id: newId("ord"),
     externalReference: reference,
@@ -56,26 +51,23 @@ export async function checkout(
     monto: course.price,
     montoCents: course.priceCents,
     fecha: todayLabel(),
-    metodo: paymentMethod === "mercadopago" ? "Mercado Pago" : "Pago manual",
+    metodo: "Mercado Pago",
     estado: "Pendiente",
     createdAt: nowIso(),
-    paymentProvider: paymentMethod,
-    preferenceId: preference?.id,
-    paymentUrl: preference?.url,
+    paymentProvider: "mercadopago",
+    preferenceId: preference.id,
+    paymentUrl: preference.url,
   };
 
   const { createdOrder, enrollment } = await persistCheckoutRecords(order, teacher);
-  logger.debug("checkout_created", { reference, courseId: course.legacyId, paymentMethod,
+  logger.debug("checkout_created", { reference, courseId: course.legacyId, paymentMethod: "mercadopago",
     amountCents: course.priceCents, orderId: createdOrder.id });
 
   return {
     order: orderToDTO(createdOrder),
     enrollment: enrollmentToDTO(enrollment, course),
-    ...(preference ? { payment: { provider: "mercadopago" as const,
-      preferenceId: preference.id, url: preference.url } } : {}),
-    message: preference
-      ? "Solicitud registrada. Completá el pago en Mercado Pago; el acceso se activará al confirmarse."
-      : "Solicitud registrada. Contactanos para coordinar el pago; un administrador confirmará el acceso al aula.",
+    payment: { provider: "mercadopago", preferenceId: preference.id, url: preference.url },
+    message: "Solicitud registrada. Completá el pago en Mercado Pago; el acceso se activará al confirmarse.",
   };
 }
 

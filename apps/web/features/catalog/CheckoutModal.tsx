@@ -1,32 +1,37 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { CheckoutResultDTO } from "@rozenblum/shared";
 import type { Course } from "../../types";
 import { apiFetch, errorMessage } from "../../lib/api";
 import { useModalA11y } from "../../lib/use-modal-a11y";
-import { usePublicSettings } from "../../lib/use-public-settings";
 import { safeHttpUrl } from "../../lib/safe-url";
 
 type CheckoutModalProps = {
   course: Course;
   onClose: () => void;
-  onSuccess: (reference: string, email: string) => void;
 };
 
-export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutModalProps) {
+export default function CheckoutModal({ course, onClose }: CheckoutModalProps) {
   const titleId = useId();
   const dialogRef = useModalA11y<HTMLDivElement>(onClose);
   const [form, setForm] = useState({ nombre: "", email: "", dni: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"mercadopago" | "manual">("mercadopago");
-  const settings = usePublicSettings();
-  const onlinePayments = Boolean(settings?.paymentsConfigured);
+  const [paymentAvailability, setPaymentAvailability] = useState<"loading" | "available" | "unavailable">("loading");
+
+  const checkPaymentAvailability = () => {
+    setPaymentAvailability("loading");
+    void apiFetch<{ paymentsConfigured: boolean }>("/health")
+      .then((health) => setPaymentAvailability(health.paymentsConfigured ? "available" : "unavailable"))
+      .catch(() => setPaymentAvailability("unavailable"));
+  };
+
+  useEffect(checkPaymentAvailability, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.nombre || !form.email || !/^\d{7,8}$/.test(form.dni)) return;
+    if (!form.nombre || !form.email || !/^\d{7,8}$/.test(form.dni) || paymentAvailability !== "available") return;
     setLoading(true);
     setError("");
     try {
@@ -37,20 +42,12 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
           nombre: form.nombre,
           email: form.email,
           dni: form.dni,
-          paymentMethod: settings ? (onlinePayments ? paymentMethod : "manual") : undefined,
         },
       });
-      if (result.payment?.url) {
-        const paymentUrl = safeHttpUrl(result.payment.url);
-        if (!paymentUrl) {
-          onSuccess(result.order.externalReference ?? result.order.id, form.email);
-          return;
-        }
-        sessionStorage.setItem(`rozenblum-payment-email:${result.order.externalReference ?? result.order.id}`, form.email);
-        window.location.assign(paymentUrl);
-        return;
-      }
-      onSuccess(result.order.externalReference ?? result.order.id, form.email);
+      const paymentUrl = safeHttpUrl(result.payment.url);
+      if (!paymentUrl) throw new Error("Mercado Pago devolvió un enlace inválido. Volvé a intentarlo.");
+      sessionStorage.setItem(`rozenblum-payment-email:${result.order.externalReference ?? result.order.id}`, form.email);
+      window.location.assign(paymentUrl);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -127,25 +124,13 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
             </div>
           ))}
 
-          {onlinePayments && (
-            <fieldset className="space-y-2">
-              <legend className="text-xs font-medium tracking-widest uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>Forma de pago</legend>
-              <label className="flex items-center gap-2 text-sm" style={{ color: "#173B6C" }}>
-                <input type="radio" name="paymentMethod" checked={paymentMethod === "mercadopago"} onChange={() => setPaymentMethod("mercadopago")} />
-                Mercado Pago · activación automática
-              </label>
-              <label className="flex items-center gap-2 text-sm" style={{ color: "#173B6C" }}>
-                <input type="radio" name="paymentMethod" checked={paymentMethod === "manual"} onChange={() => setPaymentMethod("manual")} />
-                Coordinar otro pago con el Estudio
-              </label>
-            </fieldset>
-          )}
-
           {/* Registration status */}
           <div className="p-4 rounded" style={{ backgroundColor: "#F5F5F5" }}>
             <p className="text-xs font-bold tracking-widest uppercase mb-2" style={{ color: "#173B6C" }}>Solicitud de inscripción</p>
-            <p className="text-xs leading-relaxed" style={{ color: "rgba(23,59,108,0.7)" }}>Tu DNI será la contraseña inicial de tu cuenta. La cuenta se crea cuando se confirme el pago. {onlinePayments && paymentMethod === "mercadopago" ? "Al continuar, irás a Mercado Pago para completar el pago. El acceso se activará cuando se confirme." : "Contactá al Estudio para coordinar el pago; un administrador habilitará el acceso."}</p>
+            <p className="text-xs leading-relaxed" style={{ color: "rgba(23,59,108,0.7)" }}>Tu DNI será la contraseña inicial de tu cuenta. Al continuar, irás a Mercado Pago. La cuenta y el acceso al aula se habilitarán cuando se confirme el pago.</p>
           </div>
+
+          {paymentAvailability === "unavailable" && <p role="alert" className="text-sm text-[#72132C]">Mercado Pago no está disponible en este momento. <button type="button" onClick={checkPaymentAvailability} className="underline">Reintentar</button></p>}
 
           {error && (
             <p className="text-xs leading-relaxed" style={{ color: "#72132C" }} role="alert">{error}</p>
@@ -154,11 +139,11 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
           {/* Submit */}
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || paymentAvailability !== "available"}
             className="w-full py-4 text-sm font-bold tracking-widest transition-all duration-200 hover:brightness-110 active:scale-95 rounded disabled:opacity-70"
             style={{ backgroundColor: "#009EE3", color: "#FFFFFF", letterSpacing: "0.1em" }}
           >
-            {loading ? "REGISTRANDO..." : onlinePayments && paymentMethod === "mercadopago" ? "CONTINUAR A MERCADO PAGO" : "SOLICITAR INSCRIPCIÓN"}
+            {loading ? "REGISTRANDO..." : paymentAvailability === "loading" ? "COMPROBANDO PAGO..." : "CONTINUAR A MERCADO PAGO"}
           </button>
 
           <p className="text-[11px] leading-relaxed text-center" style={{ color: "rgba(23,59,108,0.55)" }}>

@@ -11,7 +11,6 @@ import type {
   StoredModule,
   StoredOrder,
   StoredPaymentEvent,
-  StoredSettings,
   StoredUser,
 } from "../types.js";
 
@@ -131,11 +130,6 @@ export interface ConversationRepository {
   deleteByStudent(email: string): Promise<number>;
 }
 
-export interface SettingsRepository {
-  get(): Promise<StoredSettings | null>;
-  update(patch: Partial<StoredSettings>): Promise<StoredSettings>;
-}
-
 export interface ContactRepository {
   list(page?: Pagination): Promise<StoredContact[]>;
   create(input: StoredContact): Promise<StoredContact>;
@@ -143,7 +137,6 @@ export interface ContactRepository {
 
 export interface HomeRepository {
   get(): Promise<HomeContentDTO | null>;
-  updateHeroImage(previousUrl: string, nextUrl: string): Promise<HomeContentDTO | null>;
 }
 
 export type Repositories = {
@@ -155,7 +148,6 @@ export type Repositories = {
   orders: OrderRepository;
   paymentEvents: PaymentEventRepository;
   conversations: ConversationRepository;
-  settings: SettingsRepository;
   contacts: ContactRepository;
   home: HomeRepository;
 };

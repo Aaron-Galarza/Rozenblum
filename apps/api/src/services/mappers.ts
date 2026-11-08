@@ -7,7 +7,6 @@ import type {
   EnrollmentDTO,
   ModuleStatus,
   OrderDTO,
-  SiteSettingsDTO,
   UserDTO,
 } from "@rozenblum/shared";
 import type {
@@ -17,7 +16,6 @@ import type {
   StoredEnrollment,
   StoredOrder,
   PublicCourseRecord,
-  StoredSettings,
   StoredUser,
 } from "../types.js";
 
@@ -222,21 +220,6 @@ export function conversationToMessages(conversation: StoredConversation | null):
     text: message.text,
     time: message.time,
   }));
-}
-
-export function settingsToDTO(
-  settings: StoredSettings,
-  paymentsConfigured: boolean,
-): SiteSettingsDTO {
-  return {
-    companyName: settings.companyName,
-    supportEmail: settings.supportEmail,
-    contactWhatsapp: settings.contactWhatsapp,
-    logoUrl: settings.logoUrl,
-    privacyText: settings.privacyText,
-    paymentProvider: "mercadopago",
-    paymentsConfigured,
-  };
 }
 
 export function adminAlumno(

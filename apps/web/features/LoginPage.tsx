@@ -5,10 +5,9 @@ import { useRouter } from "next/navigation";
 import type { SessionDTO } from "@rozenblum/shared";
 import { apiFetch, errorMessage, saveSession } from "../lib/api";
 import { loginDestination } from "../lib/login-destination";
-import { usePublicSettings } from "../lib/use-public-settings";
+import BrandLogo from "../components/ui/BrandLogo";
 
 export default function LoginPage() {
-  const settings = usePublicSettings();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -47,7 +46,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: "#FAF8F5", fontFamily: "'Roboto', sans-serif" }}>
       <header className="flex items-center justify-between gap-3 px-4 sm:px-8 py-5" style={{ borderBottom: "1px solid rgba(23,59,108,0.1)" }}>
-        {settings?.logoUrl && <img src={settings.logoUrl} alt={settings.companyName} className="h-11 max-w-[45%] w-auto object-contain" />}
+        <BrandLogo className="h-11 max-w-[45%] w-auto object-contain" />
         <button type="button" onClick={() => router.push("/")} className="min-h-11 flex items-center gap-2 text-sm font-medium underline underline-offset-2" style={{ color: "#173B6C" }}>
           <span aria-hidden="true">←</span> Volver a Inicio
         </button>
@@ -79,7 +78,7 @@ export default function LoginPage() {
         </div>
       </main>
       <footer className="py-5 px-4 text-center" style={{ backgroundColor: "#173B6C" }}>
-        <p className="text-xs" style={{ color: "rgba(250,248,245,0.5)" }}>Términos de Servicio · Política de Privacidad {settings && <>· Soporte: {settings.supportEmail}</>}</p>
+        <p className="text-xs" style={{ color: "rgba(250,248,245,0.5)" }}>Términos de Servicio · Política de Privacidad</p>
       </footer>
     </div>
   );

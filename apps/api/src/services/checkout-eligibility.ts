@@ -40,7 +40,7 @@ export async function resolveCheckoutParticipants(
   const existingEnrollment = await repos.enrollments.findByStudentAndCourse(input.email, course.legacyId);
   if (existingEnrollment) {
     throw badRequest(existingEnrollment.status === "Pendiente"
-      ? "Ya existe una inscripción pendiente para este correo. Avisanos por WhatsApp para agilizar la validación."
+      ? "Ya existe una inscripción pendiente para este correo. Revisá el estado de tu orden o completá el pago en Mercado Pago."
       : "Este correo ya tiene una inscripción para el curso.");
   }
   return { course, teacher, account };

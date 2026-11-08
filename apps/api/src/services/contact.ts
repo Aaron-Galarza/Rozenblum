@@ -1,10 +1,7 @@
-import type { ContactInput, SiteSettingsDTO } from "@rozenblum/shared";
+import type { ContactInput } from "@rozenblum/shared";
 import { newId, nowIso } from "../lib/utils.js";
-import { env } from "../config/env.js";
-import { notFound } from "../lib/http.js";
 import type { Pagination } from "../lib/pagination.js";
 import { getRepositories } from "../repositories/index.js";
-import { settingsToDTO } from "./mappers.js";
 import type { StoredContact } from "../types.js";
 
 export async function submitContact(input: ContactInput): Promise<StoredContact> {
@@ -19,10 +16,4 @@ export async function submitContact(input: ContactInput): Promise<StoredContact>
 
 export async function listContacts(page?: Pagination): Promise<StoredContact[]> {
   return getRepositories().contacts.list(page);
-}
-
-export async function getPublicSettings(): Promise<SiteSettingsDTO> {
-  const settings = await getRepositories().settings.get();
-  if (!settings) throw notFound("La configuración del sitio todavía no está creada.");
-  return settingsToDTO(settings, env.paymentsConfigured);
 }

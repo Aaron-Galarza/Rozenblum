@@ -31,7 +31,7 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
   const { courses } = createMockCoursesRepositories(db);
   const { orders, paymentEvents } = createMockPaymentsRepositories(db);
   const { conversations } = createMockConversationsRepositories(db);
-  const { settings, contacts, home } = createMockContentRepositories(db);
+  const { contacts, home } = createMockContentRepositories(db);
 
   return {
     mode: "test",
@@ -42,7 +42,6 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
     orders,
     paymentEvents,
     conversations,
-    settings,
     contacts,
     home,
   };

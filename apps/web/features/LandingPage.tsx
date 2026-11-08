@@ -6,9 +6,9 @@ import type { CourseDTO, CourseDetailDTO, HomeContentDTO } from "@rozenblum/shar
 import type { PracticeArea } from "../types";
 import { IconBriefcase, IconBuilding, IconClose, IconDoc, IconExternal, IconFamily, IconShield } from "../components/icons";
 import LandingFooter from "../components/layout/LandingFooter";
-import { apiFetch, errorMessage } from "../lib/api";
+import { ApiClientError, apiFetch, errorMessage } from "../lib/api";
 import { useModalA11y } from "../lib/use-modal-a11y";
-import { usePublicSettings } from "../lib/use-public-settings";
+import BrandLogo from "../components/ui/BrandLogo";
 import { optimizedImage, responsiveImageSet } from "../lib/images";
 
 const NAV_LINKS = ["Inicio", "Áreas", "Nosotros", "Equipo", "Cursos", "Contacto"];
@@ -76,7 +76,6 @@ function Modal({ area, onClose, onContact }: { area: PracticeArea; onClose: () =
 
 export default function LandingPage() {
   const router = useRouter();
-  const settings = usePublicSettings();
   const [homeContent, setHomeContent] = useState<HomeContentDTO | null>(null);
   const [featuredCourse, setFeaturedCourse] = useState<CourseDTO | null>(null);
   const [courses, setCourses] = useState<CourseDTO[]>([]);
@@ -95,7 +94,9 @@ export default function LandingPage() {
       .catch((error) => setContentError(errorMessage(error)));
     apiFetch<CourseDetailDTO>("/api/courses/latest")
       .then((detail) => setFeaturedCourse(detail.course))
-      .catch((error) => setContentError(errorMessage(error)));
+      .catch((error) => {
+        if (!(error instanceof ApiClientError && error.status === 404)) setContentError(errorMessage(error));
+      });
     apiFetch<CourseDTO[]>("/api/courses")
       .then(setCourses)
       .catch((error) => setContentError(errorMessage(error)));
@@ -146,7 +147,7 @@ export default function LandingPage() {
       <nav className="fixed top-0 left-0 right-0 z-50" style={{ backgroundColor: "#FAF8F5", borderBottom: "1px solid rgba(23,59,108,0.1)" }}>
         <div className="max-w-7xl mx-auto px-6 flex items-center justify-between h-[72px]">
           <button onClick={() => scrollTo("inicio")} className="flex-shrink-0">
-            {settings?.logoUrl && <img src={settings.logoUrl} alt={settings.companyName} className="h-11 w-auto object-contain" />}
+            <BrandLogo className="h-11 w-auto object-contain" />
           </button>
           <ul className="hidden lg:flex items-center gap-7">
             {NAV_LINKS.map((link) => (

@@ -1,11 +1,9 @@
-import type { SiteSettingsDTO } from "@rozenblum/shared";
 import { conflict, notFound, badRequest } from "../lib/http.js";
 import { hashPassword } from "../lib/password.js";
 import { initialsFromName } from "../lib/utils.js";
-import { env } from "../config/env.js";
 import type { Pagination } from "../lib/pagination.js";
 import { getRepositories } from "../repositories/index.js";
-import { settingsToDTO, userToDTO } from "./mappers.js";
+import { userToDTO } from "./mappers.js";
 import type { UserDTO } from "@rozenblum/shared";
 import { assertManagedImageUrl } from "./media.js";
 import { applyOrderTransition } from "./order-transitions.js";
@@ -101,18 +99,6 @@ export async function getAdminOrderEvents(id: string) {
   const order = await repos.orders.findByReference(id);
   if (!order) throw notFound("Orden no encontrada.");
   return repos.paymentEvents.listByOrder(order.id);
-}
-
-export async function updateSettings(input: {
-  companyName: string;
-  supportEmail: string;
-  contactWhatsapp: string;
-  logoUrl: string;
-  privacyText: string;
-}): Promise<SiteSettingsDTO> {
-  if (input.logoUrl) assertManagedImageUrl(input.logoUrl, "brand");
-  const settings = await getRepositories().settings.update(input);
-  return settingsToDTO(settings, env.paymentsConfigured);
 }
 
 export async function listAdminUsers(

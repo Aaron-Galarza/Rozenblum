@@ -166,7 +166,7 @@ export type GalleryImage = {
 };
 
 export type GalleryPage = { images: GalleryImage[]; nextCursor: string | null };
-export type ImageCategory = "courses" | "professors" | "lessons" | "brand";
+export type ImageCategory = "courses" | "professors" | "lessons";
 
 export async function uploadGalleryImage(category: ImageCategory, file: File): Promise<GalleryImage> {
   const started = performance.now();

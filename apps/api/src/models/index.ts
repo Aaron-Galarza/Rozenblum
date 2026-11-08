@@ -7,7 +7,6 @@ import type {
   StoredEnrollment,
   StoredOrder,
   StoredPaymentEvent,
-  StoredSettings,
   StoredUser,
 } from "../types.js";
 
@@ -197,18 +196,6 @@ const conversationSchema = new Schema<StoredConversation>(
 
 conversationSchema.index({ studentEmail: 1, courseId: 1 }, { unique: true });
 
-const settingsSchema = new Schema<StoredSettings>(
-  {
-    companyName: { type: String, required: true },
-    supportEmail: { type: String, required: true },
-    contactWhatsapp: { type: String, default: "" },
-    logoUrl: { type: String, default: "" },
-    privacyText: { type: String, default: "" },
-    updatedAt: { type: String, required: true },
-  },
-  { versionKey: false, collection: "settings" },
-);
-
 const contactSchema = new Schema<StoredContact>(
   {
     id: { type: String, required: true, unique: true },
@@ -246,10 +233,6 @@ export const ConversationModel =
   (mongoose.models.Conversation as mongoose.Model<StoredConversation>) ??
   mongoose.model<StoredConversation>("Conversation", conversationSchema);
 
-export const SettingsModel =
-  (mongoose.models.Settings as mongoose.Model<StoredSettings>) ??
-  mongoose.model<StoredSettings>("Settings", settingsSchema);
-
 export const ContactModel =
   (mongoose.models.Contact as mongoose.Model<StoredContact>) ??
   mongoose.model<StoredContact>("Contact", contactSchema);
@@ -260,7 +243,6 @@ const homeContentSchema = new Schema<HomeContentDTO>(
     brand: {
       locationLabel: String,
       foundedYear: String,
-      heroImage: String,
       metrics: [{ value: String, label: String }],
       aboutParagraphs: [String],
       footerTagline: String,
