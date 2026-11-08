@@ -43,6 +43,7 @@ type StudentModal = { type: "ver" | "chat"; student: ProfesorStudent } | null;
 
 
 export default function CourseEditor({
+  courseId,
   courseTitle,
   courseDescription,
   courseImage,
@@ -86,13 +87,14 @@ export default function CourseEditor({
   const { toast, showToast } = useToast();
   const [busy, setBusy] = useState(false);
 
+  const selectedConversation = studentModal?.type === "chat"
+    ? conversations.find((item) => item.courseId === courseId &&
+      item.peerEmail.toLowerCase() === studentModal.student.email.toLowerCase())
+    : undefined;
 
   useEffect(() => {
-    if (studentModal?.type === "chat") {
-      const conversation = conversations.find((item) => item.peerEmail === studentModal.student.email);
-      setChatMessages(conversation?.messages ?? []);
-    }
-  }, [studentModal, conversations]);
+    setChatMessages(selectedConversation?.messages ?? []);
+  }, [studentModal, selectedConversation]);
 
   const run = async (action: () => Promise<void>, message: string) => {
     if (busy) return;
@@ -121,14 +123,13 @@ export default function CourseEditor({
 
   const sendChat = async () => {
     if (!chatInput.trim() || !studentModal) return;
-    const conversation = conversations.find((item) => item.peerEmail === studentModal.student.email);
-    if (!conversation) {
+    if (!selectedConversation) {
       showToast("Todavía no hay una conversación con este alumno.");
       return;
     }
     const text = chatInput.trim();
     try {
-      const updated = await onSendMessage(conversation.id, text);
+      const updated = await onSendMessage(selectedConversation.id, text);
       setChatMessages(updated);
       setChatInput("");
     } catch (error) {
