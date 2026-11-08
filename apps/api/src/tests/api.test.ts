@@ -684,6 +684,79 @@ test("student and teacher can exchange messages on an active enrollment", async 
   assert.equal(reply.status, 201);
 });
 
+test("teacher chat stays in the selected course and can start before the student writes", async () => {
+  const studentToken = await login("alumno", studentEmail);
+  const teacherToken = await login("profesor", teacherEmail);
+  const secondCourse = await repositories.courses.create({
+    title: "Second Chat Course", description: "A separate conversation for the same student.",
+    priceCents: 100_000, duration: "On-Demand", level: "Inicial",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "draft", img: "",
+  });
+  const secondEnrollment = await repositories.enrollments.create({
+    studentEmail, studentName: "Test alumno", courseId: secondCourse.legacyId, status: "Activo",
+  });
+  const firstPath = `/api/teacher/courses/${courseId}/students/${enrollmentId}/messages`;
+  const secondPath = `/api/teacher/courses/${secondCourse.legacyId}/students/${secondEnrollment.id}/messages`;
+
+  const empty = await api<{ data: { text: string }[] }>(server.baseUrl, secondPath, { token: teacherToken });
+  assert.equal(empty.status, 200);
+  assert.deepEqual(empty.body.data, []);
+  const initiated = await api<{ data: { text: string; from: string }[] }>(server.baseUrl, secondPath, {
+    method: "POST", token: teacherToken, body: JSON.stringify({ text: "Second course greeting" }),
+  });
+  assert.equal(initiated.status, 201);
+  assert.deepEqual(initiated.body.data.map((message) => message.text), ["Second course greeting"]);
+  assert.equal(initiated.body.data[0]?.from, "prof");
+
+  const first = await api<{ data: { text: string }[] }>(server.baseUrl, firstPath, { token: teacherToken });
+  assert.equal(first.status, 200);
+  assert.equal(first.body.data.some((message) => message.text === "Second course greeting"), false);
+  const studentPath = `/api/student/enrollments/${secondEnrollment.id}/messages`;
+  const studentView = await api<{ data: { text: string }[] }>(server.baseUrl, studentPath, { token: studentToken });
+  assert.deepEqual(studentView.body.data.map((message) => message.text), ["Second course greeting"]);
+  const answer = await api<{ data: { text: string }[] }>(server.baseUrl, studentPath, {
+    method: "POST", token: studentToken, body: JSON.stringify({ text: "Second course answer" }),
+  });
+  assert.equal(answer.status, 201);
+  const refreshed = await api<{ data: { text: string }[] }>(server.baseUrl, secondPath, { token: teacherToken });
+  assert.deepEqual(refreshed.body.data.map((message) => message.text),
+    ["Second course greeting", "Second course answer"]);
+
+  assert.equal((await api(server.baseUrl,
+    `/api/teacher/courses/${courseId}/students/${secondEnrollment.id}/messages`,
+    { token: teacherToken })).status, 404);
+  assert.equal((await api(server.baseUrl, secondPath, { token: studentToken })).status, 403);
+  const pending = await repositories.enrollments.create({
+    studentEmail: "pending-chat@example.test", studentName: "Pending Chat",
+    courseId: secondCourse.legacyId, status: "Pendiente",
+  });
+  assert.equal((await api(server.baseUrl,
+    `/api/teacher/courses/${secondCourse.legacyId}/students/${pending.id}/messages`,
+    { token: teacherToken })).status, 403);
+
+  const simultaneousCourse = await repositories.courses.create({
+    title: "Simultaneous Chat Course", description: "Both participants start the chat together.",
+    priceCents: 100_000, duration: "On-Demand", level: "Inicial",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "draft", img: "",
+  });
+  const simultaneousEnrollment = await repositories.enrollments.create({
+    studentEmail, studentName: "Test alumno", courseId: simultaneousCourse.legacyId, status: "Activo",
+  });
+  const studentChat = `/api/student/enrollments/${simultaneousEnrollment.id}/messages`;
+  const teacherChat = `/api/teacher/courses/${simultaneousCourse.legacyId}/students/${simultaneousEnrollment.id}/messages`;
+  const [studentFirst, teacherFirst] = await Promise.all([
+    api(server.baseUrl, studentChat, { method: "POST", token: studentToken,
+      body: JSON.stringify({ text: "Student first" }) }),
+    api(server.baseUrl, teacherChat, { method: "POST", token: teacherToken,
+      body: JSON.stringify({ text: "Teacher first" }) }),
+  ]);
+  assert.equal(studentFirst.status, 201);
+  assert.equal(teacherFirst.status, 201);
+  const both = await api<{ data: { text: string }[] }>(server.baseUrl, teacherChat, { token: teacherToken });
+  assert.deepEqual(new Set(both.body.data.map((message) => message.text)),
+    new Set(["Student first", "Teacher first"]));
+});
+
 test("admin settings and paginated lists use repository data", async () => {
   const token = await login("admin", adminEmail);
   const saved = await api(server.baseUrl, "/api/admin/settings", { method: "PUT", token, body: JSON.stringify({

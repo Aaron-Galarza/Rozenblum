@@ -5,10 +5,9 @@ import { sendData } from "../lib/http.js";
 import {
   getStudentEnrollment,
   listStudentEnrollments,
-  listStudentMessages,
-  sendStudentMessage,
   setLessonProgress,
 } from "../services/classroom.js";
+import { listStudentMessages, sendStudentMessage } from "../services/chat.js";
 import { asyncRoute, parseBody } from "./helpers.js";
 
 export const studentRouter = Router();

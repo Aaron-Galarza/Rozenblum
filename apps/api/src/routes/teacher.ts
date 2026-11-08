@@ -25,9 +25,11 @@ import {
 } from "../services/courses.js";
 import {
   getConversationForTeacher,
+  listTeacherStudentMessages,
   listTeacherConversations,
   sendTeacherMessage,
-} from "../services/classroom.js";
+  sendTeacherStudentMessage,
+} from "../services/chat.js";
 import { asyncRoute, numericParam, parseBody } from "./helpers.js";
 import { getYouTubePreview } from "../services/youtube.js";
 
@@ -86,6 +88,23 @@ teacherRouter.get(
   asyncRoute(async (req, res) => {
     const courseId = numericParam(req.params.courseId, "Curso");
     sendData(res, await getTeacherStudents(req.authUser!, courseId));
+  }),
+);
+
+teacherRouter.get(
+  "/courses/:courseId/students/:enrollmentId/messages",
+  asyncRoute(async (req, res) => {
+    const courseId = numericParam(req.params.courseId, "Curso");
+    sendData(res, await listTeacherStudentMessages(req.authUser!, courseId, req.params.enrollmentId));
+  }),
+);
+
+teacherRouter.post(
+  "/courses/:courseId/students/:enrollmentId/messages",
+  asyncRoute(async (req, res) => {
+    const courseId = numericParam(req.params.courseId, "Curso");
+    const input = parseBody(messagePayloadSchema, req.body);
+    sendData(res, await sendTeacherStudentMessage(req.authUser!, courseId, req.params.enrollmentId, input.text), 201);
   }),
 );
 
