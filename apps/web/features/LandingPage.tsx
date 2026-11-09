@@ -10,6 +10,7 @@ import { apiFetch, errorMessage } from "../lib/api";
 import { useModalA11y } from "../lib/use-modal-a11y";
 import { usePublicSettings } from "../lib/use-public-settings";
 import { optimizedImage, responsiveImageSet } from "../lib/images";
+import { INSTITUTIONAL } from "../lib/institutional";
 
 const NAV_LINKS = ["Inicio", "Áreas", "Nosotros", "Equipo", "Cursos", "Contacto"];
 
@@ -143,9 +144,9 @@ export default function LandingPage() {
       )}
 
       {/* ── NAV ── */}
-      <nav className="fixed top-0 left-0 right-0 z-50" style={{ backgroundColor: "#FAF8F5", borderBottom: "1px solid rgba(23,59,108,0.1)" }}>
+      <nav aria-label="Navegación principal" className="fixed top-0 left-0 right-0 z-50 shadow-[0_4px_24px_rgba(23,59,108,0.04)]" style={{ backgroundColor: "#FAF8F5", borderBottom: "1px solid rgba(23,59,108,0.1)" }}>
         <div className="max-w-7xl mx-auto px-6 flex items-center justify-between h-[72px]">
-          <button onClick={() => scrollTo("inicio")} className="flex-shrink-0">
+          <button onClick={() => scrollTo("inicio")} aria-label="Volver al inicio" className="flex-shrink-0 transition-opacity hover:opacity-75">
             {settings?.logoUrl && <img src={settings.logoUrl} alt={settings.companyName} className="h-11 w-auto object-contain" />}
           </button>
           <ul className="hidden lg:flex items-center gap-7">
@@ -156,7 +157,7 @@ export default function LandingPage() {
                     if (link === "Cursos") { goToAula(); return; }
                     scrollTo(link.toLowerCase().replace("á","a").replace("é","e").replace("ó","o").replace("ú","u").replace("í","i"));
                   }}
-                  className="text-xs font-medium tracking-[0.12em] transition-opacity duration-200 hover:opacity-50"
+                  className="border-b border-transparent py-2 text-xs font-medium tracking-[0.12em] transition-colors duration-200 hover:border-[#B58A43]"
                   style={{ color: "#173B6C" }}
                 >
                   {link.toUpperCase()}
@@ -165,10 +166,10 @@ export default function LandingPage() {
             ))}
           </ul>
           <div className="flex items-center gap-3">
-            <button onClick={() => scrollTo("contacto")} className="hidden lg:block px-5 py-2.5 text-xs font-medium tracking-widest hover:brightness-110 transition-all" style={{ backgroundColor: "#B58A43", color: "#FAF8F5", letterSpacing: "0.1em" }}>
+            <button onClick={() => scrollTo("contacto")} className="hidden lg:block px-5 py-3 text-xs font-medium tracking-widest hover:brightness-110 transition-all" style={{ backgroundColor: "#B58A43", color: "#FAF8F5", letterSpacing: "0.1em" }}>
               AGENDAR CONSULTA
             </button>
-            <button className="lg:hidden p-2" onClick={() => setMenuOpen(!menuOpen)} style={{ color: "#173B6C" }}>
+            <button type="button" aria-label={menuOpen ? "Cerrar menú" : "Abrir menú"} aria-expanded={menuOpen} aria-controls="menu-principal-mobile" className="flex min-h-11 min-w-11 items-center justify-center lg:hidden" onClick={() => setMenuOpen(!menuOpen)} style={{ color: "#173B6C" }}>
               <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 {menuOpen ? <path d="M6 18L18 6M6 6l12 12" /> : <path d="M4 6h16M4 12h16M4 18h16" />}
               </svg>
@@ -176,9 +177,9 @@ export default function LandingPage() {
           </div>
         </div>
         {menuOpen && (
-          <div className="lg:hidden px-6 pb-5 pt-3 space-y-3" style={{ backgroundColor: "#FAF8F5", borderTop: "1px solid rgba(23,59,108,0.1)" }}>
+          <div id="menu-principal-mobile" className="lg:hidden px-6 pb-6 pt-3 space-y-1 shadow-[0_16px_24px_rgba(23,59,108,0.08)]" style={{ backgroundColor: "#FAF8F5", borderTop: "1px solid rgba(23,59,108,0.1)" }}>
             {NAV_LINKS.map((link) => (
-              <button key={link} onClick={() => { if (link === "Cursos") { goToAula(); return; } scrollTo(link.toLowerCase()); }} className="block w-full text-left py-2 text-xs font-medium tracking-widest" style={{ color: "#173B6C" }}>
+              <button key={link} onClick={() => { if (link === "Cursos") { setMenuOpen(false); goToAula(); return; } scrollTo(link.toLowerCase().replace("á","a").replace("é","e").replace("ó","o").replace("ú","u").replace("í","i")); }} className="block min-h-11 w-full border-b border-[#173B6C]/5 py-3 text-left text-xs font-medium tracking-widest transition-colors hover:text-[#9A7435]" style={{ color: "#173B6C" }}>
                 {link.toUpperCase()}
               </button>
             ))}
@@ -430,22 +431,42 @@ export default function LandingPage() {
             <div className="flex flex-col gap-8">
               <div>
                 <p className="text-2xl font-light mb-3" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>Estamos para asesorarle</p>
-                <p className="text-sm leading-relaxed" style={{ color: "rgba(250,248,245,0.6)" }}>Respondemos consultas en el menor tiempo posible. Para urgencias, nuestro equipo está disponible de manera prioritaria.</p>
+                <p className="text-sm leading-relaxed" style={{ color: "rgba(250,248,245,0.6)" }}>Escribinos a través del formulario y el estudio responderá a tu consulta.</p>
               </div>
               <div className="space-y-5">
-                {[
-                  { label: "Dirección", value: "C. Corrientes 1177, H3500 Resistencia, Chaco", icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.4" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" /><circle cx="12" cy="10" r="3" /></svg> },
-                  { label: "Teléfono", value: "0362 15-466-8878", icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.4" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.06 8.81a19.79 19.79 0 01-3.07-8.68A2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z" /></svg> },
-                  { label: "Horarios", value: "Lunes a Viernes de 7:30 a 12:00 hs y de 17:00 a 20:00 hs", icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.4" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> },
-                ].map(({ label, value, icon }) => (
-                  <div key={label} className="flex gap-4">
-                    <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#B58A43" }}>{icon}</div>
-                    <div>
-                      <p className="text-xs tracking-widest uppercase font-medium mb-0.5" style={{ color: "#B58A43" }}>{label}</p>
-                      <p className="text-sm leading-relaxed" style={{ color: "rgba(250,248,245,0.75)" }}>{value}</p>
-                    </div>
+                <div className="flex items-start gap-4">
+                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#B58A43" }}>⌖</span>
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>Dirección</p>
+                    <a href={INSTITUTIONAL.mapsHref} target="_blank" rel="noopener noreferrer" className="text-sm leading-relaxed underline decoration-white/30 underline-offset-4 hover:text-white" style={{ color: "rgba(250,248,245,0.85)" }}>{INSTITUTIONAL.address}</a>
                   </div>
-                ))}
+                </div>
+                <div className="flex items-start gap-4">
+                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#B58A43" }}>☎</span>
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>Teléfono y WhatsApp</p>
+                    <a href={INSTITUTIONAL.phoneHref} className="text-sm underline decoration-white/30 underline-offset-4 hover:text-white" style={{ color: "rgba(250,248,245,0.85)" }}>{INSTITUTIONAL.phone}</a>
+                    <span className="mx-2 text-white/40" aria-hidden="true">·</span>
+                    <a href={INSTITUTIONAL.whatsappHref} target="_blank" rel="noopener noreferrer" className="text-sm underline decoration-white/30 underline-offset-4 hover:text-white" style={{ color: "rgba(250,248,245,0.85)" }}>Escribir por WhatsApp</a>
+                  </div>
+                </div>
+                <div className="flex items-start gap-4">
+                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#B58A43" }}>✉</span>
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>Correo electrónico</p>
+                    <a href={INSTITUTIONAL.emailHref} className="break-all text-sm underline decoration-white/30 underline-offset-4 hover:text-white" style={{ color: "rgba(250,248,245,0.85)" }}>{INSTITUTIONAL.email}</a>
+                  </div>
+                </div>
+                <div className="flex items-start gap-4">
+                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#B58A43" }}>◎</span>
+                  <div>
+                    <p className="mb-1 text-xs font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>Instagram</p>
+                    <a href={INSTITUTIONAL.instagramHref} target="_blank" rel="noopener noreferrer" className="text-sm underline decoration-white/30 underline-offset-4 hover:text-white" style={{ color: "rgba(250,248,245,0.85)" }}>@estudio_juridico_rozenblum_</a>
+                  </div>
+                </div>
+                <div className="overflow-hidden rounded-sm border" style={{ borderColor: "rgba(181,138,67,0.35)" }}>
+                  <iframe title={`Mapa de ubicación: ${INSTITUTIONAL.address}`} src={INSTITUTIONAL.mapsEmbedSrc} className="block h-44 w-full border-0 sm:h-48" loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />
+                </div>
               </div>
             </div>
           </div>

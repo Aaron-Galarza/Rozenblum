@@ -170,7 +170,7 @@ export default function ConfirmacionPage({
       {/* Footer */}
       <footer className="py-5 px-6 text-center" style={{ backgroundColor: "#173B6C" }}>
         <p className="text-xs" style={{ color: "rgba(250,248,245,0.4)" }}>
-          © {new Date().getFullYear()} Estudio Jurídico Rozenblum · Términos de Servicio · Política de Privacidad
+          © {new Date().getFullYear()} Estudio Jurídico Rozenblum
         </p>
       </footer>
     </div>

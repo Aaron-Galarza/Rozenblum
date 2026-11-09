@@ -79,7 +79,7 @@ export default function LoginPage() {
         </div>
       </main>
       <footer className="py-5 px-4 text-center" style={{ backgroundColor: "#173B6C" }}>
-        <p className="text-xs" style={{ color: "rgba(250,248,245,0.5)" }}>Términos de Servicio · Política de Privacidad {settings && <>· Soporte: {settings.supportEmail}</>}</p>
+        <p className="text-xs" style={{ color: "rgba(250,248,245,0.5)" }}>© {new Date().getFullYear()} Estudio Jurídico Rozenblum</p>
       </footer>
     </div>
   );

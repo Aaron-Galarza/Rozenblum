@@ -92,8 +92,8 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
 
         <form onSubmit={handleSubmit} className="px-8 py-6 space-y-5">
           {/* Course summary */}
-          <div className="flex items-center gap-3 p-4 rounded" style={{ backgroundColor: "rgba(23,59,108,0.04)", border: "1px solid rgba(23,59,108,0.08)" }}>
-            <div className="flex-1">
+          <div className="flex flex-wrap items-center gap-3 rounded p-4" style={{ backgroundColor: "#FAF8F5", border: "1px solid rgba(181,138,67,0.25)" }}>
+            <div className="min-w-0 flex-1">
               <p className="text-xs tracking-widest uppercase font-medium mb-0.5" style={{ color: "#B58A43" }}>Inscribiéndote a</p>
               <p className="text-base font-medium" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{course.title}</p>
             </div>
@@ -142,7 +142,7 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
           )}
 
           {/* Registration status */}
-          <div className="p-4 rounded" style={{ backgroundColor: "#F5F5F5" }}>
+          <div className="rounded border-l-2 p-4" style={{ backgroundColor: "#FAF8F5", borderColor: "#B58A43" }}>
             <p className="text-xs font-bold tracking-widest uppercase mb-2" style={{ color: "#173B6C" }}>Solicitud de inscripción</p>
             <p className="text-xs leading-relaxed" style={{ color: "rgba(23,59,108,0.7)" }}>Tu DNI será la contraseña inicial de tu cuenta. La cuenta se crea cuando se confirme el pago. {onlinePayments && paymentMethod === "mercadopago" ? "Al continuar, irás a Mercado Pago para completar el pago. El acceso se activará cuando se confirme." : "Contactá al Estudio para coordinar el pago; un administrador habilitará el acceso."}</p>
           </div>
@@ -155,10 +155,11 @@ export default function CheckoutModal({ course, onClose, onSuccess }: CheckoutMo
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 text-sm font-bold tracking-widest transition-all duration-200 hover:brightness-110 active:scale-95 rounded disabled:opacity-70"
-            style={{ backgroundColor: "#009EE3", color: "#FFFFFF", letterSpacing: "0.1em" }}
+            className="group flex min-h-14 w-full items-center justify-center gap-3 rounded-sm border px-5 py-4 text-xs font-bold tracking-widest transition-all duration-200 hover:brightness-125 active:scale-[0.99] disabled:cursor-wait disabled:opacity-70"
+            style={{ backgroundColor: "#173B6C", borderColor: "#B58A43", color: "#FAF8F5", letterSpacing: "0.1em" }}
           >
             {loading ? "REGISTRANDO..." : onlinePayments && paymentMethod === "mercadopago" ? "CONTINUAR A MERCADO PAGO" : "SOLICITAR INSCRIPCIÓN"}
+            {!loading && <span aria-hidden="true" className="text-base transition-transform duration-200 group-hover:translate-x-1" style={{ color: "#D4A855" }}>→</span>}
           </button>
 
           <p className="text-[11px] leading-relaxed text-center" style={{ color: "rgba(23,59,108,0.55)" }}>
