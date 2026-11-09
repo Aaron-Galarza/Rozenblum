@@ -4,7 +4,7 @@ import { useEffect, useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CourseDTO, CourseDetailDTO, HomeContentDTO } from "@rozenblum/shared";
 import type { PracticeArea } from "../types";
-import { IconBriefcase, IconBuilding, IconClose, IconDoc, IconExternal, IconFamily, IconShield } from "../components/icons";
+import { IconArrowUpRight, IconBriefcase, IconBuilding, IconClose, IconDoc, IconExternal, IconFamily, IconInstagram, IconMail, IconMapPin, IconPhone, IconShield, IconWhatsApp } from "../components/icons";
 import LandingFooter from "../components/layout/LandingFooter";
 import { apiFetch, errorMessage } from "../lib/api";
 import { useModalA11y } from "../lib/use-modal-a11y";
@@ -397,16 +397,19 @@ export default function LandingPage() {
       </section>
 
       {/* ── CONTACTO & FOOTER ── */}
-      <footer id="contacto" style={{ backgroundColor: "#173B6C" }}>
-        <div className="max-w-7xl mx-auto px-6 pt-20 pb-16">
-          <div className="mb-14">
+      <footer id="contacto" className="relative overflow-hidden" style={{ backgroundColor: "#173B6C" }}>
+        <div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-32 h-72 w-72 rounded-full border" style={{ borderColor: "rgba(181,138,67,0.16)" }} />
+        <div aria-hidden="true" className="pointer-events-none absolute -right-8 -top-16 h-44 w-44 rounded-full border" style={{ borderColor: "rgba(181,138,67,0.1)" }} />
+        <div className="relative mx-auto max-w-7xl px-5 pb-14 pt-14 sm:px-6 sm:pb-16 sm:pt-20">
+          <div className="mb-10 sm:mb-14">
             <div className="flex items-center gap-3 mb-4">
               <div className="h-px w-10" style={{ backgroundColor: "#B58A43" }} />
               <span className="text-xs font-medium tracking-[0.2em] uppercase" style={{ color: "#B58A43" }}>Contáctenos</span>
             </div>
-            <h2 className="text-5xl font-light" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>Contacto</h2>
+            <h2 className="text-4xl font-light sm:text-5xl" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>Contacto</h2>
           </div>
-          <div className="grid lg:grid-cols-2 gap-16">
+          <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_0.82fr] lg:gap-16">
+            <div className="flex min-w-0 flex-col">
             <form className="space-y-5" onSubmit={handleContact}>
               {[{ id: "name", label: "Nombre completo", type: "text", placeholder: "Ej. Juan García" }, { id: "email", label: "Correo electrónico", type: "email", placeholder: "juan@ejemplo.com" }].map(({ id, label, type, placeholder }) => (
                 <div key={id} className="flex flex-col gap-2">
@@ -424,49 +427,52 @@ export default function LandingPage() {
               {contactStatus.type === "error" && (
                 <p className="text-xs leading-relaxed" style={{ color: "#ffb3b3" }} role="alert">{contactStatus.message}</p>
               )}
-              <button type="submit" disabled={contactStatus.type === "loading"} className="w-full py-4 text-xs font-medium tracking-widest hover:brightness-110 active:scale-95 transition-all duration-200 disabled:opacity-70" style={{ backgroundColor: "#B58A43", color: "#FAF8F5", letterSpacing: "0.14em" }}>
+              <button type="submit" disabled={contactStatus.type === "loading"} className="min-h-13 w-full py-4 text-xs font-medium tracking-widest transition-all duration-200 hover:brightness-110 active:scale-[0.99] disabled:opacity-70" style={{ backgroundColor: "#B58A43", color: "#FAF8F5", letterSpacing: "0.14em" }}>
                 {contactStatus.type === "loading" ? "ENVIANDO..." : "ENVIAR MENSAJE"}
               </button>
             </form>
-            <div className="flex flex-col gap-8">
-              <div>
+            <div className="mt-8 border p-3" style={{ borderColor: "rgba(181,138,67,0.35)", backgroundColor: "rgba(250,248,245,0.03)" }}>
+              <div className="mb-3 flex items-center justify-between gap-3 px-1">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>Ubicación</p>
+                  <p className="truncate text-xs" style={{ color: "rgba(250,248,245,0.85)" }}>{INSTITUTIONAL.address}</p>
+                </div>
+                <a href={INSTITUTIONAL.mapsHref} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium tracking-wide transition-colors hover:text-white" style={{ color: "#D4A855" }}>
+                  Cómo llegar <IconArrowUpRight className="h-3 w-3" />
+                </a>
+              </div>
+              <iframe title={`Mapa de ubicación: ${INSTITUTIONAL.address}`} src={INSTITUTIONAL.mapsEmbedSrc} className="block h-44 w-full border-0 sm:h-48" loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />
+            </div>
+            </div>
+            <div className="flex flex-col gap-7 lg:pt-1">
+              <div className="border-b pb-6" style={{ borderColor: "rgba(250,248,245,0.12)" }}>
                 <p className="text-2xl font-light mb-3" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>Estamos para asesorarle</p>
                 <p className="text-sm leading-relaxed" style={{ color: "rgba(250,248,245,0.6)" }}>Escribinos a través del formulario y el estudio responderá a tu consulta.</p>
               </div>
-              <div className="space-y-5">
-                <div className="flex items-start gap-4">
-                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#B58A43" }}>⌖</span>
-                  <div>
-                    <p className="mb-1 text-xs font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>Dirección</p>
-                    <a href={INSTITUTIONAL.mapsHref} target="_blank" rel="noopener noreferrer" className="text-sm leading-relaxed underline decoration-white/30 underline-offset-4 hover:text-white" style={{ color: "rgba(250,248,245,0.85)" }}>{INSTITUTIONAL.address}</a>
-                  </div>
-                </div>
-                <div className="flex items-start gap-4">
-                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#B58A43" }}>☎</span>
-                  <div>
-                    <p className="mb-1 text-xs font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>Teléfono y WhatsApp</p>
-                    <a href={INSTITUTIONAL.phoneHref} className="text-sm underline decoration-white/30 underline-offset-4 hover:text-white" style={{ color: "rgba(250,248,245,0.85)" }}>{INSTITUTIONAL.phone}</a>
-                    <span className="mx-2 text-white/40" aria-hidden="true">·</span>
-                    <a href={INSTITUTIONAL.whatsappHref} target="_blank" rel="noopener noreferrer" className="text-sm underline decoration-white/30 underline-offset-4 hover:text-white" style={{ color: "rgba(250,248,245,0.85)" }}>Escribir por WhatsApp</a>
-                  </div>
-                </div>
-                <div className="flex items-start gap-4">
-                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#B58A43" }}>✉</span>
-                  <div>
-                    <p className="mb-1 text-xs font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>Correo electrónico</p>
-                    <a href={INSTITUTIONAL.emailHref} className="break-all text-sm underline decoration-white/30 underline-offset-4 hover:text-white" style={{ color: "rgba(250,248,245,0.85)" }}>{INSTITUTIONAL.email}</a>
-                  </div>
-                </div>
-                <div className="flex items-start gap-4">
-                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#B58A43" }}>◎</span>
-                  <div>
-                    <p className="mb-1 text-xs font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>Instagram</p>
-                    <a href={INSTITUTIONAL.instagramHref} target="_blank" rel="noopener noreferrer" className="text-sm underline decoration-white/30 underline-offset-4 hover:text-white" style={{ color: "rgba(250,248,245,0.85)" }}>@estudio_juridico_rozenblum_</a>
-                  </div>
-                </div>
-                <div className="overflow-hidden rounded-sm border" style={{ borderColor: "rgba(181,138,67,0.35)" }}>
-                  <iframe title={`Mapa de ubicación: ${INSTITUTIONAL.address}`} src={INSTITUTIONAL.mapsEmbedSrc} className="block h-44 w-full border-0 sm:h-48" loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />
-                </div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+                <a href={INSTITUTIONAL.mapsHref} target="_blank" rel="noopener noreferrer" className="group flex min-h-22 items-start gap-4 border p-4 transition-colors hover:bg-white/[0.04]" style={{ borderColor: "rgba(250,248,245,0.12)" }}>
+                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#D4A855" }}><IconMapPin className="h-5 w-5" /></span>
+                  <div><p className="mb-1 text-xs font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>Dirección</p><span className="text-sm leading-relaxed" style={{ color: "rgba(250,248,245,0.85)" }}>{INSTITUTIONAL.address}</span></div>
+                  <IconArrowUpRight className="ml-auto h-4 w-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" style={{ color: "#D4A855" }} />
+                </a>
+                <a href={INSTITUTIONAL.phoneHref} className="group flex min-h-22 items-start gap-4 border p-4 transition-colors hover:bg-white/[0.04]" style={{ borderColor: "rgba(250,248,245,0.12)" }}>
+                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#D4A855" }}><IconPhone className="h-5 w-5" /></span>
+                  <div><p className="mb-1 text-xs font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>Teléfono</p><span className="text-sm" style={{ color: "rgba(250,248,245,0.85)" }}>{INSTITUTIONAL.phone}</span></div>
+                </a>
+                <a href={INSTITUTIONAL.emailHref} className="group flex min-h-22 items-start gap-4 border p-4 transition-colors hover:bg-white/[0.04]" style={{ borderColor: "rgba(250,248,245,0.12)" }}>
+                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#D4A855" }}><IconMail className="h-5 w-5" /></span>
+                  <div><p className="mb-1 text-xs font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>Correo electrónico</p><span className="break-all text-sm" style={{ color: "rgba(250,248,245,0.85)" }}>{INSTITUTIONAL.email}</span></div>
+                </a>
+                <a href={INSTITUTIONAL.whatsappHref} target="_blank" rel="noopener noreferrer" className="group flex min-h-22 items-start gap-4 border p-4 transition-colors hover:bg-white/[0.04]" style={{ borderColor: "rgba(250,248,245,0.12)" }}>
+                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#D4A855" }}><IconWhatsApp className="h-5 w-5" /></span>
+                  <div><p className="mb-1 text-xs font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>WhatsApp</p><span className="text-sm" style={{ color: "rgba(250,248,245,0.85)" }}>Escribinos directamente</span></div>
+                  <IconArrowUpRight className="ml-auto h-4 w-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" style={{ color: "#D4A855" }} />
+                </a>
+                <a href={INSTITUTIONAL.instagramHref} target="_blank" rel="noopener noreferrer" className="group flex min-h-22 items-start gap-4 border p-4 transition-colors hover:bg-white/[0.04]" style={{ borderColor: "rgba(250,248,245,0.12)" }}>
+                  <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center" style={{ backgroundColor: "rgba(181,138,67,0.15)", color: "#D4A855" }}><IconInstagram className="h-5 w-5" /></span>
+                  <div><p className="mb-1 text-xs font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>Instagram</p><span className="break-all text-sm" style={{ color: "rgba(250,248,245,0.85)" }}>@estudio_juridico_rozenblum_</span></div>
+                  <IconArrowUpRight className="ml-auto h-4 w-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" style={{ color: "#D4A855" }} />
+                </a>
               </div>
             </div>
           </div>

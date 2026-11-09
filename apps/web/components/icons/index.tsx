@@ -11,6 +11,11 @@ export const IconSearch = (props: SmallIconProps) => <svg {...smallIconProps} {.
 export const IconGraduation = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><path d="m2 9 10-5 10 5-10 5L2 9Z" /><path d="M6 11v6c3.5 3 8.5 3 12 0v-6M22 9v7" /></svg>;
 export const IconBell = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M10 21h4" /></svg>;
 export const IconMail = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 7 9-7" /></svg>;
+export const IconMapPin = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><path d="M20 10c0 5.2-8 11-8 11S4 15.2 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>;
+export const IconPhone = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><path d="M8.2 3.5 5.8 4.6c-1 .5-1.5 1.6-1.2 2.7 1.7 6.3 5.8 10.4 12.1 12.1 1.1.3 2.2-.2 2.7-1.2l1.1-2.4-4-2.1-1.5 1.7a13.7 13.7 0 0 1-6.3-6.3l1.7-1.5-2.2-4.1Z" /></svg>;
+export const IconInstagram = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.5" cy="6.5" r=".8" fill="currentColor" stroke="none" /></svg>;
+export const IconWhatsApp = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><path d="M20.5 11.7a8.4 8.4 0 0 1-12.4 7.4L3.5 20.5l1.4-4.3A8.4 8.4 0 1 1 20.5 11.7Z" /><path d="M8.8 7.8c.2-.4.4-.4.7-.4h.5c.2 0 .4.1.5.4l.8 1.9c.1.2.1.4 0 .6l-.5.7c.6 1.2 1.6 2.2 2.8 2.8l.7-.5c.2-.1.4-.1.6 0l1.9.8c.3.1.4.3.4.5v.5c0 .3 0 .5-.4.7-.4.2-.8.3-1.1.2-3.3-.9-5.9-3.5-6.8-6.8-.1-.3 0-.7.2-1.1Z" /></svg>;
+export const IconArrowUpRight = (props: SmallIconProps) => <svg {...smallIconProps} {...props}><path d="M5 19 19 5M8 5h11v11" /></svg>;
 
 export function IconAdminNav({ name, ...props }: SmallIconProps & { name: "dashboard" | "profesores" | "alumnos" | "cursos" | "pagos" | "consultas" | "reportes" | "config" }) {
   const paths = {
