@@ -1,6 +1,6 @@
 "use client";
 
-import { BlockNoteSchema } from "@blocknote/core";
+import { BlockNoteSchema, defaultProps } from "@blocknote/core";
 import { createReactBlockSpec } from "@blocknote/react";
 import type { LessonBlockDTO, RichLessonDocument } from "@rozenblum/shared";
 import { safeHttpUrl } from "./safe-url";
@@ -8,6 +8,7 @@ import { safeHttpUrl } from "./safe-url";
 export function youtubeId(value: string): string | null {
   try {
     const url = new URL(value);
+    if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password) return null;
     const host = url.hostname.toLowerCase();
     let id: string | null = null;
     if (host === "youtu.be" || host === "www.youtu.be") id = url.pathname.slice(1);
@@ -55,7 +56,54 @@ const BookmarkBlock = createReactBlockSpec(
   } },
 );
 
-export const lessonSchema = BlockNoteSchema.create().extend({ blockSpecs: { youtube: YouTubeBlock(), bookmark: BookmarkBlock() } });
+function ExternalFileCard({ url, name, caption }: { url: string; name: string; caption?: string }) {
+  const safe = safeHttpUrl(url);
+  const pdf = name.toLowerCase().endsWith(".pdf") || Boolean(safe && new URL(safe).pathname.toLowerCase().endsWith(".pdf"));
+  const sameOrigin = Boolean(safe && typeof window !== "undefined" && new URL(safe).origin === window.location.origin);
+  return <div className="my-3 w-full min-w-0 overflow-hidden rounded-lg border border-[#d8c6aa] bg-white">
+    {safe ? <a href={safe} target={sameOrigin ? undefined : "_blank"} rel={sameOrigin ? undefined : "noopener noreferrer"} download={sameOrigin ? name || true : undefined} className="flex min-h-16 min-w-0 items-center gap-3 p-4 text-[#173B6C] no-underline transition-colors hover:bg-[#faf8f5]">
+      <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center bg-[#f4ead8] text-xs font-bold text-[#9A7435]">{pdf ? "PDF" : "↗"}</span>
+      <span className="min-w-0 flex-1"><strong className="block break-words text-sm leading-snug">{name || "Archivo adjunto"}</strong><span className="mt-1 block text-xs text-[#64748b]">{sameOrigin ? "Descargar archivo" : pdf ? "Abrir PDF" : "Abrir archivo"}</span></span>
+      <span className="shrink-0 text-xs font-medium text-[#9A7435]">{sameOrigin ? "Descargar" : "Abrir"}</span>
+    </a> : <p role="alert" className="p-4 text-sm text-[#72132C]">El enlace de este archivo no es válido.</p>}
+    {caption && <p className="border-t border-[#e5ded2] px-4 py-2 text-xs text-[#64748b]">{caption}</p>}
+  </div>;
+}
+
+const FileBlock = createReactBlockSpec(
+  { type: "file", propSchema: { backgroundColor: defaultProps.backgroundColor, name: { default: "" }, url: { default: "" }, caption: { default: "" } }, content: "none" },
+  { render: ({ block }) => <ExternalFileCard url={block.props.url} name={block.props.name} caption={block.props.caption} /> },
+);
+
+const VideoBlock = createReactBlockSpec(
+  {
+    type: "video",
+    propSchema: {
+      textAlignment: defaultProps.textAlignment,
+      backgroundColor: defaultProps.backgroundColor,
+      name: { default: "" },
+      url: { default: "" },
+      caption: { default: "" },
+      showPreview: { default: true },
+      previewWidth: { default: undefined, type: "number" },
+    },
+    content: "none",
+  },
+  { render: ({ block }) => {
+    const safe = safeHttpUrl(block.props.url);
+    if (!safe) return <p role="alert" className="my-3 rounded border border-[#d8c6aa] bg-white p-4 text-sm text-[#72132C]">El enlace de este video no es válido.</p>;
+    if (!block.props.showPreview) return <ExternalFileCard url={safe} name={block.props.name || "Video"} caption={block.props.caption} />;
+    return <div className="my-3 w-full min-w-0 overflow-hidden" style={{ maxWidth: block.props.previewWidth || "100%" }}>
+      <figure className="overflow-hidden rounded-lg bg-slate-900">
+        <video src={safe} controls preload="metadata" className="block max-h-[70vh] w-full" />
+        {block.props.caption && <figcaption className="px-4 py-2 text-xs text-white">{block.props.caption}</figcaption>}
+      </figure>
+      <ExternalFileCard url={safe} name={block.props.name || "Video original"} caption="La apertura o descarga depende del servicio que aloja el video." />
+    </div>;
+  } },
+);
+
+export const lessonSchema = BlockNoteSchema.create().extend({ blockSpecs: { youtube: YouTubeBlock(), bookmark: BookmarkBlock(), file: FileBlock(), video: VideoBlock() } });
 export type LessonNoteBlock = typeof lessonSchema.Block;
 export type LessonPartialBlock = typeof lessonSchema.PartialBlock;
 

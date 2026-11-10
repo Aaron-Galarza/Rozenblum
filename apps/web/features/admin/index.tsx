@@ -8,7 +8,7 @@ import { NAV_ITEMS } from "./nav";
 import { IconAdminNav } from "../../components/icons";
 import BrandLogo from "../../components/ui/BrandLogo";
 import SimpleFooter from "../../components/layout/SimpleFooter";
-import { apiFetch, clearSession, errorMessage } from "../../lib/api";
+import { ApiClientError, apiFetch, clearSession, errorMessage } from "../../lib/api";
 import { useSession } from "../../lib/use-session";
 import { ErrorPanel, LoadingScreen } from "../../components/ui/AsyncState";
 import DashboardSection from "./sections/DashboardSection";
@@ -171,21 +171,32 @@ export default function AdminView() {
                   cursos={overview.cursos}
                   profesores={overview.profesores}
                   onCreate={async ({ name, professorEmail, description, priceCents, duration, level, img }, idempotencyKey) => {
-                    await apiFetch("/api/admin/courses", {
-                      method: "POST",
-                      auth: true,
-                      headers: idempotencyKey ? { "idempotency-key": idempotencyKey } : undefined,
-                      body: {
-                        title: name,
-                        professorEmail,
-                        description,
-                        status: "draft",
-                        priceCents,
-                        duration,
-                        level,
-                        ...(img ? { img } : {}),
-                      },
-                    });
+                    try {
+                      await apiFetch("/api/admin/courses", {
+                        method: "POST",
+                        auth: true,
+                        headers: idempotencyKey ? { "idempotency-key": idempotencyKey } : undefined,
+                        body: {
+                          title: name,
+                          professorEmail,
+                          description,
+                          status: "draft",
+                          priceCents,
+                          duration,
+                          level,
+                          ...(img ? { img } : {}),
+                        },
+                      });
+                    } catch (error) {
+                      const mayHaveCommitted = error instanceof ApiClientError &&
+                        (error.status === 0 || error.status >= 500 || error.code === "INVALID_RESPONSE");
+                      if (!idempotencyKey || !mayHaveCommitted) throw error;
+                      try {
+                        await apiFetch<CourseDTO>(`/api/admin/courses/by-request-id/${encodeURIComponent(idempotencyKey)}`, { auth: true });
+                      } catch {
+                        throw error;
+                      }
+                    }
                     await load();
                   }}
                   onToggleStatus={async (curso) => {

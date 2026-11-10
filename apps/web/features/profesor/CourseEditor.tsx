@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { LessonBlockDTO, LessonType, RichLessonDocument } from "@rozenblum/shared";
 import type { EditableModule, EditableLesson, ProfesorStudent, SortDir } from "../../types";
@@ -8,9 +8,9 @@ const LessonEditorModal = dynamic(() => import("./RichLessonEditorModal"), { ssr
 import Modal from "../../components/ui/Modal";
 import Toast from "../../components/ui/Toast";
 import { useToast } from "../../lib/use-toast";
-import ImagePicker from "../../components/ui/ImagePicker";
 import { useLiveChat } from "../../lib/use-live-chat";
 import { useChatScroll } from "../../lib/use-chat-scroll";
+import { canRetryEditorOperation, editorErrorMessage, newIdempotencyKey } from "../../lib/editor-operations";
 
 type LessonPayload = { title: string; type: LessonType; content: LessonBlockDTO[]; document: RichLessonDocument };
 
@@ -28,18 +28,19 @@ type CourseEditorProps = {
   onToggleModule: (id: number) => void;
   onSort: (col: string) => void;
   onTogglePublish: () => Promise<void>;
-  onUpdateCourse: (patch: { title: string; description: string; img: string }) => Promise<void>;
-  onAddModule: (title: string) => Promise<void>;
+  onUpdateCourse: (patch: { title: string; description: string; img?: string }) => Promise<void>;
+  onAddModule: (title: string, idempotencyKey: string) => Promise<void>;
   onRenameModule: (id: number, title: string) => Promise<void>;
   onDeleteModule: (id: number) => Promise<void>;
   onMoveModule: (id: number, dir: "up" | "down") => Promise<void>;
-  onAddLesson: (moduleId: number, payload: LessonPayload) => Promise<void>;
+  onAddLesson: (moduleId: number, payload: LessonPayload, idempotencyKey: string) => Promise<void>;
   onUpdateLesson: (moduleId: number, lessonId: string, payload: LessonPayload) => Promise<void>;
   onDeleteLesson: (moduleId: number, lessonId: string) => Promise<void>;
   onMoveLesson: (moduleId: number, lessonId: string, dir: "up" | "down") => Promise<void>;
 };
 
 type StudentModal = { type: "ver" | "chat"; student: ProfesorStudent } | null;
+type OperationFeedback = { type: "saving" | "success" | "error"; message: string; retry?: () => void; retryLabel?: string };
 
 
 export default function CourseEditor({
@@ -80,9 +81,12 @@ export default function CourseEditor({
   const [renaming, setRenaming] = useState<{ id: number; title: string } | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
   const [courseEditOpen, setCourseEditOpen] = useState(false);
-  const [courseForm, setCourseForm] = useState({ title: courseTitle, description: courseDescription, img: courseImage });
+  const [courseForm, setCourseForm] = useState({ title: courseTitle, description: courseDescription });
   const { toast, showToast } = useToast();
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [creationBlocked, setCreationBlocked] = useState(false);
+  const [operationFeedback, setOperationFeedback] = useState<OperationFeedback | null>(null);
   const chatPath = studentModal?.type === "chat"
     ? `/api/teacher/courses/${courseId}/students/${encodeURIComponent(studentModal.student.id)}/messages`
     : null;
@@ -90,23 +94,44 @@ export default function CourseEditor({
     error: chatError, sendMessage: postChatMessage, retry: retryChat } = useLiveChat(chatPath);
   const chatScroll = useChatScroll<HTMLDivElement>(chatMessages, chatPath);
 
-  const run = async (action: () => Promise<void>, message: string) => {
-    if (busy) return;
+  const run = async (
+    action: () => Promise<void>,
+    message: string,
+    options: { pending?: string; retryable?: boolean; creation?: boolean; verifyBeforeRetry?: boolean } = {},
+  ) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
+    setOperationFeedback({ type: "saving", message: options.pending ?? "Guardando cambios…" });
     try {
       await action();
+      if (options.creation) setCreationBlocked(false);
+      setOperationFeedback({ type: "success", message });
       showToast(message);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "No se pudo guardar el cambio.", true);
+      const failureMessage = editorErrorMessage(error, { creationMayHaveSucceeded: options.creation, verifyBeforeRetry: options.verifyBeforeRetry });
+      const uncertainCreate = Boolean(options.creation && canRetryEditorOperation(error));
+      if (uncertainCreate) setCreationBlocked(true);
+      const retry = options.retryable && canRetryEditorOperation(error)
+        ? () => {
+            if (options.creation && !window.confirm("No se pudo confirmar si la operación llegó al servidor. Revisá el curso en otra pestaña y confirmá que no se creó antes de reintentar.")) return;
+            if (options.creation) setCreationBlocked(false);
+            void run(action, message, { ...options, retryable: options.creation });
+          }
+        : undefined;
+      setOperationFeedback({ type: "error", message: failureMessage, retry, ...(uncertainCreate ? { retryLabel: "Verifiqué que no se creó; reintentar" } : {}) });
+      showToast(failureMessage, true);
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
 
-  const handleEditorSave = async (payload: LessonPayload) => {
+  const handleEditorSave = async (payload: LessonPayload, idempotencyKey?: string) => {
     if (!editing) return;
     if (editorMode === "new") {
-      await onAddLesson(editing.moduleId, payload);
+      if (!idempotencyKey) throw new Error("No se pudo generar la clave de creación. Volvé a intentar.");
+      await onAddLesson(editing.moduleId, payload, idempotencyKey);
       showToast("✓ Lección creada");
     } else if (editing.lesson?.id) {
       await onUpdateLesson(editing.moduleId, editing.lesson.id, payload);
@@ -132,39 +157,46 @@ export default function CourseEditor({
   return (
     <>
       {/* Course header */}
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h2 className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{courseTitle}</h2>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 sm:mb-6">
+        <h2 className="text-2xl font-light sm:text-3xl" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{courseTitle}</h2>
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => { setCourseForm({ title: courseTitle, description: courseDescription, img: courseImage }); setCourseEditOpen(true); }}
-            className="px-4 py-2 text-xs font-medium tracking-wide border transition-all hover:opacity-70"
+            disabled={busy}
+            onClick={() => { setCourseForm({ title: courseTitle, description: courseDescription }); setCourseEditOpen(true); }}
+            className="min-h-11 px-4 py-2 text-xs font-medium tracking-wide border transition-all hover:opacity-70 disabled:opacity-50"
             style={{ color: "#173B6C", borderColor: "#173B6C" }}
           >
             EDITAR
           </button>
           <button
-            onClick={() => void run(onTogglePublish, published ? "Curso despublicado" : "✓ Curso publicado")}
+            onClick={() => void run(onTogglePublish, published ? "Curso despublicado" : "✓ Curso publicado", { pending: published ? "Despublicando curso…" : "Publicando curso…", retryable: true })}
             disabled={busy}
-            className="px-4 py-2 text-xs font-medium tracking-wide border transition-all hover:opacity-80 disabled:opacity-60"
+            className="min-h-11 px-4 py-2 text-xs font-medium tracking-wide border transition-all hover:opacity-80 disabled:opacity-60"
             style={published ? { backgroundColor: "#B58A43", color: "#FAF8F5", borderColor: "#B58A43" } : { color: "#173B6C", borderColor: "#173B6C" }}
           >
             {published ? "PUBLICADO" : "BORRADOR"}
           </button>
-          <button onClick={() => setStatsOpen(true)} className="px-4 py-2 text-xs font-medium tracking-wide border transition-all hover:opacity-70" style={{ color: "#173B6C", borderColor: "#173B6C" }}>
+          <button onClick={() => setStatsOpen(true)} className="min-h-11 px-4 py-2 text-xs font-medium tracking-wide border transition-all hover:opacity-70" style={{ color: "#173B6C", borderColor: "#173B6C" }}>
             VER ESTADÍSTICAS
           </button>
         </div>
       </div>
 
+      {operationFeedback && <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded border px-4 py-3 text-sm ${operationFeedback.type === "error" ? "border-[#72132C]/30 bg-[#72132C]/5 text-[#72132C]" : operationFeedback.type === "success" ? "border-[#2d7a4b]/25 bg-[#2d7a4b]/5 text-[#245f3c]" : "border-[#B58A43]/30 bg-white text-[#173B6C]"}`} role={operationFeedback.type === "error" ? "alert" : "status"} aria-live={operationFeedback.type === "error" ? "assertive" : "polite"}>
+        <span>{operationFeedback.type === "saving" ? "⏳ " : operationFeedback.type === "success" ? "✓ " : ""}{operationFeedback.message}</span>
+        {operationFeedback.retry && <button type="button" onClick={operationFeedback.retry} disabled={busy} className="min-h-10 px-3 font-semibold underline underline-offset-2 disabled:opacity-50">{operationFeedback.retryLabel ?? "Reintentar"}</button>}
+        {operationFeedback.type !== "saving" && !creationBlocked && <button type="button" onClick={() => setOperationFeedback(null)} aria-label="Cerrar aviso" className="min-h-10 px-2 text-lg leading-none">×</button>}
+      </div>}
+
       {/* Module editor */}
-      <div className="mb-8 p-6 rounded-lg" style={{ backgroundColor: "#FFFFFF", border: "1px solid rgba(23,59,108,0.08)" }}>
+      <div className="mb-8 rounded-lg p-4 sm:p-6" style={{ backgroundColor: "#FFFFFF", border: "1px solid rgba(23,59,108,0.08)" }}>
         <h3 className="text-lg font-medium mb-5" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Estructura del Curso</h3>
         <div className="space-y-3">
-          {modules.map((mod) => (
+          {modules.map((mod, moduleIndex) => (
             <div key={mod.id} className="rounded" style={{ border: "1px solid rgba(23,59,108,0.1)" }}>
-              <div className="flex items-center justify-between px-4 py-3 cursor-pointer hover:opacity-80" onClick={() => onToggleModule(mod.id)}>
-                <span className="text-sm font-bold" style={{ color: "#173B6C" }}>Módulo {mod.id}: {mod.title}</span>
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4 cursor-pointer hover:opacity-80" onClick={() => onToggleModule(mod.id)}>
+                <span className="break-words text-sm font-bold" style={{ color: "#173B6C" }}>Módulo {moduleIndex + 1}: {mod.title}</span>
+                <div className="flex flex-wrap items-center gap-2">
                   {([
                     ["EDITAR", (e: React.MouseEvent) => {
                       e.stopPropagation();
@@ -173,15 +205,16 @@ export default function CourseEditor({
                     ["ELIMINAR", (e: React.MouseEvent) => {
                       e.stopPropagation();
                       if (window.confirm(`¿Eliminar el módulo "${mod.title}"? Se eliminarán sus lecciones.`)) {
-                        void run(() => onDeleteModule(mod.id), "Módulo eliminado");
+                        void run(() => onDeleteModule(mod.id), "Módulo eliminado", { pending: "Eliminando módulo…", verifyBeforeRetry: true });
                       }
                     }],
-                    ["↑", (e: React.MouseEvent) => { e.stopPropagation(); void run(() => onMoveModule(mod.id, "up"), "Orden actualizado"); }],
-                    ["↓", (e: React.MouseEvent) => { e.stopPropagation(); void run(() => onMoveModule(mod.id, "down"), "Orden actualizado"); }],
+                    ["↑", (e: React.MouseEvent) => { e.stopPropagation(); void run(() => onMoveModule(mod.id, "up"), "Orden actualizado", { pending: "Actualizando orden…", retryable: true }); }],
+                    ["↓", (e: React.MouseEvent) => { e.stopPropagation(); void run(() => onMoveModule(mod.id, "down"), "Orden actualizado", { pending: "Actualizando orden…", retryable: true }); }],
                   ] as [string, (e: React.MouseEvent) => void][]).map(([btn, fn]) => (
                     <button
                       key={btn}
-                      className="px-2 py-0.5 text-[10px] font-medium border rounded transition-all hover:border-yellow-500 hover:text-yellow-600"
+                      aria-label={btn === "↑" ? `Mover módulo ${mod.title} hacia arriba` : btn === "↓" ? `Mover módulo ${mod.title} hacia abajo` : `${btn} módulo ${mod.title}`}
+                      className="min-h-10 min-w-10 rounded border px-2 text-[10px] font-medium transition-all hover:border-yellow-500 hover:text-yellow-600"
                       style={{ color: "#173B6C", borderColor: "rgba(23,59,108,0.25)" }}
                       onClick={fn}
                       disabled={busy}
@@ -195,44 +228,51 @@ export default function CourseEditor({
               {expandedModules.includes(mod.id) && (
                 <div className="px-4 pb-4 space-y-2" style={{ borderTop: "1px solid rgba(23,59,108,0.06)" }}>
                   {mod.lessons.map((lesson, lessonIdx) => (
-                    <div key={lesson.id ?? `${lesson.title}-${lessonIdx}`} className="flex items-center justify-between py-2 pl-4 pr-2 rounded" style={{ backgroundColor: "rgba(23,59,108,0.02)" }}>
-                      <span className="text-xs" style={{ color: "#173B6C" }}>{lesson.id ? `${lesson.id}: ` : ""}{lesson.title}</span>
-                      <div className="flex gap-1.5">
+                    <div key={lesson.id ?? `${lesson.title}-${lessonIdx}`} className="flex flex-col gap-2 rounded px-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-2 sm:pl-4 sm:pr-2" style={{ backgroundColor: "rgba(23,59,108,0.02)" }}>
+                      <span className="min-w-0 break-words text-xs" style={{ color: "#173B6C" }}>{lesson.id ? `${lesson.id}: ` : ""}{lesson.title}</span>
+                      <div className="flex flex-wrap gap-1.5">
                         <button
-                          className="px-2 py-0.5 text-[10px] border rounded hover:border-yellow-500 hover:text-yellow-600 transition-all"
+                          disabled={busy}
+                          className="min-h-10 px-3 text-[10px] border rounded hover:border-yellow-500 hover:text-yellow-600 transition-all disabled:opacity-50"
                           style={{ color: "#173B6C", borderColor: "rgba(23,59,108,0.2)" }}
-                          onClick={() => { setEditorMode("edit"); setEditing({ moduleId: mod.id, moduleName: `Módulo ${mod.id}: ${mod.title}`, lesson }); setEditorOpen(true); }}
+                          onClick={() => { setEditorMode("edit"); setEditing({ moduleId: mod.id, moduleName: `Módulo ${moduleIndex + 1}: ${mod.title}`, lesson }); setEditorOpen(true); }}
                         >
                           EDITAR
                         </button>
                         <button
-                          className="px-2 py-0.5 text-[10px] border rounded hover:border-red-400 hover:text-red-500 transition-all"
+                          disabled={busy}
+                          className="min-h-10 px-3 text-[10px] border rounded hover:border-red-400 hover:text-red-500 transition-all disabled:opacity-50"
                           style={{ color: "#72132C", borderColor: "rgba(114,19,44,0.2)" }}
                           onClick={() => {
                             if (lesson.id && window.confirm(`¿Eliminar la lección "${lesson.title}"?`)) {
-                              void run(() => onDeleteLesson(mod.id, lesson.id!), "Lección eliminada");
+                              void run(() => onDeleteLesson(mod.id, lesson.id!), "Lección eliminada", { pending: "Eliminando lección…", verifyBeforeRetry: true });
                             }
                           }}
                         >
                           ELIMINAR
                         </button>
                         <button
-                          className="px-2 py-0.5 text-[10px] border rounded hover:border-yellow-500 hover:text-yellow-600 transition-all"
+                          disabled={busy}
+                          aria-label={`Mover lección ${lesson.title} hacia arriba`}
+                          className="min-h-10 min-w-10 px-2 text-[10px] border rounded hover:border-yellow-500 hover:text-yellow-600 transition-all disabled:opacity-50"
                           style={{ color: "#173B6C", borderColor: "rgba(23,59,108,0.2)" }}
-                          onClick={() => { if (lesson.id) void run(() => onMoveLesson(mod.id, lesson.id!, "up"), "Orden actualizado"); }}
+                          onClick={() => { if (lesson.id) void run(() => onMoveLesson(mod.id, lesson.id!, "up"), "Orden actualizado", { pending: "Actualizando orden…", retryable: true }); }}
                         >↑</button>
                         <button
-                          className="px-2 py-0.5 text-[10px] border rounded hover:border-yellow-500 hover:text-yellow-600 transition-all"
+                          disabled={busy}
+                          aria-label={`Mover lección ${lesson.title} hacia abajo`}
+                          className="min-h-10 min-w-10 px-2 text-[10px] border rounded hover:border-yellow-500 hover:text-yellow-600 transition-all disabled:opacity-50"
                           style={{ color: "#173B6C", borderColor: "rgba(23,59,108,0.2)" }}
-                          onClick={() => { if (lesson.id) void run(() => onMoveLesson(mod.id, lesson.id!, "down"), "Orden actualizado"); }}
+                          onClick={() => { if (lesson.id) void run(() => onMoveLesson(mod.id, lesson.id!, "down"), "Orden actualizado", { pending: "Actualizando orden…", retryable: true }); }}
                         >↓</button>
                       </div>
                     </div>
                   ))}
                   <button
-                    className="text-xs font-medium flex items-center gap-1 mt-2 hover:opacity-70 transition-opacity"
+                    disabled={busy || creationBlocked}
+                    className="min-h-11 text-xs font-medium flex items-center gap-1 mt-2 hover:opacity-70 transition-opacity disabled:opacity-50"
                     style={{ color: "#B58A43" }}
-                    onClick={() => { setEditorMode("new"); setEditing({ moduleId: mod.id, moduleName: `Módulo ${mod.id}: ${mod.title}` }); setEditorOpen(true); }}
+                    onClick={() => { setEditorMode("new"); setEditing({ moduleId: mod.id, moduleName: `Módulo ${moduleIndex + 1}: ${mod.title}` }); setEditorOpen(true); }}
                   >
                     + AGREGAR LECCIÓN
                   </button>
@@ -244,48 +284,52 @@ export default function CourseEditor({
 
         {/* New module input */}
         {showNewModule ? (
-          <div className="flex items-center gap-2 mt-4">
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
               autoFocus
+              disabled={busy || creationBlocked}
               value={newModuleTitle}
               onChange={(e) => setNewModuleTitle(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && newModuleTitle.trim()) {
+                  const idempotencyKey = newIdempotencyKey();
                   void run(async () => {
-                    await onAddModule(newModuleTitle.trim());
+                    await onAddModule(newModuleTitle.trim(), idempotencyKey);
                     setNewModuleTitle("");
                     setShowNewModule(false);
-                  }, "✓ Módulo creado");
+                  }, "✓ Módulo creado", { pending: "Creando módulo…", creation: true, retryable: true });
                 }
                 if (e.key === "Escape") setShowNewModule(false);
               }}
               placeholder="Título del nuevo módulo..."
-              className="flex-1 px-3 py-2 text-sm outline-none"
+              className="min-h-11 min-w-0 flex-1 px-3 py-2 text-sm outline-none disabled:opacity-60"
               style={{ border: "1px solid #B58A43", borderRadius: 4, color: "#173B6C", backgroundColor: "#FAF8F5" }}
             />
             <button
               onClick={() => {
                 if (!newModuleTitle.trim()) return;
+                const idempotencyKey = newIdempotencyKey();
                 void run(async () => {
-                  await onAddModule(newModuleTitle.trim());
+                  await onAddModule(newModuleTitle.trim(), idempotencyKey);
                   setNewModuleTitle("");
                   setShowNewModule(false);
-                }, "✓ Módulo creado");
+                }, "✓ Módulo creado", { pending: "Creando módulo…", creation: true, retryable: true });
               }}
-              disabled={busy}
-              className="px-4 py-2 text-xs font-bold hover:brightness-110 transition-all disabled:opacity-60"
+              disabled={busy || creationBlocked}
+              className="min-h-11 px-4 py-2 text-xs font-bold hover:brightness-110 transition-all disabled:opacity-60"
               style={{ backgroundColor: "#B58A43", color: "#173B6C", borderRadius: 4 }}
             >
               CREAR
             </button>
-            <button onClick={() => setShowNewModule(false)} className="px-4 py-2 text-xs font-medium border hover:opacity-70 transition-opacity" style={{ color: "#173B6C", borderColor: "#173B6C", borderRadius: 4 }}>
+            <button disabled={busy} onClick={() => setShowNewModule(false)} className="min-h-11 px-4 py-2 text-xs font-medium border hover:opacity-70 transition-opacity disabled:opacity-50" style={{ color: "#173B6C", borderColor: "#173B6C", borderRadius: 4 }}>
               CANCELAR
             </button>
           </div>
         ) : (
           <button
             onClick={() => setShowNewModule(true)}
-            className="mt-4 px-5 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all"
+            disabled={busy || creationBlocked}
+            className="mt-4 min-h-11 px-5 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all disabled:opacity-50"
             style={{ backgroundColor: "#B58A43", color: "#173B6C" }}
           >
             + CREAR NUEVO MÓDULO
@@ -293,9 +337,10 @@ export default function CourseEditor({
         )}
 
         {renaming && (
-          <div className="flex items-center gap-2 mt-4">
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
               autoFocus
+              disabled={busy}
               value={renaming.title}
               onChange={(e) => setRenaming({ ...renaming, title: e.target.value })}
               onKeyDown={(e) => {
@@ -303,11 +348,11 @@ export default function CourseEditor({
                   void run(async () => {
                     await onRenameModule(renaming.id, renaming.title.trim());
                     setRenaming(null);
-                  }, "✓ Módulo actualizado");
+                  }, "✓ Módulo actualizado", { pending: "Actualizando módulo…", retryable: true });
                 }
                 if (e.key === "Escape") setRenaming(null);
               }}
-              className="flex-1 px-3 py-2 text-sm outline-none"
+              className="min-h-11 min-w-0 flex-1 px-3 py-2 text-sm outline-none disabled:opacity-60"
               style={{ border: "1px solid #B58A43", borderRadius: 4, color: "#173B6C", backgroundColor: "#FAF8F5" }}
             />
             <button
@@ -316,14 +361,15 @@ export default function CourseEditor({
                 void run(async () => {
                   await onRenameModule(renaming.id, renaming.title.trim());
                   setRenaming(null);
-                }, "✓ Módulo actualizado");
+                }, "✓ Módulo actualizado", { pending: "Actualizando módulo…", retryable: true });
               }}
-              className="px-4 py-2 text-xs font-bold hover:brightness-110 transition-all"
+              disabled={busy}
+              className="min-h-11 px-4 py-2 text-xs font-bold hover:brightness-110 transition-all disabled:opacity-60"
               style={{ backgroundColor: "#B58A43", color: "#173B6C", borderRadius: 4 }}
             >
               GUARDAR
             </button>
-            <button onClick={() => setRenaming(null)} className="px-4 py-2 text-xs font-medium border hover:opacity-70 transition-opacity" style={{ color: "#173B6C", borderColor: "#173B6C", borderRadius: 4 }}>
+            <button disabled={busy} onClick={() => setRenaming(null)} className="min-h-11 px-4 py-2 text-xs font-medium border hover:opacity-70 transition-opacity disabled:opacity-50" style={{ color: "#173B6C", borderColor: "#173B6C", borderRadius: 4 }}>
               CANCELAR
             </button>
           </div>
@@ -492,23 +538,27 @@ export default function CourseEditor({
       )}
 
       {courseEditOpen && (
-        <Modal title="Editar Curso" onClose={() => setCourseEditOpen(false)}>
+        <Modal title="Editar Curso" onClose={() => { if (!busy) setCourseEditOpen(false); }}>
           <div className="space-y-4 mb-5">
             <label className="block text-xs font-medium" htmlFor="teacher-course-title">Título</label>
-            <input id="teacher-course-title" value={courseForm.title} maxLength={180} onChange={(e) => setCourseForm((prev) => ({ ...prev, title: e.target.value }))} className="w-full px-3 py-2 border text-sm" />
+            <input id="teacher-course-title" disabled={busy} value={courseForm.title} maxLength={180} onChange={(e) => setCourseForm((prev) => ({ ...prev, title: e.target.value }))} className="min-h-11 w-full border px-3 py-2 text-sm disabled:opacity-60" />
             <label className="block text-xs font-medium" htmlFor="teacher-course-description">Descripción</label>
-            <textarea id="teacher-course-description" value={courseForm.description} maxLength={2000} onChange={(e) => setCourseForm((prev) => ({ ...prev, description: e.target.value }))} className="w-full px-3 py-2 border text-sm" rows={4} />
-            <ImagePicker category="courses" label="Imagen del curso" value={courseForm.img} onChange={(img) => setCourseForm((prev) => ({ ...prev, img }))} />
+            <textarea id="teacher-course-description" disabled={busy} value={courseForm.description} maxLength={2000} onChange={(e) => setCourseForm((prev) => ({ ...prev, description: e.target.value }))} className="w-full border px-3 py-2 text-sm disabled:opacity-60" rows={4} />
+            <div className="rounded border border-[#e5ded2] p-3">
+              <p className="mb-2 text-xs font-medium text-[#173B6C]">Imagen actual del curso</p>
+              {courseImage ? <img src={courseImage} alt={courseTitle} className="aspect-video max-h-40 w-full rounded object-cover" /> : <p className="text-xs text-[#64748b]">Este curso no tiene imagen cargada.</p>}
+              <p className="mt-2 text-xs text-[#64748b]">La edición de imágenes está pausada hasta definir el almacenamiento.</p>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button disabled={busy} onClick={() => {
-              if (courseForm.title.trim().length < 3 || courseForm.description.trim().length < 3 || !/^https?:\/\//i.test(courseForm.img)) {
-                showToast("Ingresá un título y descripción válidos y una URL de imagen http(s).", true);
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button type="button" disabled={busy} onClick={() => {
+              if (courseForm.title.trim().length < 3 || courseForm.description.trim().length < 3) {
+                showToast("Ingresá un título y una descripción válidos.", true);
                 return;
               }
-              void run(async () => { await onUpdateCourse({ title: courseForm.title.trim(), description: courseForm.description.trim(), img: courseForm.img.trim() }); setCourseEditOpen(false); }, "✓ Curso actualizado");
-            }} className="flex-1 py-2.5 text-xs font-bold" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>GUARDAR</button>
-            <button onClick={() => setCourseEditOpen(false)} className="flex-1 py-2.5 text-xs border">CANCELAR</button>
+              void run(async () => { await onUpdateCourse({ title: courseForm.title.trim(), description: courseForm.description.trim() }); setCourseEditOpen(false); }, "✓ Curso actualizado", { pending: "Guardando curso…", retryable: true });
+            }} className="min-h-11 flex-1 py-2.5 text-xs font-bold disabled:opacity-60" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>{busy ? "GUARDANDO…" : "GUARDAR"}</button>
+            <button type="button" disabled={busy} onClick={() => setCourseEditOpen(false)} className="min-h-11 flex-1 border py-2.5 text-xs disabled:opacity-50">CANCELAR</button>
           </div>
         </Modal>
       )}

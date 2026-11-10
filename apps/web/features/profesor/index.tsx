@@ -16,6 +16,7 @@ import CourseEditor from "./CourseEditor";
 import { apiFetch, apiFetchWithMeta, errorMessage, type ApiResponseMeta } from "../../lib/api";
 import { useSession } from "../../lib/use-session";
 import { EmptyState, ErrorPanel, LoadingScreen } from "../../components/ui/AsyncState";
+import { moveIdInOrder } from "../../lib/editor-operations";
 
 type Structure = { course: CourseDTO; modules: ModuleDTO[] };
 
@@ -24,13 +25,6 @@ function revisionFrom(meta: ApiResponseMeta, dto?: { revision?: number }): numbe
   const raw = meta.headers.get("x-course-revision") ?? meta.headers.get("etag");
   const parsed = Number(String(raw ?? "").replace(/"/g, ""));
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
-}
-
-function newIdempotencyKey(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function toEditableModules(modules: ModuleDTO[]): EditableModule[] {
@@ -61,8 +55,9 @@ export default function ProfesorView() {
   const [courseLoading, setCourseLoading] = useState(false);
   const [error, setError] = useState("");
   const [courseError, setCourseError] = useState("");
-  /** Latest course revision known to this editor; sent back as If-Match. */
-  const revisionRef = useRef(0);
+  /** Latest known revision per course, used for each authoring mutation. */
+  const revisionByCourseRef = useRef(new Map<number, number>());
+  const activeCourseIdRef = useRef<number | null>(null);
 
   const loadDashboard = async () => {
     setLoading(true);
@@ -82,6 +77,7 @@ export default function ProfesorView() {
   }, [ready]);
 
   const openCourse = async (courseId: number) => {
+    activeCourseIdRef.current = courseId;
     setSelectedCourseId(courseId);
     setTab("course");
     setCourseLoading(true);
@@ -91,14 +87,16 @@ export default function ProfesorView() {
         apiFetch<Structure>(`/api/teacher/courses/${courseId}`, { auth: true }),
         apiFetch<TeacherStudentDTO[]>(`/api/teacher/courses/${courseId}/students`, { auth: true }),
       ]);
-      revisionRef.current = structureData.course.revision ?? 0;
+      if (activeCourseIdRef.current !== courseId) return;
+      revisionByCourseRef.current.set(courseId, structureData.course.revision ?? 0);
       setStructure(structureData);
       setStudents(studentData);
       setExpandedModules(structureData.modules.slice(0, 1).map((mod) => mod.id));
     } catch (err) {
+      if (activeCourseIdRef.current !== courseId) return;
       setCourseError(errorMessage(err));
     } finally {
-      setCourseLoading(false);
+      if (activeCourseIdRef.current === courseId) setCourseLoading(false);
     }
   };
 
@@ -130,7 +128,7 @@ export default function ProfesorView() {
   }));
 
   const setModules = (modules: ModuleDTO[]) =>
-    setStructure((prev) => (prev ? { ...prev, modules } : prev));
+    setStructure((prev) => (prev && prev.course.id === selectedCourseId ? { ...prev, modules } : prev));
 
   const moduleApi = async (
     path: string,
@@ -138,20 +136,22 @@ export default function ProfesorView() {
     body?: unknown,
     idempotencyKey?: string,
   ) => {
+    if (selectedCourseId === null) throw new Error("Seleccioná un curso antes de editarlo.");
+    const courseId = selectedCourseId;
     const { data, meta } = await apiFetchWithMeta<ModuleDTO[]>(
-      `/api/teacher/courses/${selectedCourseId}${path}`,
+      `/api/teacher/courses/${courseId}${path}`,
       {
         method,
         auth: true,
         body,
         headers: {
-          "if-match": String(revisionRef.current),
+          "if-match": String(revisionByCourseRef.current.get(courseId) ?? structure?.course.revision ?? 0),
           ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
         },
       },
     );
     const revision = revisionFrom(meta);
-    if (revision !== undefined) revisionRef.current = revision;
+    if (revision !== undefined) revisionByCourseRef.current.set(courseId, revision);
     return data;
   };
 
@@ -242,53 +242,57 @@ export default function ProfesorView() {
               onToggleModule={toggleModule}
               onSort={handleSort}
               onTogglePublish={async () => {
+                const courseId = selectedCourseId;
+                if (courseId === null) throw new Error("Seleccioná un curso antes de editarlo.");
                 const nextStatus = structure.course.status === "published" ? "draft" : "published";
                 const { data: updated, meta } = await apiFetchWithMeta<CourseDTO>(
-                  `/api/teacher/courses/${selectedCourseId}`,
+                  `/api/teacher/courses/${courseId}`,
                   {
                     method: "PATCH",
                     auth: true,
                     body: { status: nextStatus },
-                    headers: { "if-match": String(revisionRef.current) },
+                    headers: { "if-match": String(revisionByCourseRef.current.get(courseId) ?? structure.course.revision ?? 0) },
                   },
                 );
-                revisionRef.current = revisionFrom(meta, updated) ?? revisionRef.current;
-                setStructure((prev) => prev ? { ...prev, course: updated } : prev);
+                const revision = revisionFrom(meta, updated);
+                if (revision !== undefined) revisionByCourseRef.current.set(courseId, revision);
+                setStructure((prev) => prev?.course.id === courseId ? { ...prev, course: updated } : prev);
               }}
               onUpdateCourse={async (patch) => {
+                const courseId = selectedCourseId;
+                if (courseId === null) throw new Error("Seleccioná un curso antes de editarlo.");
                 const { data: updated, meta } = await apiFetchWithMeta<CourseDTO>(
-                  `/api/teacher/courses/${selectedCourseId}`,
+                  `/api/teacher/courses/${courseId}`,
                   {
                     method: "PATCH",
                     auth: true,
                     body: patch,
-                    headers: { "if-match": String(revisionRef.current) },
+                    headers: { "if-match": String(revisionByCourseRef.current.get(courseId) ?? structure.course.revision ?? 0) },
                   },
                 );
-                revisionRef.current = revisionFrom(meta, updated) ?? revisionRef.current;
-                setStructure((prev) => prev ? { ...prev, course: updated } : prev);
+                const revision = revisionFrom(meta, updated);
+                if (revision !== undefined) revisionByCourseRef.current.set(courseId, revision);
+                setStructure((prev) => prev?.course.id === courseId ? { ...prev, course: updated } : prev);
                 await loadDashboard();
               }}
-              onAddModule={async (title) =>
-                setModules(await moduleApi("/modules", "POST", { title }, newIdempotencyKey()))
+              onAddModule={async (title, idempotencyKey) =>
+                setModules(await moduleApi("/modules", "POST", { title }, idempotencyKey))
               }
               onRenameModule={async (id, title) => setModules(await moduleApi(`/modules/${id}`, "PATCH", { title }))}
               onDeleteModule={async (id) => setModules(await moduleApi(`/modules/${id}`, "DELETE"))}
               onMoveModule={async (id, dir) => {
                 const ids = structure.modules.map((mod) => mod.id);
-                const index = ids.indexOf(id);
-                const swap = dir === "up" ? index - 1 : index + 1;
-                if (swap < 0 || swap >= ids.length) return;
-                [ids[index], ids[swap]] = [ids[swap], ids[index]];
-                setModules(await moduleApi("/modules/reorder", "PUT", { ids }));
+                const orderedIds = moveIdInOrder(ids, id, dir);
+                if (!orderedIds) return;
+                setModules(await moduleApi("/modules/reorder", "PUT", { ids: orderedIds }));
               }}
-              onAddLesson={async (moduleId, payload) =>
+              onAddLesson={async (moduleId, payload, idempotencyKey) =>
                 setModules(
                   await moduleApi(
                     `/modules/${moduleId}/lessons`,
                     "POST",
                     payload,
-                    newIdempotencyKey(),
+                    idempotencyKey,
                   ),
                 )
               }
@@ -306,12 +310,10 @@ export default function ProfesorView() {
                 const mod = structure.modules.find((item) => item.id === moduleId);
                 if (!mod) return;
                 const ids = mod.lessons.map((lesson) => lesson.id);
-                const index = ids.indexOf(lessonId);
-                const swap = dir === "up" ? index - 1 : index + 1;
-                if (swap < 0 || swap >= ids.length) return;
-                [ids[index], ids[swap]] = [ids[swap], ids[index]];
+                const orderedIds = moveIdInOrder(ids, lessonId, dir);
+                if (!orderedIds) return;
                 setModules(
-                  await moduleApi(`/modules/${moduleId}/lessons/reorder`, "PUT", { ids }),
+                  await moduleApi(`/modules/${moduleId}/lessons/reorder`, "PUT", { ids: orderedIds }),
                 );
               }}
             />
