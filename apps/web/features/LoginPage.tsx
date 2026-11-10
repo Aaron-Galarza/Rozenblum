@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { SessionDTO } from "@rozenblum/shared";
 import { apiFetch, errorMessage, saveSession } from "../lib/api";
 import { loginDestination } from "../lib/login-destination";
@@ -78,7 +79,11 @@ export default function LoginPage() {
         </div>
       </main>
       <footer className="py-5 px-4 text-center" style={{ backgroundColor: "#173B6C" }}>
-        <p className="text-xs" style={{ color: "rgba(250,248,245,0.5)" }}>Términos de Servicio · Política de Privacidad</p>
+        <p className="text-xs" style={{ color: "rgba(250,248,245,0.5)" }}>
+          © {new Date().getFullYear()} Estudio Jurídico Rozenblum ·{" "}
+          <Link href="/terminos-y-condiciones" className="hover:underline">Términos de Servicio</Link> ·{" "}
+          <Link href="/politica-de-privacidad" className="hover:underline">Política de Privacidad</Link>
+        </p>
       </footer>
     </div>
   );

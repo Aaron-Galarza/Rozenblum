@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { CourseDetailDTO } from "@rozenblum/shared";
 import type { Course } from "../../types";
 import PublicHeader from "../../components/layout/PublicHeader";
@@ -74,7 +75,9 @@ export default function CourseDetailPage({ slug }: { slug: string }) {
 
       <footer className="py-5 px-6 text-center" style={{ backgroundColor: "#173B6C" }}>
         <p className="text-xs" style={{ color: "rgba(250,248,245,0.4)" }}>
-          © {new Date().getFullYear()} Estudio Jurídico Rozenblum · Términos de Servicio · Política de Privacidad
+          © {new Date().getFullYear()} Estudio Jurídico Rozenblum ·{" "}
+          <Link href="/terminos-y-condiciones" className="hover:underline">Términos de Servicio</Link> ·{" "}
+          <Link href="/politica-de-privacidad" className="hover:underline">Política de Privacidad</Link>
         </p>
       </footer>
     </div>
