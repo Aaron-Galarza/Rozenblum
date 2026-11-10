@@ -50,7 +50,11 @@ function baseCourseDTO(course: PublicCourseRecord): CourseDTO {
 }
 
 export function courseToDTO(course: StoredCourse): CourseDTO {
-  return { ...baseCourseDTO(course), professorId: course.professorEmail };
+  return {
+    ...baseCourseDTO(course),
+    professorId: course.professorEmail,
+    revision: course.revision ?? 0,
+  };
 }
 
 /** Public catalogue shape, without the professor's login email. */
@@ -144,25 +148,29 @@ export function enrollmentToDTO(
     studentName: enrollment.studentName,
     progress,
     status,
-    modules: course.modules.map((mod) => ({
-      id: mod.id,
-      title: mod.title,
-      status: statuses.get(mod.id) ?? "locked",
-      position: mod.position,
-      lessons: mod.lessons.map((lesson) => ({
-        id: lesson.id,
-        title: lesson.title,
-        type: lesson.type,
-        done: completed.has(lesson.id),
-        highlight: lesson.highlight,
-        position: lesson.position,
-        content:
-          canAccess && statuses.get(mod.id) !== "locked"
-            ? lesson.content
-            : [],
-        document: canAccess && statuses.get(mod.id) !== "locked" ? lesson.document : undefined,
+    modules: [...course.modules]
+      .sort((a, b) => a.position - b.position)
+      .map((mod) => ({
+        id: mod.id,
+        title: mod.title,
+        status: statuses.get(mod.id) ?? "locked",
+        position: mod.position,
+        lessons: [...mod.lessons]
+          .sort((a, b) => a.position - b.position)
+          .map((lesson) => ({
+            id: lesson.id,
+            title: lesson.title,
+            type: lesson.type,
+            done: completed.has(lesson.id),
+            highlight: lesson.highlight,
+            position: lesson.position,
+            content:
+              canAccess && statuses.get(mod.id) !== "locked"
+                ? lesson.content
+                : [],
+            document: canAccess && statuses.get(mod.id) !== "locked" ? lesson.document : undefined,
+          })),
       })),
-    })),
   };
 }
 
@@ -176,22 +184,28 @@ export function courseStructure(
 
   return {
     course: courseToDTO(course),
-    modules: course.modules.map((mod) => ({
-      id: mod.id,
-      title: mod.title,
-      status: statuses.get(mod.id) ?? "locked",
-      position: mod.position,
-      lessons: mod.lessons.map((lesson) => ({
-        id: lesson.id,
-        title: lesson.title,
-        type: lesson.type,
-        done: completed.has(lesson.id),
-        highlight: lesson.highlight,
-        position: lesson.position,
-        content: includeContent ? lesson.content : undefined,
-        document: includeContent ? lesson.document : undefined,
+    modules: [...course.modules]
+      .sort((a, b) => a.position - b.position)
+      .map((mod) => ({
+        id: mod.id,
+        title: mod.title,
+        status: statuses.get(mod.id) ?? "locked",
+        position: mod.position,
+        requestId: includeContent ? mod.requestId : undefined,
+        lessons: [...mod.lessons]
+          .sort((a, b) => a.position - b.position)
+          .map((lesson) => ({
+            id: lesson.id,
+            title: lesson.title,
+            type: lesson.type,
+            done: completed.has(lesson.id),
+            highlight: lesson.highlight,
+            position: lesson.position,
+            requestId: includeContent ? lesson.requestId : undefined,
+            content: includeContent ? lesson.content : undefined,
+            document: includeContent ? lesson.document : undefined,
+          })),
       })),
-    })),
   };
 }
 
@@ -268,5 +282,6 @@ export function adminCurso(
     alumnos: students,
     completion,
     estado: course.status === "published" ? "Publicado" : "Borrador",
+    revision: course.revision ?? 0,
   };
 }

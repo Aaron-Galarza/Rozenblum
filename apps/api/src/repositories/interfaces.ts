@@ -50,6 +50,7 @@ export interface CourseRepository {
   findLatestPublished(): Promise<StoredCourse | null>;
   findBySlug(slug: string): Promise<StoredCourse | null>;
   findById(legacyId: number): Promise<StoredCourse | null>;
+  findByRequestId(requestId: string): Promise<StoredCourse | null>;
   nextLegacyId(): Promise<number>;
   create(input: CourseInput): Promise<StoredCourse>;
   update(

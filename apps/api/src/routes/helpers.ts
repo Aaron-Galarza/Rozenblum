@@ -26,6 +26,32 @@ export function numericParam(value: string | undefined, label: string): number {
   return parsed;
 }
 
+/**
+ * Reads the resource version the client loaded before editing. `If-Match` is
+ * the standard form and is also what the web client sends; the custom header
+ * exists for clients that cannot use `If-Match`.
+ */
+export function requestRevision(req: ApiRequest): number | undefined {
+  const raw = req.get("if-match") ?? req.get("x-expected-revision");
+  if (raw === undefined) return undefined;
+  const value = raw.replace(/^W\//i, "").replace(/^"|"$/g, "").trim();
+  if (!/^\d+$/.test(value)) {
+    throw badRequest("La versión del recurso no es válida.");
+  }
+  return Number(value);
+}
+
+/** Reads the optional idempotency key of a creation request. */
+export function requestIdempotencyKey(req: ApiRequest): string | undefined {
+  const raw = req.get("idempotency-key") ?? req.get("x-idempotency-key");
+  if (raw === undefined) return undefined;
+  const value = raw.trim();
+  if (value.length < 8 || value.length > 200) {
+    throw badRequest("La clave de idempotencia debe tener entre 8 y 200 caracteres.");
+  }
+  return value;
+}
+
 /** Express 5 forwards rejected promises, but this keeps intent explicit. */
 export function asyncRoute(
   handler: (req: ApiRequest, res: Response, next: NextFunction) => Promise<void>,

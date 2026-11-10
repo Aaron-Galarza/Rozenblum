@@ -22,7 +22,8 @@ export const forbidden = (message = "No tenés permisos para esta acción.") =>
   new ApiError(403, "FORBIDDEN", message);
 export const notFound = (message = "Recurso no encontrado.") =>
   new ApiError(404, "NOT_FOUND", message);
-export const conflict = (message: string) => new ApiError(409, "CONFLICT", message);
+export const conflict = (message: string, details?: unknown) =>
+  new ApiError(409, "CONFLICT", message, details);
 
 export function sendData<T>(res: Response, data: T, status = 200) {
   res.status(status).json({ data });

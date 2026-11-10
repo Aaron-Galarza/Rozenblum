@@ -593,6 +593,183 @@ test("a stale lesson edit returns 409, preserves the winner, and can be retried"
   await repositories.courses.delete(course.legacyId, (await repositories.courses.findById(course.legacyId))!.revision ?? 0);
 });
 
+test("an If-Match revision guards edits and reports the current version on conflict", async () => {
+  const course = await repositories.courses.create({
+    title: "Revision Guard Test", description: "Optimistic concurrency guard",
+    priceCents: 40_000, duration: "Online", level: "Inicial",
+    professor: "Test profesor", professorEmail: teacherEmail,
+    status: "draft", img: "https://example.test/revision.jpg",
+  });
+  const moduleId = 9701;
+  await repositories.courses.saveModules(course.legacyId, [{
+    id: moduleId, title: "Original module", position: 0, lessons: [],
+  }], 0);
+  const token = await login("profesor", teacherEmail);
+  const path = `/api/teacher/courses/${course.legacyId}/modules/${moduleId}`;
+
+  const stale = await api<{ error: { code: string; details: { currentRevision: number } } }>(
+    server.baseUrl, path,
+    { method: "PATCH", token, headers: { "if-match": "99" }, body: JSON.stringify({ title: "Stale" }) },
+  );
+  assert.equal(stale.status, 409);
+  assert.equal(stale.body.error.code, "CONFLICT");
+  assert.equal(stale.body.error.details.currentRevision, 1);
+  assert.equal((await repositories.courses.findById(course.legacyId))?.modules[0]?.title, "Original module");
+
+  const accepted = await api<{ data: { title: string; position: number }[] }>(
+    server.baseUrl, path,
+    { method: "PATCH", token, headers: { "if-match": "1" }, body: JSON.stringify({ title: "Accepted" }) },
+  );
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.headers.get("x-course-revision"), "2");
+  assert.equal(accepted.headers.get("etag"), "\"2\"");
+  assert.equal(accepted.body.data[0]?.title, "Accepted");
+
+  const replay = await api(server.baseUrl, path, {
+    method: "PATCH", token, headers: { "if-match": "1" }, body: JSON.stringify({ title: "Late" }),
+  });
+  assert.equal(replay.status, 409);
+  await repositories.courses.delete(course.legacyId, (await repositories.courses.findById(course.legacyId))!.revision ?? 0);
+});
+
+test("retrying a creation with the same Idempotency-Key creates neither duplicates nor extra revisions", async () => {
+  const course = await repositories.courses.create({
+    title: "Idempotent Creation Test", description: "Creation retries",
+    priceCents: 30_000, duration: "Online", level: "Inicial",
+    professor: "Test profesor", professorEmail: teacherEmail,
+    status: "draft", img: "https://example.test/idempotent.jpg",
+  });
+  const token = await login("profesor", teacherEmail);
+  const base = `/api/teacher/courses/${course.legacyId}`;
+  const moduleKey = "module-request-0001";
+  const createModule = () => api<{ data: { id: number; title: string; requestId?: string }[] }>(
+    server.baseUrl, `${base}/modules`,
+    { method: "POST", token, headers: { "idempotency-key": moduleKey }, body: JSON.stringify({ title: "Only once" }) },
+  );
+
+  const first = await createModule();
+  const retry = await createModule();
+  assert.equal(first.status, 201);
+  assert.equal(retry.status, 201);
+  assert.equal(retry.headers.get("x-course-revision"), "1");
+  const stored = await repositories.courses.findById(course.legacyId);
+  assert.equal(stored?.modules.length, 1);
+  const moduleId = stored!.modules[0]!.id;
+  assert.equal(stored!.modules[0]!.requestId, moduleKey);
+  assert.deepEqual(retry.body.data.map((mod) => mod.id), first.body.data.map((mod) => mod.id));
+
+  const lessonKey = "lesson-request-0001";
+  const createLesson = () => api<{ data: { id: number; lessons: { id: string; requestId?: string }[] }[] }>(
+    server.baseUrl, `${base}/modules/${moduleId}/lessons`,
+    { method: "POST", token, headers: { "idempotency-key": lessonKey }, body: JSON.stringify({ title: "Only lesson", type: "doc" }) },
+  );
+  const firstLesson = await createLesson();
+  const retryLesson = await createLesson();
+  assert.equal(firstLesson.status, 201);
+  assert.equal(retryLesson.status, 201);
+  assert.equal(retryLesson.headers.get("x-course-revision"), "2");
+  const withLesson = await repositories.courses.findById(course.legacyId);
+  assert.equal(withLesson?.modules[0]?.lessons.length, 1);
+  assert.equal(withLesson?.modules[0]?.lessons[0]?.requestId, lessonKey);
+  assert.deepEqual(retryLesson.body.data, firstLesson.body.data);
+  await repositories.courses.delete(course.legacyId, (await repositories.courses.findById(course.legacyId))!.revision ?? 0);
+});
+
+test("reordering modules and lessons persists by stable IDs without duplicating or losing items", async () => {
+  const course = await repositories.courses.create({
+    title: "Stable Order Test", description: "ID-based reordering",
+    priceCents: 20_000, duration: "Online", level: "Inicial",
+    professor: "Test profesor", professorEmail: teacherEmail,
+    status: "draft", img: "https://example.test/order.jpg",
+  });
+  const token = await login("profesor", teacherEmail);
+  const base = `/api/teacher/courses/${course.legacyId}`;
+  let revision = 0;
+  const addModule = async (title: string) => {
+    const response = await api<{ data: { id: number; title: string }[] }>(server.baseUrl, `${base}/modules`, {
+      method: "POST", token, headers: { "if-match": String(revision) }, body: JSON.stringify({ title }),
+    });
+    assert.equal(response.status, 201);
+    revision = Number(response.headers.get("x-course-revision"));
+    return response.body.data.at(-1)!.id;
+  };
+  const alpha = await addModule("Alpha");
+  const beta = await addModule("Beta");
+  const gamma = await addModule("Gamma");
+
+  const reorderModules = async (ids: number[]) => api<{ data: { id: number; position: number }[] }>(
+    server.baseUrl, `${base}/modules/reorder`,
+    { method: "PUT", token, headers: { "if-match": String(revision) }, body: JSON.stringify({ ids }) },
+  );
+  const reversed = await reorderModules([gamma, alpha, beta]);
+  assert.equal(reversed.status, 200);
+  assert.deepEqual(reversed.body.data.map((mod) => mod.id), [gamma, alpha, beta]);
+  assert.deepEqual(reversed.body.data.map((mod) => mod.position), [0, 1, 2]);
+  revision = Number(reversed.headers.get("x-course-revision"));
+
+  const addLesson = async (moduleId: number, title: string) => {
+    const response = await api<{ data: { id: number; lessons: { id: string }[] }[] }>(
+      server.baseUrl, `${base}/modules/${moduleId}/lessons`,
+      { method: "POST", token, headers: { "if-match": String(revision) }, body: JSON.stringify({ title, type: "doc" }) },
+    );
+    assert.equal(response.status, 201);
+    revision = Number(response.headers.get("x-course-revision"));
+    return response.body.data.find((mod) => mod.id === moduleId)!.lessons.at(-1)!.id;
+  };
+  const one = await addLesson(gamma, "Uno");
+  const two = await addLesson(gamma, "Dos");
+  const three = await addLesson(gamma, "Tres");
+
+  const reorderLessons = await api<{ data: { id: number; lessons: { id: string; position: number }[] }[] }>(
+    server.baseUrl, `${base}/modules/${gamma}/lessons/reorder`,
+    { method: "PUT", token, headers: { "if-match": String(revision) }, body: JSON.stringify({ ids: [three, one, two] }) },
+  );
+  assert.equal(reorderLessons.status, 200);
+  const gammaLessons = reorderLessons.body.data.find((mod) => mod.id === gamma)!.lessons;
+  assert.deepEqual(gammaLessons.map((lesson) => lesson.id), [three, one, two]);
+  assert.deepEqual(gammaLessons.map((lesson) => lesson.position), [0, 1, 2]);
+
+  const stored = await repositories.courses.findById(course.legacyId);
+  assert.deepEqual(stored?.modules.map((mod) => mod.id), [gamma, alpha, beta]);
+  assert.deepEqual(stored?.modules[0]?.lessons.map((lesson) => lesson.id), [three, one, two]);
+  await repositories.courses.delete(course.legacyId, (await repositories.courses.findById(course.legacyId))!.revision ?? 0);
+});
+
+test("admin course creation is idempotent and recoverable by request key", async () => {
+  const token = await login("admin", adminEmail);
+  const key = "admin-course-request-0001";
+  const payload = JSON.stringify({
+    title: "Recoverable Admin Course",
+    description: "Creation whose response may be lost",
+    priceCents: 12_000,
+    level: "Inicial",
+    duration: "Online",
+    professorEmail: teacherEmail,
+  });
+  const create = () => api<{ data: { id: number; slug: string; requestId?: string } }>(
+    server.baseUrl, "/api/admin/courses",
+    { method: "POST", token, headers: { "idempotency-key": key }, body: payload },
+  );
+  const first = await create();
+  const retry = await create();
+  assert.equal(first.status, 201);
+  assert.equal(retry.status, 201);
+  assert.equal(retry.body.data.id, first.body.data.id);
+  assert.equal(
+    (await repositories.courses.findByRequestId(key))?.legacyId,
+    first.body.data.id,
+  );
+  assert.equal((await repositories.courses.list()).filter((c) => c.title === "Recoverable Admin Course").length, 1);
+
+  const recovered = await api<{ data: { id: number } }>(
+    server.baseUrl, `/api/admin/courses/by-request-id/${key}`,
+    { token },
+  );
+  assert.equal(recovered.status, 200);
+  assert.equal(recovered.body.data.id, first.body.data.id);
+  await repositories.courses.delete(first.body.data.id, (await repositories.courses.findById(first.body.data.id))!.revision ?? 0);
+});
+
 test("draft lessons keep unique IDs and launched courses cannot be deleted", async () => {
   const image = "https://res.cloudinary.com/test-cloud/image/upload/v1/Rozenblum/courses/academic.jpg";
   const course = await repositories.courses.create({

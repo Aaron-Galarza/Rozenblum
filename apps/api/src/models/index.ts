@@ -31,6 +31,7 @@ const lessonSchema = new Schema(
     highlight: { type: Boolean, default: undefined },
     content: { type: [blockSchema], default: [] },
     document: { type: Schema.Types.Mixed, default: undefined },
+    requestId: { type: String, default: undefined },
     createdBy: { type: String, default: undefined },
     createdAt: { type: String, default: undefined },
     updatedBy: { type: String, default: undefined },
@@ -45,6 +46,7 @@ const moduleSchema = new Schema(
     title: { type: String, required: true },
     position: { type: Number, required: true },
     lessons: { type: [lessonSchema], default: [] },
+    requestId: { type: String, default: undefined },
     createdBy: { type: String, default: undefined },
     createdAt: { type: String, default: undefined },
     updatedBy: { type: String, default: undefined },
@@ -99,12 +101,17 @@ const courseSchema = new Schema<StoredCourse>(
     revision: { type: Number, required: true, default: 0 },
     everPublished: { type: Boolean, required: true, default: false },
     nextLessonNumber: { type: Number, required: true, default: 0 },
+    requestId: { type: String, default: undefined },
   },
   { versionKey: false, collection: "courses", minimize: false },
 );
 
 courseSchema.index({ status: 1, legacyId: 1 });
 courseSchema.index({ status: 1, createdAt: -1, legacyId: -1 });
+courseSchema.index({ requestId: 1 }, {
+  unique: true,
+  partialFilterExpression: { requestId: { $type: "string" } },
+});
 
 const enrollmentSchema = new Schema<StoredEnrollment>(
   {

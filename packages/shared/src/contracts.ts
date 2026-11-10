@@ -105,6 +105,11 @@ export type CourseDTO = {
   professorId?: string;
   status: "published" | "draft";
   temario: CourseSyllabusModule[];
+  /**
+   * Optimistic-concurrency version. Authoring views receive it and must send
+   * it back (If-Match) on every update. Public catalogue responses omit it.
+   */
+  revision?: number;
 };
 
 export type LessonDTO = {
@@ -116,6 +121,8 @@ export type LessonDTO = {
   position: number;
   content?: LessonBlockDTO[];
   document?: RichLessonDocument;
+  /** Idempotency key echoed back when the lesson was created with one. */
+  requestId?: string;
 };
 
 export type ModuleDTO = {
@@ -124,6 +131,8 @@ export type ModuleDTO = {
   status: ModuleStatus;
   position: number;
   lessons: LessonDTO[];
+  /** Idempotency key echoed back when the module was created with one. */
+  requestId?: string;
 };
 
 export type EnrollmentDTO = {
@@ -517,6 +526,8 @@ export type AdminCursoDTO = {
   alumnos: number;
   completion: number;
   estado: "Publicado" | "Borrador";
+  /** Optimistic-concurrency version for admin edits. */
+  revision?: number;
 };
 
 export type AdminInscripcionDTO = {

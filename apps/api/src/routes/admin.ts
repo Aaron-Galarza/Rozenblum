@@ -18,9 +18,20 @@ import {
   updateAdminUser,
 } from "../services/admin.js";
 import { getAdminOverview, listAdminEnrollments } from "../services/dashboard.js";
-import { createEmptyCourseForAdmin, deleteCourse, updateCourse } from "../services/courses.js";
+import {
+  createEmptyCourseForAdmin,
+  deleteCourse,
+  getCourseByRequestId,
+  updateCourse,
+} from "../services/courses.js";
 import { listContacts } from "../services/contact.js";
-import { asyncRoute, numericParam, parseBody } from "./helpers.js";
+import {
+  asyncRoute,
+  numericParam,
+  parseBody,
+  requestIdempotencyKey,
+  requestRevision,
+} from "./helpers.js";
 
 export const adminRouter = Router();
 
@@ -86,7 +97,17 @@ adminRouter.post(
   "/courses",
   asyncRoute(async (req, res) => {
     const input = parseBody(coursePayloadSchema, req.body);
-    sendData(res, await createEmptyCourseForAdmin(input), 201);
+    const course = await createEmptyCourseForAdmin(input, requestIdempotencyKey(req));
+    res.setHeader("ETag", `"${course.revision ?? 0}"`);
+    sendData(res, course, 201);
+  }),
+);
+
+/** Safe recovery for a course creation whose response was lost. */
+adminRouter.get(
+  "/courses/by-request-id/:requestId",
+  asyncRoute(async (req, res) => {
+    sendData(res, await getCourseByRequestId(req.params.requestId));
   }),
 );
 
@@ -95,7 +116,11 @@ adminRouter.patch(
   asyncRoute(async (req, res) => {
     const courseId = numericParam(req.params.courseId, "Curso");
     const patch = parseBody(adminCoursePatchSchema, req.body);
-    sendData(res, await updateCourse(courseId, patch, req.authUser!));
+    const course = await updateCourse(courseId, patch, req.authUser!, {
+      expectedRevision: requestRevision(req),
+    });
+    res.setHeader("ETag", `"${course.revision ?? 0}"`);
+    sendData(res, course);
   }),
 );
 
@@ -103,7 +128,7 @@ adminRouter.delete(
   "/courses/:courseId",
   asyncRoute(async (req, res) => {
     const courseId = numericParam(req.params.courseId, "Curso");
-    await deleteCourse(courseId);
+    await deleteCourse(courseId, { expectedRevision: requestRevision(req) });
     res.status(204).end();
   }),
 );

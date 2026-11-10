@@ -35,6 +35,8 @@ export function createApp() {
         return callback(new ApiError(403, "CORS_FORBIDDEN", "Origen no permitido por CORS."));
       },
       credentials: false,
+      // Custom response headers the web app reads (course revision / ETag).
+      exposedHeaders: ["ETag", "X-Course-Revision", "X-Request-Id"],
     }),
   );
   app.use(express.json({ limit: "1mb" }));

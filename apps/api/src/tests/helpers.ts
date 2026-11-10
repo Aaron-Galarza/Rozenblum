@@ -22,7 +22,7 @@ export async function startTestServer(): Promise<TestServer> {
   };
 }
 
-export type ApiResult<T> = { status: number; body: T };
+export type ApiResult<T> = { status: number; body: T; headers: Headers };
 
 export async function api<T = unknown>(
   baseUrl: string,
@@ -36,5 +36,5 @@ export async function api<T = unknown>(
   const response = await fetch(`${baseUrl}${path}`, { ...init, headers });
   const text = await response.text();
   const body = text ? (JSON.parse(text) as T) : (undefined as T);
-  return { status: response.status, body };
+  return { status: response.status, body, headers: response.headers };
 }

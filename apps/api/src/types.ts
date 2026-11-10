@@ -32,6 +32,8 @@ export type StoredLesson = {
   highlight?: boolean;
   content: LessonBlockDTO[];
   document?: RichLessonDocument;
+  /** Idempotency key of the creation request, when one was sent. */
+  requestId?: string;
   createdBy?: string;
   createdAt?: string;
   updatedBy?: string;
@@ -43,6 +45,8 @@ export type StoredModule = {
   title: string;
   position: number;
   lessons: StoredLesson[];
+  /** Idempotency key of the creation request, when one was sent. */
+  requestId?: string;
   createdBy?: string;
   createdAt?: string;
   updatedBy?: string;
@@ -72,6 +76,8 @@ export type StoredCourse = {
   everPublished?: boolean;
   /** Monotonic suffix for lesson IDs, including IDs of deleted lessons. */
   nextLessonNumber?: number;
+  /** Idempotency key of the creation request, when one was sent. */
+  requestId?: string;
 };
 
 /** Fields needed by the catalogue, with module IDs but no lesson bodies. */
@@ -193,4 +199,5 @@ export type CourseInput = {
   professorEmail: string;
   status: "published" | "draft";
   img: string;
+  requestId?: string;
 };

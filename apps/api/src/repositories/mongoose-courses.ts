@@ -33,6 +33,10 @@ export function createMongooseCoursesRepositories() {
       const doc = await CourseModel.findOne({ legacyId }).lean().exec();
       return doc ? clean<StoredCourse>(doc) : null;
     },
+    async findByRequestId(requestId) {
+      const doc = await CourseModel.findOne({ requestId }).lean().exec();
+      return doc ? clean<StoredCourse>(doc) : null;
+    },
     async nextLegacyId() {
       const doc = await CourseModel.findOne({}).sort({ legacyId: -1 }).select("legacyId").lean().exec();
       return (doc?.legacyId ?? 0) + 1;
@@ -67,10 +71,18 @@ export function createMongooseCoursesRepositories() {
             revision: 0,
             everPublished: input.status === "published",
             nextLessonNumber: 0,
+            requestId: input.requestId,
           });
           return clean<StoredCourse>(doc.toObject());
         } catch (error) {
-          if ((error as { code?: number }).code !== 11000 || attempt === 4) throw error;
+          if ((error as { code?: number }).code !== 11000) throw error;
+          // A retried creation may collide with its own idempotency key. Return
+          // the resource created by the first attempt instead of duplicating it.
+          if (input.requestId) {
+            const existing = await CourseModel.findOne({ requestId: input.requestId }).lean().exec();
+            if (existing) return clean<StoredCourse>(existing);
+          }
+          if (attempt === 4) throw error;
           // Another request claimed the slug or legacy ID after our lookup.
           // Re-read both values rather than turning a normal race into a 500.
         }

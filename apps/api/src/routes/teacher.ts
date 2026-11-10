@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import {
   adminCoursePatchSchema,
   lessonPayloadSchema,
@@ -22,6 +22,7 @@ import {
   updateCourse,
   updateLesson,
   updateModule,
+  type ModuleMutationResult,
 } from "../services/courses.js";
 import {
   getConversationForTeacher,
@@ -30,10 +31,23 @@ import {
   sendTeacherMessage,
   sendTeacherStudentMessage,
 } from "../services/chat.js";
-import { asyncRoute, numericParam, parseBody } from "./helpers.js";
+import {
+  asyncRoute,
+  numericParam,
+  parseBody,
+  requestIdempotencyKey,
+  requestRevision,
+} from "./helpers.js";
 import { getYouTubePreview } from "../services/youtube.js";
 
 export const teacherRouter = Router();
+
+/** Sends the module list plus the revision it produced (headers only). */
+function sendModules(res: Response, result: ModuleMutationResult, status = 200) {
+  res.setHeader("ETag", `"${result.revision}"`);
+  res.setHeader("X-Course-Revision", String(result.revision));
+  sendData(res, result.modules, status);
+}
 
 teacherRouter.use(requireAuth, requireRole("profesor", "admin"));
 
@@ -79,7 +93,11 @@ teacherRouter.patch(
   asyncRoute(async (req, res) => {
     const courseId = numericParam(req.params.courseId, "Curso");
     const patch = parseBody(teacherCoursePatchSchema, req.body);
-    sendData(res, await updateCourse(courseId, patch, req.authUser!));
+    const updated = await updateCourse(courseId, patch, req.authUser!, {
+      expectedRevision: requestRevision(req),
+    });
+    res.setHeader("ETag", `"${updated.revision ?? 0}"`);
+    sendData(res, updated);
   }),
 );
 
@@ -121,7 +139,14 @@ teacherRouter.post(
   asyncRoute(async (req, res) => {
     const courseId = numericParam(req.params.courseId, "Curso");
     const input = parseBody(moduleTitleSchema, req.body);
-    sendData(res, await addModule(courseId, input.title, req.authUser!), 201);
+    sendModules(
+      res,
+      await addModule(courseId, input.title, req.authUser!, {
+        expectedRevision: requestRevision(req),
+        requestId: requestIdempotencyKey(req),
+      }),
+      201,
+    );
   }),
 );
 
@@ -131,7 +156,12 @@ teacherRouter.patch(
     const courseId = numericParam(req.params.courseId, "Curso");
     const moduleId = numericParam(req.params.moduleId, "Módulo");
     const input = parseBody(moduleTitleSchema, req.body);
-    sendData(res, await updateModule(courseId, moduleId, input, req.authUser!));
+    sendModules(
+      res,
+      await updateModule(courseId, moduleId, input, req.authUser!, {
+        expectedRevision: requestRevision(req),
+      }),
+    );
   }),
 );
 
@@ -140,7 +170,12 @@ teacherRouter.delete(
   asyncRoute(async (req, res) => {
     const courseId = numericParam(req.params.courseId, "Curso");
     const moduleId = numericParam(req.params.moduleId, "Módulo");
-    sendData(res, await deleteModule(courseId, moduleId, req.authUser!));
+    sendModules(
+      res,
+      await deleteModule(courseId, moduleId, req.authUser!, {
+        expectedRevision: requestRevision(req),
+      }),
+    );
   }),
 );
 
@@ -150,7 +185,12 @@ teacherRouter.put(
     const courseId = numericParam(req.params.courseId, "Curso");
     const input = parseBody(reorderSchema, req.body);
     const ids = input.ids.map((id) => Number(id));
-    sendData(res, await reorderModules(courseId, ids, req.authUser!));
+    sendModules(
+      res,
+      await reorderModules(courseId, ids, req.authUser!, {
+        expectedRevision: requestRevision(req),
+      }),
+    );
   }),
 );
 
@@ -160,7 +200,14 @@ teacherRouter.post(
     const courseId = numericParam(req.params.courseId, "Curso");
     const moduleId = numericParam(req.params.moduleId, "Módulo");
     const input = parseBody(lessonPayloadSchema, req.body);
-    sendData(res, await addLesson(courseId, moduleId, input, req.authUser!), 201);
+    sendModules(
+      res,
+      await addLesson(courseId, moduleId, input, req.authUser!, {
+        expectedRevision: requestRevision(req),
+        requestId: requestIdempotencyKey(req),
+      }),
+      201,
+    );
   }),
 );
 
@@ -170,9 +217,11 @@ teacherRouter.patch(
     const courseId = numericParam(req.params.courseId, "Curso");
     const moduleId = numericParam(req.params.moduleId, "Módulo");
     const input = parseBody(lessonPayloadSchema.partial(), req.body);
-    sendData(
+    sendModules(
       res,
-      await updateLesson(courseId, moduleId, req.params.lessonId, input, req.authUser!),
+      await updateLesson(courseId, moduleId, req.params.lessonId, input, req.authUser!, {
+        expectedRevision: requestRevision(req),
+      }),
     );
   }),
 );
@@ -182,7 +231,12 @@ teacherRouter.delete(
   asyncRoute(async (req, res) => {
     const courseId = numericParam(req.params.courseId, "Curso");
     const moduleId = numericParam(req.params.moduleId, "Módulo");
-    sendData(res, await deleteLesson(courseId, moduleId, req.params.lessonId, req.authUser!));
+    sendModules(
+      res,
+      await deleteLesson(courseId, moduleId, req.params.lessonId, req.authUser!, {
+        expectedRevision: requestRevision(req),
+      }),
+    );
   }),
 );
 
@@ -192,9 +246,11 @@ teacherRouter.put(
     const courseId = numericParam(req.params.courseId, "Curso");
     const moduleId = numericParam(req.params.moduleId, "Módulo");
     const input = parseBody(reorderSchema, req.body);
-    sendData(
+    sendModules(
       res,
-      await reorderLessons(courseId, moduleId, input.ids.map(String), req.authUser!),
+      await reorderLessons(courseId, moduleId, input.ids.map(String), req.authUser!, {
+        expectedRevision: requestRevision(req),
+      }),
     );
   }),
 );
