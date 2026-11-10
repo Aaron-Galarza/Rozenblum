@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { AdminCursoDTO, AdminProfesorDTO, CourseDTO } from "@rozenblum/shared";
 import { errorMessage } from "../../../lib/api";
 import Modal from "../../../components/ui/Modal";
@@ -8,15 +8,24 @@ import Toast from "../../../components/ui/Toast";
 import { useToast } from "../../../lib/use-toast";
 import ImagePicker from "../../../components/ui/ImagePicker";
 
+type CursoFormInput = { title: string; professorEmail: string; description: string; priceCents: number; duration: string; level: string; img?: string };
+
 type CursosSectionProps = {
   cursos: AdminCursoDTO[];
   profesores: AdminProfesorDTO[];
-  onCreate: (input: { name: string; professorEmail: string; description: string; priceCents: number; duration: string; level: string; img?: string }) => Promise<void>;
+  onCreate: (input: { name: string; professorEmail: string; description: string; priceCents: number; duration: string; level: string; img?: string }, idempotencyKey?: string) => Promise<void>;
   onLoadCourse: (id: number) => Promise<CourseDTO>;
-  onUpdate: (id: number, patch: { title: string; professorEmail: string; description: string; priceCents: number; duration: string; level: string; img?: string }) => Promise<void>;
+  onUpdate: (curso: AdminCursoDTO, patch: CursoFormInput) => Promise<void>;
   onToggleStatus: (curso: AdminCursoDTO) => Promise<void>;
   onDelete: (curso: AdminCursoDTO) => Promise<void>;
 };
+
+function newIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 type ModalState = { type: "ver" | "crear" | "editar"; item?: AdminCursoDTO } | null;
 
 export default function CursosSection({ cursos, profesores, onCreate, onLoadCourse, onUpdate, onToggleStatus, onDelete }: CursosSectionProps) {
@@ -25,6 +34,8 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
   const { toast, showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
+  /** Stable across retries of the same creation, so a lost response cannot duplicate the course. */
+  const createKey = useRef("");
 
 
   const run = async (action: () => Promise<void>) => {
@@ -62,9 +73,10 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
         level: form.level.trim(), ...(form.img.trim() ? { img: form.img.trim() } : {}),
       };
       if (modal?.type === "editar" && modal.item) {
-        await onUpdate(modal.item.id, { title: input.name, professorEmail: input.professorEmail, description: input.description, priceCents: input.priceCents, duration: input.duration, level: input.level, ...(input.img ? { img: input.img } : {}) });
+        const patch: CursoFormInput = { title: input.name, professorEmail: input.professorEmail, description: input.description, priceCents: input.priceCents, duration: input.duration, level: input.level, ...(input.img ? { img: input.img } : {}) };
+        await onUpdate(modal.item, patch);
       } else {
-        await onCreate(input);
+        await onCreate(input, createKey.current || newIdempotencyKey());
       }
       setModal(null);
       showToast(modal?.type === "editar" ? "✓ Curso actualizado" : "✓ Curso creado en borrador");
@@ -84,7 +96,7 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
         img: full.img,
       });
       setFormError("");
-      setModal({ type: "editar", item: curso });
+      setModal({ type: "editar", item: { ...curso, revision: full.revision ?? curso.revision } });
     });
   };
 
@@ -92,7 +104,7 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
     <>
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Gestión de Cursos</h2>
-        <button disabled={!profesores.some((p) => p.estado === "Activo")} title={profesores.some((p) => p.estado === "Activo") ? undefined : "Primero creá un profesor activo"} onClick={() => { setForm({ name: "", professorEmail: "", description: "", price: "", duration: "", level: "", img: "" }); setFormError(""); setModal({ type: "crear" }); }} className="min-h-11 self-start px-5 py-2.5 text-xs font-bold tracking-widest transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
+        <button disabled={!profesores.some((p) => p.estado === "Activo")} title={profesores.some((p) => p.estado === "Activo") ? undefined : "Primero creá un profesor activo"} onClick={() => { createKey.current = newIdempotencyKey(); setForm({ name: "", professorEmail: "", description: "", price: "", duration: "", level: "", img: "" }); setFormError(""); setModal({ type: "crear" }); }} className="min-h-11 self-start px-5 py-2.5 text-xs font-bold tracking-widest transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
           + CREAR NUEVO CURSO
         </button>
       </div>

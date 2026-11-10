@@ -170,10 +170,11 @@ export default function AdminView() {
                 <CursosSection
                   cursos={overview.cursos}
                   profesores={overview.profesores}
-                  onCreate={async ({ name, professorEmail, description, priceCents, duration, level, img }) => {
+                  onCreate={async ({ name, professorEmail, description, priceCents, duration, level, img }, idempotencyKey) => {
                     await apiFetch("/api/admin/courses", {
                       method: "POST",
                       auth: true,
+                      headers: idempotencyKey ? { "idempotency-key": idempotencyKey } : undefined,
                       body: {
                         title: name,
                         professorEmail,
@@ -188,16 +189,30 @@ export default function AdminView() {
                     await load();
                   }}
                   onToggleStatus={async (curso) => {
-                    await apiFetch(`/api/admin/courses/${curso.id}`, { method: "PATCH", auth: true, body: { status: curso.estado === "Publicado" ? "draft" : "published" } });
+                    await apiFetch(`/api/admin/courses/${curso.id}`, {
+                      method: "PATCH",
+                      auth: true,
+                      headers: { "if-match": String(curso.revision ?? 0) },
+                      body: { status: curso.estado === "Publicado" ? "draft" : "published" },
+                    });
                     await load();
                   }}
                   onLoadCourse={async (id) => (await apiFetch<CourseDetailDTO>(`/api/teacher/courses/${id}`, { auth: true })).course}
-                  onUpdate={async (id, patch) => {
-                    await apiFetch<CourseDTO>(`/api/admin/courses/${id}`, { method: "PATCH", auth: true, body: patch });
+                  onUpdate={async (curso, patch) => {
+                    await apiFetch<CourseDTO>(`/api/admin/courses/${curso.id}`, {
+                      method: "PATCH",
+                      auth: true,
+                      headers: { "if-match": String(curso.revision ?? 0) },
+                      body: patch,
+                    });
                     await load();
                   }}
                   onDelete={async (curso) => {
-                    await apiFetch(`/api/admin/courses/${curso.id}`, { method: "DELETE", auth: true });
+                    await apiFetch(`/api/admin/courses/${curso.id}`, {
+                      method: "DELETE",
+                      auth: true,
+                      headers: { "if-match": String(curso.revision ?? 0) },
+                    });
                     await load();
                   }}
                 />

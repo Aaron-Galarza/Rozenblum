@@ -100,7 +100,15 @@ async function responseData<T>(
   return payload.data as T;
 }
 
-export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export type ApiResponseMeta = {
+  status: number;
+  headers: Headers;
+};
+
+async function performFetch<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<{ data: T; meta: ApiResponseMeta }> {
   const { body, auth = false, headers, ...rest } = options;
   const started = performance.now();
   const method = rest.method ?? "GET";
@@ -141,11 +149,24 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   }
 
   if (response.status === 401 && requestToken) invalidateSession(requestToken, requestRevision);
+  const meta = { status: response.status, headers: response.headers };
   if (response.status === 204) {
-    return undefined as T;
+    return { data: undefined as T, meta };
   }
 
-  return responseData<T>(response);
+  return { data: await responseData<T>(response), meta };
+}
+
+export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return (await performFetch<T>(path, options)).data;
+}
+
+/** Same as `apiFetch`, but also exposes status and headers (e.g. ETag). */
+export async function apiFetchWithMeta<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<{ data: T; meta: ApiResponseMeta }> {
+  return performFetch<T>(path, options);
 }
 
 export function errorMessage(error: unknown): string {

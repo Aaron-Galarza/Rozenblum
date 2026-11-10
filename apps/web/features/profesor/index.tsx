@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CourseDTO,
   ModuleDTO,
@@ -13,11 +13,25 @@ import { IconBell, IconMail } from "../../components/icons";
 import SimpleFooter from "../../components/layout/SimpleFooter";
 import ProfesorDashboard from "./ProfesorDashboard";
 import CourseEditor from "./CourseEditor";
-import { apiFetch, errorMessage } from "../../lib/api";
+import { apiFetch, apiFetchWithMeta, errorMessage, type ApiResponseMeta } from "../../lib/api";
 import { useSession } from "../../lib/use-session";
 import { EmptyState, ErrorPanel, LoadingScreen } from "../../components/ui/AsyncState";
 
 type Structure = { course: CourseDTO; modules: ModuleDTO[] };
+
+function revisionFrom(meta: ApiResponseMeta, dto?: { revision?: number }): number | undefined {
+  if (typeof dto?.revision === "number") return dto.revision;
+  const raw = meta.headers.get("x-course-revision") ?? meta.headers.get("etag");
+  const parsed = Number(String(raw ?? "").replace(/"/g, ""));
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function newIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 function toEditableModules(modules: ModuleDTO[]): EditableModule[] {
   return modules.map((mod) => ({
@@ -47,6 +61,8 @@ export default function ProfesorView() {
   const [courseLoading, setCourseLoading] = useState(false);
   const [error, setError] = useState("");
   const [courseError, setCourseError] = useState("");
+  /** Latest course revision known to this editor; sent back as If-Match. */
+  const revisionRef = useRef(0);
 
   const loadDashboard = async () => {
     setLoading(true);
@@ -75,6 +91,7 @@ export default function ProfesorView() {
         apiFetch<Structure>(`/api/teacher/courses/${courseId}`, { auth: true }),
         apiFetch<TeacherStudentDTO[]>(`/api/teacher/courses/${courseId}/students`, { auth: true }),
       ]);
+      revisionRef.current = structureData.course.revision ?? 0;
       setStructure(structureData);
       setStudents(studentData);
       setExpandedModules(structureData.modules.slice(0, 1).map((mod) => mod.id));
@@ -115,12 +132,28 @@ export default function ProfesorView() {
   const setModules = (modules: ModuleDTO[]) =>
     setStructure((prev) => (prev ? { ...prev, modules } : prev));
 
-  const moduleApi = (path: string, method: string, body?: unknown) =>
-    apiFetch<ModuleDTO[]>(`/api/teacher/courses/${selectedCourseId}${path}`, {
-      method,
-      auth: true,
-      body,
-    });
+  const moduleApi = async (
+    path: string,
+    method: string,
+    body?: unknown,
+    idempotencyKey?: string,
+  ) => {
+    const { data, meta } = await apiFetchWithMeta<ModuleDTO[]>(
+      `/api/teacher/courses/${selectedCourseId}${path}`,
+      {
+        method,
+        auth: true,
+        body,
+        headers: {
+          "if-match": String(revisionRef.current),
+          ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
+        },
+      },
+    );
+    const revision = revisionFrom(meta);
+    if (revision !== undefined) revisionRef.current = revision;
+    return data;
+  };
 
   if (!ready) return <LoadingScreen label="Verificando sesión..." />;
 
@@ -210,21 +243,35 @@ export default function ProfesorView() {
               onSort={handleSort}
               onTogglePublish={async () => {
                 const nextStatus = structure.course.status === "published" ? "draft" : "published";
-                const updated = await apiFetch<CourseDTO>(`/api/teacher/courses/${selectedCourseId}`, {
-                  method: "PATCH",
-                  auth: true,
-                  body: { status: nextStatus },
-                });
+                const { data: updated, meta } = await apiFetchWithMeta<CourseDTO>(
+                  `/api/teacher/courses/${selectedCourseId}`,
+                  {
+                    method: "PATCH",
+                    auth: true,
+                    body: { status: nextStatus },
+                    headers: { "if-match": String(revisionRef.current) },
+                  },
+                );
+                revisionRef.current = revisionFrom(meta, updated) ?? revisionRef.current;
                 setStructure((prev) => prev ? { ...prev, course: updated } : prev);
               }}
               onUpdateCourse={async (patch) => {
-                const updated = await apiFetch<CourseDTO>(`/api/teacher/courses/${selectedCourseId}`, {
-                  method: "PATCH", auth: true, body: patch,
-                });
+                const { data: updated, meta } = await apiFetchWithMeta<CourseDTO>(
+                  `/api/teacher/courses/${selectedCourseId}`,
+                  {
+                    method: "PATCH",
+                    auth: true,
+                    body: patch,
+                    headers: { "if-match": String(revisionRef.current) },
+                  },
+                );
+                revisionRef.current = revisionFrom(meta, updated) ?? revisionRef.current;
                 setStructure((prev) => prev ? { ...prev, course: updated } : prev);
                 await loadDashboard();
               }}
-              onAddModule={async (title) => setModules(await moduleApi("/modules", "POST", { title }))}
+              onAddModule={async (title) =>
+                setModules(await moduleApi("/modules", "POST", { title }, newIdempotencyKey()))
+              }
               onRenameModule={async (id, title) => setModules(await moduleApi(`/modules/${id}`, "PATCH", { title }))}
               onDeleteModule={async (id) => setModules(await moduleApi(`/modules/${id}`, "DELETE"))}
               onMoveModule={async (id, dir) => {
@@ -237,7 +284,12 @@ export default function ProfesorView() {
               }}
               onAddLesson={async (moduleId, payload) =>
                 setModules(
-                  await moduleApi(`/modules/${moduleId}/lessons`, "POST", payload),
+                  await moduleApi(
+                    `/modules/${moduleId}/lessons`,
+                    "POST",
+                    payload,
+                    newIdempotencyKey(),
+                  ),
                 )
               }
               onUpdateLesson={async (moduleId, lessonId, payload) =>
