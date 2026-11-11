@@ -336,6 +336,214 @@ test("student progress unlocks modules and teacher edits stay role guarded", asy
   assert.equal(forbidden.status, 403);
 });
 
+test("expired, revoked and missing enrollments cannot reach classroom content", async () => {
+  const studentToken = await login("alumno", studentEmail);
+  const teacherToken = await login("profesor", teacherEmail);
+  const course = await repositories.courses.create({
+    title: "Blocked Classroom Course", description: "Enrollment access boundary test.",
+    priceCents: 10_000, duration: "Online", level: "Inicial",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+    img: "https://example.test/blocked.jpg", accessDays: 30,
+  });
+  await repositories.courses.saveModules(course.legacyId, [
+    { id: 1, title: "Only module", position: 1, lessons: [
+      { id: "1.1", title: "Private lesson", type: "doc", position: 1,
+        content: [{ id: "secret", type: "paragraph", content: "Contenido privado" }] },
+    ] },
+  ], 0);
+
+  const past = new Date(Date.now() - 60_000).toISOString();
+  const expired = await repositories.enrollments.create({
+    studentEmail, studentName: "Test alumno", courseId: course.legacyId,
+    status: "Activo", expiresAt: past,
+  });
+  const view = () => api<{ data: {
+    status: string; expiresAt?: string;
+    modules: { lessons: { content?: unknown[]; document?: unknown }[] }[];
+  } }>(server.baseUrl, `/api/student/enrollments/${expired.id}`, { token: studentToken });
+
+  const expiredView = await view();
+  assert.equal(expiredView.status, 200);
+  assert.equal(expiredView.body.data.status, "Revocado");
+  assert.equal(expiredView.body.data.expiresAt, past);
+  assert.ok(expiredView.body.data.modules.every((mod) =>
+    mod.lessons.every((lesson) => lesson.content?.length === 0 && !lesson.document)));
+  const expiredProgress = await api(server.baseUrl, `/api/student/enrollments/${expired.id}/progress`, {
+    method: "PATCH", token: studentToken, body: JSON.stringify({ lessonId: "1.1", completed: true }),
+  });
+  assert.equal(expiredProgress.status, 403);
+  assert.equal((await api(server.baseUrl, `/api/student/enrollments/${expired.id}/messages`, {
+    token: studentToken,
+  })).status, 403);
+
+  // Lifting the expiry restores access; the course content is released again.
+  await repositories.enrollments.setExpiresAt(expired.id, undefined);
+  const restored = await view();
+  assert.equal(restored.body.data.status, "Activo");
+  assert.equal(restored.body.data.modules[0]?.lessons[0]?.content?.length, 1);
+
+  const revokedCourse = await repositories.courses.create({
+    title: "Revoked Classroom Course", description: "Revoked enrollment test.",
+    priceCents: 10_000, duration: "Online", level: "Inicial",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+    img: "https://example.test/revoked.jpg",
+  });
+  const revoked = await repositories.enrollments.create({
+    studentEmail, studentName: "Test alumno", courseId: revokedCourse.legacyId, status: "Revocado",
+  });
+  assert.equal((await api(server.baseUrl, `/api/student/enrollments/${revoked.id}/progress`, {
+    method: "PATCH", token: studentToken, body: JSON.stringify({ lessonId: "1.1", completed: true }),
+  })).status, 403);
+
+  const unassigned = await repositories.courses.create({
+    title: "Unassigned Classroom Course", description: "No enrollment for this student.",
+    priceCents: 10_000, duration: "Online", level: "Inicial",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+    img: "https://example.test/unassigned.jpg",
+  });
+  assert.equal((await api(server.baseUrl,
+    `/api/student/enrollments/${unassigned.legacyId}`, { token: studentToken })).status, 403);
+
+  const foreign = await repositories.courses.create({
+    title: "Foreign Teacher Course", description: "Managed by another professor.",
+    priceCents: 10_000, duration: "Online", level: "Inicial",
+    professor: "Other Professor", professorEmail: "other-professor@example.test", status: "published",
+    img: "https://example.test/foreign.jpg",
+  });
+  assert.equal((await api(server.baseUrl,
+    `/api/teacher/courses/${foreign.legacyId}`, { token: teacherToken })).status, 403);
+});
+
+test("progress writes are idempotent and reject lessons from another course", async () => {
+  const studentToken = await login("alumno", studentEmail);
+  const course = await repositories.courses.create({
+    title: "Idempotent Progress Course", description: "Repeated progress writes test.",
+    priceCents: 10_000, duration: "Online", level: "Inicial",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+    img: "https://example.test/idempotent.jpg",
+  });
+  await repositories.courses.saveModules(course.legacyId, [
+    { id: 1, title: "First", position: 1, lessons: [
+      { id: "1.1", title: "First lesson", type: "doc", position: 1, content: [] },
+    ] },
+    { id: 2, title: "Second", position: 2, lessons: [
+      { id: "2.1", title: "Second lesson", type: "doc", position: 1, content: [] },
+    ] },
+  ], 0);
+  const enrollment = await repositories.enrollments.create({
+    studentEmail, studentName: "Test alumno", courseId: course.legacyId, status: "Activo",
+  });
+  const path = `/api/student/enrollments/${enrollment.id}/progress`;
+  const mark = (lessonId: string, completed: boolean) => api<{ data: { progress: number } }>(
+    server.baseUrl, path, {
+      method: "PATCH", token: studentToken,
+      body: JSON.stringify({ lessonId, completed }),
+    },
+  );
+
+  assert.equal((await mark("1.1", true)).body.data.progress, 50);
+  assert.equal((await mark("1.1", true)).body.data.progress, 50);
+  const concurrent = await Promise.all([mark("1.1", true), mark("1.1", true)]);
+  assert.deepEqual(concurrent.map((response) => response.status), [200, 200]);
+  assert.deepEqual(
+    (await repositories.enrollments.findById(enrollment.id))?.completedLessonIds,
+    ["1.1"],
+  );
+
+  assert.equal((await mark("9.9", true)).status, 400);
+  const unmarked = await mark("1.1", false);
+  assert.equal(unmarked.status, 200);
+  assert.equal(unmarked.body.data.progress, 0);
+  assert.deepEqual(
+    (await repositories.enrollments.findById(enrollment.id))?.completedLessonIds,
+    [],
+  );
+});
+
+test("curriculum edits recalculate progress without corrupting completed history", async () => {
+  const teacherToken = await login("profesor", teacherEmail);
+  const studentToken = await login("alumno", studentEmail);
+  const course = await repositories.courses.create({
+    title: "Curriculum Progress Course", description: "Reorder, add and delete lessons test.",
+    priceCents: 10_000, duration: "Online", level: "Inicial",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "draft",
+    img: "https://example.test/curriculum.jpg",
+  });
+  await repositories.courses.saveModules(course.legacyId, [
+    { id: 1, title: "First", position: 1, lessons: [
+      { id: "1.1", title: "A", type: "doc", position: 1, content: [] },
+      { id: "1.2", title: "B", type: "doc", position: 2, content: [] },
+    ] },
+    { id: 2, title: "Second", position: 2, lessons: [
+      { id: "2.1", title: "C", type: "doc", position: 1, content: [] },
+    ] },
+  ], 0);
+  const enrollment = await repositories.enrollments.create({
+    studentEmail, studentName: "Test alumno", courseId: course.legacyId,
+    status: "Activo", completedLessonIds: ["1.1"],
+  });
+  const view = () => api<{ data: {
+    progress: number;
+    modules: { id: number; status: string; lessons: { id: string; done: boolean }[] }[];
+  } }>(server.baseUrl, `/api/student/enrollments/${enrollment.id}`, { token: studentToken });
+
+  let data = (await view()).body.data;
+  assert.equal(data.progress, 33);
+  assert.equal(data.modules[0]?.status, "in_progress");
+  assert.equal(data.modules[1]?.status, "locked");
+
+  const reordered = await api(server.baseUrl,
+    `/api/teacher/courses/${course.legacyId}/modules/1/lessons/reorder`, {
+      method: "PUT", token: teacherToken, body: JSON.stringify({ ids: ["1.2", "1.1"] }),
+    });
+  assert.equal(reordered.status, 200);
+  data = (await view()).body.data;
+  assert.deepEqual(data.modules[0]?.lessons.map((lesson) => lesson.id), ["1.2", "1.1"]);
+  assert.equal(data.modules[0]?.lessons.find((lesson) => lesson.id === "1.1")?.done, true);
+  assert.equal(data.progress, 33);
+
+  const added = await api(server.baseUrl,
+    `/api/teacher/courses/${course.legacyId}/modules/1/lessons`, {
+      method: "POST", token: teacherToken,
+      body: JSON.stringify({ title: "Nueva lección", type: "doc" }),
+    });
+  assert.equal(added.status, 201);
+  data = (await view()).body.data;
+  assert.equal(data.progress, 25);
+  assert.equal(data.modules[0]?.status, "in_progress");
+  assert.equal(data.modules[1]?.status, "locked");
+
+  // A lesson deleted before the enrollment existed stays in the stored history
+  // but no longer counts toward progress.
+  const deletedCourse = await repositories.courses.create({
+    title: "Deleted Lesson Course", description: "Historical completed id test.",
+    priceCents: 10_000, duration: "Online", level: "Inicial",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "draft",
+    img: "https://example.test/deleted.jpg",
+  });
+  await repositories.courses.saveModules(deletedCourse.legacyId, [
+    { id: 1, title: "First", position: 1, lessons: [
+      { id: "1.1", title: "Removed", type: "doc", position: 1, content: [] },
+      { id: "1.2", title: "Kept", type: "doc", position: 2, content: [] },
+    ] },
+  ], 0);
+  assert.equal((await api(server.baseUrl,
+    `/api/teacher/courses/${deletedCourse.legacyId}/modules/1/lessons/1.1`, {
+      method: "DELETE", token: teacherToken,
+    })).status, 200);
+  const historical = await repositories.enrollments.create({
+    studentEmail, studentName: "Test alumno", courseId: deletedCourse.legacyId,
+    status: "Activo", completedLessonIds: ["1.1", "ghost"],
+  });
+  const historicalView = await api<{ data: { progress: number } }>(server.baseUrl,
+    `/api/student/enrollments/${historical.id}`, { token: studentToken });
+  assert.equal(historicalView.body.data.progress, 0);
+  assert.deepEqual(
+    (await repositories.enrollments.findById(historical.id))?.completedLessonIds,
+    ["1.1", "ghost"],
+  );
+});
+
 test("checkout and receipt keep the order pending until Mercado Pago confirms it", async () => {
   const otherCourse = await repositories.courses.create({
     title: "Second Test Course", description: "Additional isolated checkout course.",
@@ -1500,6 +1708,7 @@ test("signed Mercado Pago events activate once, reject a wrong amount, and revok
     title: "Payment Course", description: "Verified gateway test", priceCents: 123_400,
     duration: "Online", level: "Inicial", img: "https://example.test/payment.jpg",
     professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+    accessDays: 30,
   });
   const secret = "test-webhook-secret-for-payment-flow";
   const paymentId = "123456789";
@@ -1574,6 +1783,10 @@ test("signed Mercado Pago events activate once, reject a wrong amount, and revok
       body: JSON.stringify({ estado: "Reembolsado", motivo: "Intento manual inválido" }),
     })).status, 400);
     assert.equal((await repositories.enrollments.findByStudentAndCourse("payment@example.test", course.legacyId))?.status, "Activo");
+    const paidEnrollment = await repositories.enrollments.findByStudentAndCourse("payment@example.test", course.legacyId);
+    assert.ok(paidEnrollment?.expiresAt);
+    const accessMs = Date.parse(paidEnrollment!.expiresAt!) - Date.now();
+    assert.ok(accessMs > 29 * 86_400_000 && accessMs <= 30 * 86_400_000);
     assert.equal((await repositories.enrollments.listAll()).filter((item) =>
       item.studentEmail === "payment@example.test" && item.courseId === course.legacyId).length, 1);
     assert.ok(await repositories.users.findByEmail("payment@example.test"));

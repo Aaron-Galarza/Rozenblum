@@ -99,6 +99,7 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
       priceCents: 100_000, duration: "Online", level: "Inicial",
       img: `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/image/upload/v1/Rozenblum/courses/test.jpg`,
       status: "draft", professorEmail: "professor@example.test",
+      accessDays: 30,
     };
     const missingProfessor = await api(server.baseUrl, "/api/admin/courses", {
       method: "POST", token: adminLogin.body.data.token,
@@ -315,10 +316,29 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     assert.equal(rawBuyer?.dni, undefined);
     assert.equal(buyer?.passwordHash, rawOrder.dniPasswordHash);
     assert.equal((await repositories.enrollments.findById(checkout.body.data.enrollment.id))?.status, "Activo");
-    const buyerLogin = await api(server.baseUrl, "/api/auth/login", {
+    assert.ok((await repositories.enrollments.findById(checkout.body.data.enrollment.id))?.expiresAt);
+    const buyerLogin = await api<{ data: { token: string } }>(server.baseUrl, "/api/auth/login", {
       method: "POST", body: JSON.stringify({ email: "buyer@example.test", password: buyerDni }),
     });
     assert.equal(buyerLogin.status, 200);
+    const progressPath = `/api/student/enrollments/${checkout.body.data.enrollment.id}/progress`;
+    const markLesson = () => api<{ data: { progress: number } }>(server!.baseUrl, progressPath, {
+      method: "PATCH", token: buyerLogin.body.data.token,
+      body: JSON.stringify({ lessonId: "1.1", completed: true }),
+    });
+    assert.equal((await markLesson()).body.data.progress, 100);
+    assert.equal((await markLesson()).body.data.progress, 100);
+    assert.deepEqual(
+      (await repositories.enrollments.findById(checkout.body.data.enrollment.id))?.completedLessonIds,
+      ["1.1"],
+    );
+    await EnrollmentModel.init();
+    const persisted = await repositories.enrollments.findById(checkout.body.data.enrollment.id);
+    assert.ok(persisted);
+    await assert.rejects(
+      EnrollmentModel.create({ ...persisted, id: "enr_duplicate_atlas" }),
+      (error: unknown) => (error as { code?: number }).code === 11000,
+    );
     const suspended = await api(server.baseUrl, `/api/admin/users/${student.id}`, {
       method: "PATCH", token: adminLogin.body.data.token, body: JSON.stringify({ status: "Suspendido" }),
     });
