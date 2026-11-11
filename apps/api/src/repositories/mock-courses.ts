@@ -79,6 +79,7 @@ export function createMockCoursesRepositories(db: Memory) {
         everPublished: input.status === "published",
         nextLessonNumber: 0,
         requestId: input.requestId,
+        accessDays: input.accessDays,
       };
       db.courses.push(course);
       return clone(course);

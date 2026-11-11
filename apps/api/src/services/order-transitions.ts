@@ -43,13 +43,21 @@ async function activateEnrollment(order: StoredOrder): Promise<void> {
       initials: initialsFromName(order.alumno), sessionVersion: 0,
     });
   }
+  // The access window starts when the payment is approved, not when the
+  // checkout was created. A course without accessDays never expires.
+  const course = await repos.courses.findById(order.courseId);
+  const accessDays = course?.accessDays ?? 0;
+  const expiresAt = accessDays > 0
+    ? new Date(Date.now() + accessDays * 86_400_000).toISOString()
+    : undefined;
   const enrollment = await repos.enrollments.findByStudentAndCourse(order.email, order.courseId);
   if (enrollment) {
     await repos.enrollments.updateStatus(enrollment.id, "Activo");
+    await repos.enrollments.setExpiresAt(enrollment.id, expiresAt);
   } else {
     await repos.enrollments.create({
       studentEmail: order.email, studentName: order.alumno,
-      courseId: order.courseId, status: "Activo",
+      courseId: order.courseId, status: "Activo", expiresAt,
     });
   }
 }

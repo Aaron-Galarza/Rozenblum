@@ -11,7 +11,7 @@ import type {
 } from "../types.js";
 import { canManageCourse } from "./courses.js";
 import { loadEnrollment } from "./classroom.js";
-import { conversationToMessages } from "./mappers.js";
+import { conversationToMessages, hasEnrollmentAccess, isEnrollmentExpired } from "./mappers.js";
 
 const clock = () =>
   new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(
@@ -60,8 +60,12 @@ export async function listStudentMessages(
 ): Promise<ChatMessageDTO[]> {
   const repos = getRepositories();
   const enrollment = await loadEnrollment(enrollmentId, user);
-  if (enrollment.status === "Pendiente" || enrollment.status === "Revocado") {
-    throw forbidden("La mensajería se habilita cuando se aprueba tu acceso.");
+  if (!hasEnrollmentAccess(enrollment)) {
+    throw forbidden(
+      isEnrollmentExpired(enrollment)
+        ? "Tu acceso a este curso venció."
+        : "La mensajería se habilita cuando se aprueba tu acceso.",
+    );
   }
   const conversation = await repos.conversations.findByStudentAndCourse(
     enrollment.studentEmail,
@@ -79,8 +83,12 @@ export async function sendStudentMessage(
   const enrollment = await loadEnrollment(enrollmentId, user);
   const course = await repos.courses.findById(enrollment.courseId);
   if (!course) throw notFound("Curso no encontrado.");
-  if (enrollment.status === "Pendiente" || enrollment.status === "Revocado") {
-    throw forbidden("La mensajería se habilita cuando se aprueba tu acceso.");
+  if (!hasEnrollmentAccess(enrollment)) {
+    throw forbidden(
+      isEnrollmentExpired(enrollment)
+        ? "Tu acceso a este curso venció."
+        : "La mensajería se habilita cuando se aprueba tu acceso.",
+    );
   }
 
   const conversation = await ensureConversation(enrollment, course);
@@ -123,8 +131,12 @@ async function loadTeacherStudentEnrollment(user: StoredUser, courseId: number, 
   if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
   const enrollment = await repos.enrollments.findById(enrollmentId);
   if (!enrollment || enrollment.courseId !== courseId) throw notFound("Inscripción no encontrada.");
-  if (enrollment.status === "Pendiente" || enrollment.status === "Revocado") {
-    throw forbidden("La mensajería se habilita cuando se aprueba el acceso del alumno.");
+  if (!hasEnrollmentAccess(enrollment)) {
+    throw forbidden(
+      isEnrollmentExpired(enrollment)
+        ? "El acceso del alumno a este curso venció."
+        : "La mensajería se habilita cuando se aprueba el acceso del alumno.",
+    );
   }
   return { course, enrollment };
 }

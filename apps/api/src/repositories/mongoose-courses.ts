@@ -12,7 +12,7 @@ export function createMongooseCoursesRepositories() {
     },
     async listPublished() {
       const docs = await CourseModel.find({ status: "published" })
-        .select("legacyId slug title description price priceCents duration level img professor status temario modules.id")
+        .select("legacyId slug title description price priceCents duration level img professor accessDays status temario modules.id")
         .sort({ legacyId: 1 })
         .lean()
         .exec();
@@ -72,6 +72,7 @@ export function createMongooseCoursesRepositories() {
             everPublished: input.status === "published",
             nextLessonNumber: 0,
             requestId: input.requestId,
+            accessDays: input.accessDays,
           });
           return clean<StoredCourse>(doc.toObject());
         } catch (error) {

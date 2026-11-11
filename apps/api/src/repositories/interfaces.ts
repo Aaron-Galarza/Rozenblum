@@ -70,6 +70,7 @@ export interface CourseRepository {
         | "status"
         | "temario"
         | "everPublished"
+        | "accessDays"
       >
     >,
     expectedRevision: number,
@@ -95,9 +96,16 @@ export interface EnrollmentRepository {
     courseId: number;
     status: StoredEnrollment["status"];
     completedLessonIds?: string[];
+    expiresAt?: string;
   }): Promise<StoredEnrollment>;
-  setCompletedLessons(id: string, lessonIds: string[]): Promise<StoredEnrollment | null>;
+  /** Atomically adds or removes one lesson, so retries never duplicate history. */
+  updateCompletedLesson(
+    id: string,
+    lessonId: string,
+    completed: boolean,
+  ): Promise<StoredEnrollment | null>;
   updateStatus(id: string, status: StoredEnrollment["status"]): Promise<StoredEnrollment | null>;
+  setExpiresAt(id: string, expiresAt?: string): Promise<StoredEnrollment | null>;
   deleteByStudent(email: string): Promise<number>;
 }
 

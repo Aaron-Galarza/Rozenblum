@@ -110,6 +110,8 @@ export type CourseDTO = {
    * it back (If-Match) on every update. Public catalogue responses omit it.
    */
   revision?: number;
+  /** Days of access granted after payment. 0/undefined means no expiry. */
+  accessDays?: number;
 };
 
 export type LessonDTO = {
@@ -145,6 +147,8 @@ export type EnrollmentDTO = {
   studentName: string;
   progress: number;
   status: "Activo" | "Pendiente" | "Completado" | "Revocado";
+  /** ISO timestamp when the purchased access ends. Absent means no expiry. */
+  expiresAt?: string;
   modules: ModuleDTO[];
 };
 
@@ -301,6 +305,8 @@ export const coursePayloadSchema = z.object({
   professorEmail: z.string().trim().email(),
   status: z.literal("draft").default("draft"),
   img: z.string().trim().url().refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
+  /** Days of access after payment. 0 means the course never expires. */
+  accessDays: z.number().int().min(0).max(3650).optional(),
 });
 
 /* ──────────────────────────────────────────────────────────────────────────────
@@ -429,6 +435,8 @@ export const adminCoursePatchSchema = z.object({
   level: z.string().trim().min(1).max(60).optional(),
   status: z.enum(["published", "draft"]).optional(),
   img: z.string().trim().url().refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
+  /** Days of access after payment. 0 means the course never expires. */
+  accessDays: z.number().int().min(0).max(3650).optional(),
 });
 
 export const orderStatusSchema = z.object({

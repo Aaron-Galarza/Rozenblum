@@ -89,20 +89,36 @@ export function createMockAccountsRepositories(db: Memory) {
         status: input.status,
         startedAt: nowIso(),
         completedLessonIds: input.completedLessonIds ?? [],
+        expiresAt: input.expiresAt,
       };
       db.enrollments.push(enrollment);
       return clone(enrollment);
     },
-    async setCompletedLessons(id, lessonIds) {
+    async updateCompletedLesson(id, lessonId, completed) {
       const enrollment = db.enrollments.find((e) => e.id === id);
       if (!enrollment) return null;
-      enrollment.completedLessonIds = [...new Set(lessonIds)];
+      if (completed) {
+        if (!enrollment.completedLessonIds.includes(lessonId)) {
+          enrollment.completedLessonIds.push(lessonId);
+        }
+      } else {
+        enrollment.completedLessonIds = enrollment.completedLessonIds.filter(
+          (item) => item !== lessonId,
+        );
+      }
       return clone(enrollment);
     },
     async updateStatus(id, status) {
       const enrollment = db.enrollments.find((e) => e.id === id);
       if (!enrollment) return null;
       enrollment.status = status;
+      return clone(enrollment);
+    },
+    async setExpiresAt(id, expiresAt) {
+      const enrollment = db.enrollments.find((e) => e.id === id);
+      if (!enrollment) return null;
+      if (expiresAt) enrollment.expiresAt = expiresAt;
+      else delete enrollment.expiresAt;
       return clone(enrollment);
     },
     async deleteByStudent(email) {

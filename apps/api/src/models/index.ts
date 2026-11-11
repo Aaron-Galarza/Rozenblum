@@ -102,6 +102,7 @@ const courseSchema = new Schema<StoredCourse>(
     everPublished: { type: Boolean, required: true, default: false },
     nextLessonNumber: { type: Number, required: true, default: 0 },
     requestId: { type: String, default: undefined },
+    accessDays: { type: Number, default: undefined, min: 0 },
   },
   { versionKey: false, collection: "courses", minimize: false },
 );
@@ -122,6 +123,7 @@ const enrollmentSchema = new Schema<StoredEnrollment>(
     status: { type: String, required: true, enum: ["Activo", "Pendiente", "Completado", "Revocado"] },
     startedAt: { type: String, required: true },
     completedLessonIds: { type: [String], default: [] },
+    expiresAt: { type: String, default: undefined },
   },
   { versionKey: false, collection: "enrollments" },
 );

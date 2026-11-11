@@ -106,13 +106,16 @@ export function createMongooseAccountsRepositories() {
         status: input.status,
         startedAt: nowIso(),
         completedLessonIds: input.completedLessonIds ?? [],
+        expiresAt: input.expiresAt,
       });
       return clean<StoredEnrollment>(doc.toObject());
     },
-    async setCompletedLessons(id, lessonIds) {
+    async updateCompletedLesson(id, lessonId, completed) {
       const doc = await EnrollmentModel.findOneAndUpdate(
         { id },
-        { $set: { completedLessonIds: [...new Set(lessonIds)] } },
+        completed
+          ? { $addToSet: { completedLessonIds: lessonId } }
+          : { $pull: { completedLessonIds: lessonId } },
         { returnDocument: "after" },
       )
         .lean()
@@ -123,6 +126,18 @@ export function createMongooseAccountsRepositories() {
       const doc = await EnrollmentModel.findOneAndUpdate(
         { id },
         { $set: { status } },
+        { returnDocument: "after" },
+      )
+        .lean()
+        .exec();
+      return doc ? clean<StoredEnrollment>(doc) : null;
+    },
+    async setExpiresAt(id, expiresAt) {
+      const doc = await EnrollmentModel.findOneAndUpdate(
+        { id },
+        expiresAt
+          ? { $set: { expiresAt } }
+          : { $unset: { expiresAt: 1 } },
         { returnDocument: "after" },
       )
         .lean()

@@ -78,13 +78,15 @@ export type StoredCourse = {
   nextLessonNumber?: number;
   /** Idempotency key of the creation request, when one was sent. */
   requestId?: string;
+  /** Days of access granted after payment. 0/undefined means no expiry. */
+  accessDays?: number;
 };
 
 /** Fields needed by the catalogue, with module IDs but no lesson bodies. */
 export type PublicCourseRecord = Pick<
   StoredCourse,
   | "legacyId" | "slug" | "title" | "description" | "price" | "priceCents"
-  | "duration" | "level" | "img" | "professor"
+  | "duration" | "level" | "img" | "professor" | "accessDays"
   | "status" | "temario"
 > & { modules: { id: number }[] };
 
@@ -96,6 +98,8 @@ export type StoredEnrollment = {
   status: "Activo" | "Pendiente" | "Completado" | "Revocado";
   startedAt: string;
   completedLessonIds: string[];
+  /** ISO timestamp when the purchased access ends. Absent means no expiry. */
+  expiresAt?: string;
 };
 
 export type StoredOrder = {
@@ -200,4 +204,5 @@ export type CourseInput = {
   status: "published" | "draft";
   img: string;
   requestId?: string;
+  accessDays?: number;
 };

@@ -46,6 +46,7 @@ function baseCourseDTO(course: PublicCourseRecord): CourseDTO {
     professor: course.professor,
     status: course.status,
     temario: course.temario.map(({ mod, title, lessons }) => ({ mod, title, lessons: [...lessons] })),
+    ...(course.accessDays !== undefined ? { accessDays: course.accessDays } : {}),
   };
 }
 
@@ -123,15 +124,40 @@ export function totalLessons(course: StoredCourse): number {
   return course.modules.reduce((sum, mod) => sum + mod.lessons.length, 0);
 }
 
+/** A purchased access window that has already elapsed. */
+export function isEnrollmentExpired(
+  enrollment: Pick<StoredEnrollment, "expiresAt">,
+  now = Date.now(),
+): boolean {
+  if (!enrollment.expiresAt) return false;
+  const expiresAt = Date.parse(enrollment.expiresAt);
+  return Number.isFinite(expiresAt) && expiresAt <= now;
+}
+
+/** Pending, revoked and expired enrollments cannot open the classroom. */
+export function hasEnrollmentAccess(
+  enrollment: Pick<StoredEnrollment, "status" | "expiresAt">,
+  now = Date.now(),
+): boolean {
+  return (
+    enrollment.status !== "Pendiente" &&
+    enrollment.status !== "Revocado" &&
+    !isEnrollmentExpired(enrollment, now)
+  );
+}
+
 export function enrollmentToDTO(
   enrollment: StoredEnrollment,
   course: StoredCourse,
 ): EnrollmentDTO {
   const progress = computeProgress(course, enrollment.completedLessonIds);
-  const canAccess = enrollment.status !== "Pendiente" && enrollment.status !== "Revocado";
+  const expired = isEnrollmentExpired(enrollment);
+  const canAccess = hasEnrollmentAccess(enrollment);
   const status =
     !canAccess
-      ? enrollment.status
+      ? expired && enrollment.status !== "Revocado"
+        ? "Revocado"
+        : enrollment.status
       : progress >= 100
         ? "Completado"
         : "Activo";
@@ -148,6 +174,7 @@ export function enrollmentToDTO(
     studentName: enrollment.studentName,
     progress,
     status,
+    ...(enrollment.expiresAt ? { expiresAt: enrollment.expiresAt } : {}),
     modules: [...course.modules]
       .sort((a, b) => a.position - b.position)
       .map((mod) => ({

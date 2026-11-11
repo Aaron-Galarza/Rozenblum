@@ -11,7 +11,7 @@ import { badRequest, conflict, forbidden, notFound } from "../lib/http.js";
 import { formatArs, newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
 import type { CourseInput, StoredCourse, StoredLesson, StoredModule, StoredUser } from "../types.js";
-import { courseStructure, courseToDTO, courseToPublicDTO, enrollmentToDTO, moduleStatuses } from "./mappers.js";
+import { courseStructure, courseToDTO, courseToPublicDTO, enrollmentToDTO, hasEnrollmentAccess, isEnrollmentExpired, moduleStatuses } from "./mappers.js";
 import { assertManagedImageUrl } from "./media.js";
 
 /** Optional controls shared by every authoring mutation. */
@@ -140,8 +140,12 @@ export async function getCourseStructureForStudent(
 ): Promise<ReturnType<typeof courseStructure>> {
   const repos = getRepositories();
   const enrollment = await repos.enrollments.findByStudentAndCourse(user.email, courseId);
-  if (!enrollment || enrollment.status === "Pendiente" || enrollment.status === "Revocado") {
-    throw forbidden("Tu acceso a este curso todavía no fue aprobado.");
+  if (!enrollment || !hasEnrollmentAccess(enrollment)) {
+    throw forbidden(
+      enrollment && isEnrollmentExpired(enrollment)
+        ? "Tu acceso a este curso venció."
+        : "Tu acceso a este curso todavía no fue aprobado.",
+    );
   }
   const course = await repos.courses.findById(courseId);
   if (!course) throw notFound("Curso no encontrado.");

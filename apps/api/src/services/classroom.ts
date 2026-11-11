@@ -5,6 +5,8 @@ import type { StoredUser } from "../types.js";
 import {
   computeProgress,
   enrollmentToDTO,
+  hasEnrollmentAccess,
+  isEnrollmentExpired,
   moduleStatuses,
   totalLessons,
 } from "./mappers.js";
@@ -16,7 +18,10 @@ export async function loadEnrollment(courseIdOrEnrollmentId: string, user: Store
     ? await repos.enrollments.findById(courseIdOrEnrollmentId)
     : await repos.enrollments.findByStudentAndCourse(user.email, Number(courseIdOrEnrollmentId));
 
-  if (!enrollment) throw notFound("Inscripción no encontrada.");
+  if (!enrollment) {
+    if (isEnrollmentId) throw notFound("Inscripción no encontrada.");
+    throw forbidden("No tenés una inscripción a este curso.");
+  }
   if (enrollment.studentEmail.toLowerCase() !== user.email.toLowerCase()) {
     throw forbidden("Esta inscripción pertenece a otro alumno.");
   }
@@ -68,8 +73,12 @@ export async function setLessonProgress(
 ): Promise<EnrollmentDTO> {
   const repos = getRepositories();
   const enrollment = await loadEnrollment(enrollmentId, user);
-  if (enrollment.status === "Pendiente" || enrollment.status === "Revocado") {
-    throw forbidden("Tu inscripción no tiene acceso activo.");
+  if (!hasEnrollmentAccess(enrollment)) {
+    throw forbidden(
+      isEnrollmentExpired(enrollment)
+        ? "Tu acceso a este curso venció."
+        : "Tu inscripción no tiene acceso activo.",
+    );
   }
 
   const course = await repos.courses.findById(enrollment.courseId);
@@ -83,11 +92,7 @@ export async function setLessonProgress(
     throw forbidden("Completá los módulos anteriores para acceder a esta lección.");
   }
 
-  const next = new Set(enrollment.completedLessonIds);
-  if (completed) next.add(lessonId);
-  else next.delete(lessonId);
-
-  const saved = await repos.enrollments.setCompletedLessons(enrollment.id, [...next]);
+  const saved = await repos.enrollments.updateCompletedLesson(enrollment.id, lessonId, completed);
   if (!saved) throw notFound("Inscripción no encontrada.");
 
   const progress = computeProgress(course, saved.completedLessonIds);
