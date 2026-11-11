@@ -1753,6 +1753,15 @@ test("returning from Mercado Pago verifies the payment and activates the order w
     assert.equal(withoutPaymentId.status, 200);
     assert.equal(withoutPaymentId.body.data.estado, "Pagado");
     assert.equal((await reconcile()).body.data.estado, "Pagado");
+    const legacyReturn = await api<{ data: { estado: string } }>(server.baseUrl,
+      `/api/orders/${encodeURIComponent(reference)}/reconcile`, {
+        method: "POST", body: JSON.stringify({ paymentId: payment.id }),
+      });
+    assert.equal(legacyReturn.status, 200);
+    assert.equal(legacyReturn.body.data.estado, "Pagado");
+    assert.equal((await api(server.baseUrl, `/api/orders/${encodeURIComponent(reference)}/reconcile`, {
+      method: "POST", body: JSON.stringify({}),
+    })).status, 404);
     assert.equal((await repositories.paymentEvents.listByOrder(orderId)).length, 2);
     assert.equal((await repositories.enrollments.findByStudentAndCourse(buyerEmail, course.legacyId))?.status, "Activo");
     assert.ok(await repositories.users.findByEmail(buyerEmail));

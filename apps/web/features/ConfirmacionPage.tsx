@@ -23,9 +23,12 @@ export default function ConfirmacionPage({
   useEffect(() => {
     if (!reference) { setError("Falta la referencia de la orden para consultar su estado."); return; }
     const receiptEmail = email ?? sessionStorage.getItem(`rozenblum-payment-email:${reference}`);
-    if (!receiptEmail) { setError("Falta el correo de la inscripción para consultar la orden."); return; }
-    const query = `?email=${encodeURIComponent(receiptEmail)}`;
-    const refresh = () => apiFetch<OrderDTO>(`/api/orders/${encodeURIComponent(reference)}${query}`)
+    if (!receiptEmail && !paymentId) { setError("Faltan los datos del pago para consultar la orden."); return; }
+    const refresh = () => (receiptEmail
+      ? apiFetch<OrderDTO>(`/api/orders/${encodeURIComponent(reference)}?email=${encodeURIComponent(receiptEmail)}`)
+      : apiFetch<OrderDTO>(`/api/orders/${encodeURIComponent(reference)}/reconcile`, {
+        method: "POST", body: { paymentId },
+      }))
       .then((data) => { setOrder(data); setError(""); }).catch((err) => setError(errorMessage(err)));
     let settled = false;
     let reconciling = false;
@@ -34,7 +37,8 @@ export default function ConfirmacionPage({
       reconciling = true;
       try {
         const data = await apiFetch<OrderDTO>(`/api/orders/${encodeURIComponent(reference)}/reconcile`, {
-          method: "POST", body: { email: receiptEmail, ...(paymentId ? { paymentId } : {}) },
+          method: "POST", body: { ...(receiptEmail ? { email: receiptEmail } : {}),
+            ...(paymentId ? { paymentId } : {}) },
         });
         setOrder(data);
         setError("");
@@ -47,9 +51,9 @@ export default function ConfirmacionPage({
       }
     };
     void reconcile();
-    const timer = window.setInterval(() => { void refresh(); }, 5_000);
+    const timer = receiptEmail ? window.setInterval(() => { void refresh(); }, 5_000) : undefined;
     const reconciliationTimer = window.setInterval(() => { void reconcile(); }, 15_000);
-    return () => { window.clearInterval(timer); window.clearInterval(reconciliationTimer); };
+    return () => { if (timer) window.clearInterval(timer); window.clearInterval(reconciliationTimer); };
   }, [reference, email, paymentId]);
 
   const isMercadoPago = order?.paymentProvider === "mercadopago";

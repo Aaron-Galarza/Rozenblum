@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 import { checkoutSchema, contactSchema } from "@rozenblum/shared";
-import { badRequest, sendData } from "../lib/http.js";
+import { badRequest, notFound, sendData } from "../lib/http.js";
+import { getRepositories } from "../repositories/index.js";
+import { orderToDTO } from "../services/mappers.js";
 import { listPublishedCourses, getLatestPublishedCourse, getPublishedCourseDetail } from "../services/courses.js";
 import { checkout, getOrderReceipt } from "../services/checkout.js";
 import { submitContact } from "../services/contact.js";
@@ -11,7 +13,7 @@ import { getHomeContent } from "../services/home.js";
 import { paymentNotificationSchema, processPaymentWebhook, reconcileReturnedPayment } from "../services/payments.js";
 
 export const publicRouter = Router();
-const checkoutReturnSchema = z.object({ email: z.string().trim().email(), paymentId: z.string().optional() }).strict();
+const checkoutReturnSchema = z.object({ email: z.string().trim().email().optional(), paymentId: z.string().optional() }).strict();
 
 publicRouter.post("/payments/mercadopago/webhook", asyncRoute(async (req, res) => {
   const queryPaymentId = req.query["data.id"];
@@ -76,7 +78,12 @@ publicRouter.get(
 publicRouter.post("/orders/:reference/reconcile", asyncRoute(async (req, res) => {
   const input = parseBody(checkoutReturnSchema, req.body);
   await reconcileReturnedPayment(req.params.reference, input.email, input.paymentId);
-  sendData(res, await getOrderReceipt(req.params.reference, input.email));
+  if (input.email) sendData(res, await getOrderReceipt(req.params.reference, input.email));
+  else {
+    const order = await getRepositories().orders.findByReference(req.params.reference);
+    if (!order) throw notFound("Orden de pago no encontrada.");
+    sendData(res, orderToDTO(order));
+  }
 }));
 
 publicRouter.post(

@@ -11,10 +11,11 @@ export const paymentNotificationSchema = z.object({
   data: z.object({ id: z.union([z.string(), z.number()]) }),
 }).passthrough();
 
-export async function reconcileReturnedPayment(reference: string, email: string, paymentId?: string) {
+export async function reconcileReturnedPayment(reference: string, email?: string, paymentId?: string) {
   if (paymentId && !/^\d{1,30}$/.test(paymentId)) throw badRequest("Identificador de pago inválido.");
   const order = await getRepositories().orders.findByReference(reference);
-  if (!order || order.email.toLowerCase() !== email.trim().toLowerCase() ||
+  if (!order || (email && order.email.toLowerCase() !== email.trim().toLowerCase()) ||
+      (!email && !paymentId) ||
       order.paymentProvider !== "mercadopago") throw notFound("Orden de pago no encontrada.");
   const gateway = paymentGateway();
   if (!gateway) throw badRequest("Mercado Pago no está configurado.");
