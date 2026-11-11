@@ -16,6 +16,7 @@ export interface PaymentGateway {
     reference: string; courseId: number; title: string; priceCents: number; email: string;
   }): Promise<{ id: string; url: string }>;
   getPayment(id: string): Promise<PaymentSnapshot>;
+  findPaymentsByReference?(reference: string): Promise<string[]>;
 }
 
 let testGateway: PaymentGateway | null = null;
@@ -36,6 +37,7 @@ export function paymentGateway(): PaymentGateway | null {
       try {
         const returnUrl = new URL("/confirmacion", env.WEB_PUBLIC_URL);
         returnUrl.searchParams.set("orden", input.reference);
+        returnUrl.searchParams.set("email", input.email);
         const result = await new Preference(config).create({
           body: {
             items: [{ id: String(input.courseId), title: input.title, quantity: 1,
@@ -71,6 +73,16 @@ export function paymentGateway(): PaymentGateway | null {
         };
       } catch {
         throw new ApiError(502, "PAYMENT_PROVIDER_ERROR", "No se pudo verificar el pago.");
+      }
+    },
+    async findPaymentsByReference(reference) {
+      try {
+        const result = await new Payment(config).search({
+          options: { external_reference: reference, sort: "date_last_updated", criteria: "desc", limit: 20 },
+        });
+        return (result.results ?? []).map((item) => String(item.id ?? "")).filter((id) => /^\d{1,30}$/.test(id));
+      } catch {
+        throw new ApiError(502, "PAYMENT_PROVIDER_ERROR", "No se pudo consultar el pago. Intentá nuevamente.");
       }
     },
   };

@@ -1703,6 +1703,64 @@ test("checkout rolls back an order when enrollment persistence fails", async () 
   }
 });
 
+test("returning from Mercado Pago verifies the payment and activates the order without a webhook", async () => {
+  const course = await repositories.courses.create({
+    title: "Return Payment Course", description: "Return flow test", priceCents: 45_000,
+    duration: "Online", level: "Inicial", img: "https://example.test/return.jpg",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+  });
+  let reference = "";
+  let payment: PaymentSnapshot = {
+    id: "987654321", externalReference: "", status: "approved", statusDetail: "accredited",
+    amountCents: 45_000, currency: "ARS",
+  };
+  setPaymentGatewayForTests({
+    async createPreference(input) {
+      reference = input.reference;
+      return { id: "pref-return", url: "https://www.mercadopago.com.ar/checkout/test" };
+    },
+    async getPayment() { return { ...payment, externalReference: payment.externalReference || reference }; },
+    async findPaymentsByReference() { return [payment.id]; },
+  });
+  try {
+    const buyerEmail = "return-buyer@example.test";
+    const checkout = await api<{ data: { order: { id: string } } }>(server.baseUrl, "/api/checkout", {
+      method: "POST", body: JSON.stringify({ courseSlug: course.slug, nombre: "Return Buyer",
+        email: buyerEmail, dni: "33123456" }),
+    });
+    assert.equal(checkout.status, 201);
+    const orderId = checkout.body.data.order.id;
+    const reconcile = (email = buyerEmail, paymentId = payment.id) => api<{ data: { estado: string } }>(
+      server.baseUrl, `/api/orders/${encodeURIComponent(reference)}/reconcile`, {
+        method: "POST", body: JSON.stringify({ email, paymentId }),
+      },
+    );
+    assert.equal((await reconcile("other@example.test")).status, 404);
+    payment = { ...payment, amountCents: 1 };
+    assert.equal((await reconcile()).status, 400);
+    payment = { ...payment, amountCents: 45_000, externalReference: "wrong-reference" };
+    assert.equal((await reconcile()).status, 400);
+    payment = { ...payment, externalReference: "" };
+    assert.equal((await reconcile(buyerEmail, "bad-id")).status, 400);
+    payment = { ...payment, status: "rejected", statusDetail: "cc_rejected_other_reason" };
+    assert.equal((await reconcile()).body.data.estado, "Rechazado");
+    assert.equal((await repositories.orders.findByReference(orderId))?.paymentId, undefined);
+    payment = { ...payment, id: "987654322", status: "approved", statusDetail: "accredited" };
+    const withoutPaymentId = await api<{ data: { estado: string } }>(server.baseUrl,
+      `/api/orders/${encodeURIComponent(reference)}/reconcile`, {
+        method: "POST", body: JSON.stringify({ email: buyerEmail }),
+      });
+    assert.equal(withoutPaymentId.status, 200);
+    assert.equal(withoutPaymentId.body.data.estado, "Pagado");
+    assert.equal((await reconcile()).body.data.estado, "Pagado");
+    assert.equal((await repositories.paymentEvents.listByOrder(orderId)).length, 2);
+    assert.equal((await repositories.enrollments.findByStudentAndCourse(buyerEmail, course.legacyId))?.status, "Activo");
+    assert.ok(await repositories.users.findByEmail(buyerEmail));
+  } finally {
+    setPaymentGatewayForTests(checkoutGateway);
+  }
+});
+
 test("signed Mercado Pago events activate once, reject a wrong amount, and revoke on refund", async () => {
   const course = await repositories.courses.create({
     title: "Payment Course", description: "Verified gateway test", priceCents: 123_400,

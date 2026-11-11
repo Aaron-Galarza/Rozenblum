@@ -11,6 +11,36 @@ export const paymentNotificationSchema = z.object({
   data: z.object({ id: z.union([z.string(), z.number()]) }),
 }).passthrough();
 
+export async function reconcileReturnedPayment(reference: string, email: string, paymentId?: string) {
+  if (paymentId && !/^\d{1,30}$/.test(paymentId)) throw badRequest("Identificador de pago inválido.");
+  const order = await getRepositories().orders.findByReference(reference);
+  if (!order || order.email.toLowerCase() !== email.trim().toLowerCase() ||
+      order.paymentProvider !== "mercadopago") throw notFound("Orden de pago no encontrada.");
+  const gateway = paymentGateway();
+  if (!gateway) throw badRequest("Mercado Pago no está configurado.");
+  const candidateIds = paymentId ? [paymentId] : order.paymentId ? [order.paymentId] :
+    await gateway.findPaymentsByReference?.(order.externalReference!) ?? [];
+  if (candidateIds.length === 0) return;
+  const payments = await Promise.all(candidateIds.map((id) => gateway.getPayment(id)));
+  const matching = payments.filter((item) => candidateIds.includes(item.id) &&
+    item.externalReference === order.externalReference && item.currency === "ARS" &&
+    item.amountCents === order.montoCents);
+  const payment = matching.find((item) => item.status === "approved") ?? matching[0];
+  if (!payment) {
+    throw badRequest("El pago no coincide con la orden.");
+  }
+  if (order.paymentId && order.estado !== "Rechazado" && order.paymentId !== payment.id) return;
+  const status = nextOrderStatus(payment.status, payment.statusDetail);
+  if (!status) return;
+  if (order.estado === status) return;
+  await applyOrderTransition({
+    reference: order.externalReference!, status, source: "mercadopago",
+    providerEventId: `return:${payment.id}:${payment.status}:${payment.statusDetail}`,
+    providerPaymentId: payment.id, paymentStatus: payment.status,
+    reason: `Mercado Pago: ${payment.status}${payment.statusDetail ? ` (${payment.statusDetail})` : ""}`,
+  });
+}
+
 function nextOrderStatus(status: string, detail: string): "Pagado" | "Pendiente" | "Rechazado" | "En disputa" | "Reembolsado" | null {
   switch (status) {
     case "approved": return "Pagado";
@@ -49,7 +79,7 @@ export async function processPaymentWebhook(input: {
   }
   // Multiple payment attempts can share one checkout reference. A refund for a
   // different attempt must not revoke the enrollment activated by this payment.
-  if (order.paymentId && order.paymentId !== payment.id) return;
+  if (order.paymentId && order.estado !== "Rechazado" && order.paymentId !== payment.id) return;
   const status = nextOrderStatus(payment.status, payment.statusDetail);
   logger.debug("payment_verified", { reference: order.externalReference, paymentId: payment.id,
     providerStatus: payment.status, nextStatus: status });

@@ -10,9 +10,11 @@ import { safeHttpUrl } from "../lib/safe-url";
 export default function ConfirmacionPage({
   reference,
   email,
+  paymentId,
 }: {
   reference?: string;
   email?: string;
+  paymentId?: string;
 }) {
   const router = useRouter();
   const [order, setOrder] = useState<OrderDTO | null>(null);
@@ -25,10 +27,30 @@ export default function ConfirmacionPage({
     const query = `?email=${encodeURIComponent(receiptEmail)}`;
     const refresh = () => apiFetch<OrderDTO>(`/api/orders/${encodeURIComponent(reference)}${query}`)
       .then((data) => { setOrder(data); setError(""); }).catch((err) => setError(errorMessage(err)));
-    void refresh();
+    let settled = false;
+    let reconciling = false;
+    const reconcile = async () => {
+      if (settled || reconciling || document.visibilityState === "hidden") return;
+      reconciling = true;
+      try {
+        const data = await apiFetch<OrderDTO>(`/api/orders/${encodeURIComponent(reference)}/reconcile`, {
+          method: "POST", body: { email: receiptEmail, ...(paymentId ? { paymentId } : {}) },
+        });
+        setOrder(data);
+        setError("");
+        settled = data.estado === "Pagado" || data.estado === "Reembolsado";
+      } catch (err) {
+        setError(errorMessage(err));
+        void refresh();
+      } finally {
+        reconciling = false;
+      }
+    };
+    void reconcile();
     const timer = window.setInterval(() => { void refresh(); }, 5_000);
-    return () => window.clearInterval(timer);
-  }, [reference, email]);
+    const reconciliationTimer = window.setInterval(() => { void reconcile(); }, 15_000);
+    return () => { window.clearInterval(timer); window.clearInterval(reconciliationTimer); };
+  }, [reference, email, paymentId]);
 
   const isMercadoPago = order?.paymentProvider === "mercadopago";
   const isPaid = order?.estado === "Pagado";
@@ -49,21 +71,20 @@ export default function ConfirmacionPage({
       {/* Main content */}
       <main className="flex-1 flex items-center justify-center px-6 py-16">
         <div className="w-full max-w-lg text-center">
-          {/* Gold checkmark circle */}
+          {/* Estado visible mientras el proveedor confirma el pago. */}
           <div
             className="w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-8"
-            style={{ backgroundColor: "#B58A43", boxShadow: "0 8px 32px rgba(181,138,67,0.35)" }}
+            style={{ backgroundColor: isPaid ? "#27704A" : "#B58A43", boxShadow: "0 8px 32px rgba(181,138,67,0.25)" }}
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-12 h-12">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
+            {isPaid ? <svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-12 h-12"><polyline points="20 6 9 17 4 12" /></svg>
+              : <svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" className="w-12 h-12"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>}
           </div>
 
           <h1
             className="text-5xl font-light mb-4"
             style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}
           >
-            {isPaid ? "¡Pago confirmado!" : order ? "¡Inscripción registrada!" : "Estado de la inscripción"}
+            {isPaid ? "¡Pago confirmado!" : order?.estado === "Rechazado" ? "Pago rechazado" : order ? "Pago en verificación" : "Estado de la inscripción"}
           </h1>
 
           <p className="text-base leading-relaxed mb-8" style={{ color: "rgba(23,59,108,0.65)" }}>

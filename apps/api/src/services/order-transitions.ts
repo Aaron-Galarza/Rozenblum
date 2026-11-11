@@ -82,7 +82,7 @@ export async function applyOrderTransition(input: Transition): Promise<StoredPay
         }
         // Another payment attempt may have won while this notification was
         // waiting for the transaction. Only the bound payment may revoke it.
-        if (input.source === "mercadopago" && order.paymentId &&
+        if (input.source === "mercadopago" && order.paymentId && order.estado !== "Rechazado" &&
             order.paymentId !== input.providerPaymentId) return null;
         if (!allowedTransition(order.estado, input.status, input.source)) {
           if (input.source === "manual") throw badRequest("Transición de estado no permitida.");
@@ -102,7 +102,8 @@ export async function applyOrderTransition(input: Transition): Promise<StoredPay
                 input.status === "Pendiente" ? "Pendiente" : "Revocado");
             }
           }
-          await repos.orders.updateStatus(order.id, input.status, input.providerPaymentId);
+          await repos.orders.updateStatus(order.id, input.status,
+            input.status === "Rechazado" || input.status === "Pendiente" ? undefined : input.providerPaymentId);
         }
         const event: StoredPaymentEvent = {
           id: newId("pev"), orderId: order.id, source: input.source,

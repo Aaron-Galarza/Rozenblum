@@ -44,6 +44,7 @@ export function createApp() {
   // Abuse protection for the endpoints that write data or check credentials.
   const authLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 20 });
   const checkoutLimiter = createRateLimiter({ windowMs: 10 * 60_000, max: 15 });
+  const paymentReturnLimiter = createRateLimiter({ windowMs: 10 * 60_000, max: 60 });
   const contactLimiter = createRateLimiter({ windowMs: 10 * 60_000, max: 10 });
   const youtubePreviewLimiter = createRateLimiter({ windowMs: 10 * 60_000, max: 30 });
 
@@ -75,6 +76,7 @@ export function createApp() {
   app.use("/api/auth/login", authLimiter);
   app.use("/api/auth/password", authLimiter);
   app.use("/api/checkout", checkoutLimiter);
+  app.use(/^\/api\/orders\/[^/]+\/reconcile$/, paymentReturnLimiter);
   app.use("/api/contact", contactLimiter);
   app.use("/api/teacher/youtube-preview", youtubePreviewLimiter);
 
