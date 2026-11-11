@@ -21,6 +21,21 @@ export function formatArs(cents: number): string {
   }).format(cents / 100);
 }
 
+/** Hour and minute in Argentina time; defaults to now. */
+export function formatTime(iso?: string): string {
+  return new Intl.DateTimeFormat("es-AR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(iso ? new Date(iso) : new Date());
+}
+
+export function formatShortDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "2-digit" }).format(date);
+}
+
 export function slugify(value: string): string {
   return value
     .normalize("NFD")
@@ -31,8 +46,3 @@ export function slugify(value: string): string {
     .slice(0, 70);
 }
 
-export function formatShortDate(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "2-digit" }).format(date);
-}

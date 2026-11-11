@@ -1,6 +1,6 @@
 import type { ChatMessageDTO, ConversationDTO } from "@rozenblum/shared";
 import { forbidden, notFound } from "../lib/http.js";
-import { newId, nowIso } from "../lib/utils.js";
+import { formatTime, newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
 import type {
   StoredConversation,
@@ -9,14 +9,9 @@ import type {
   StoredMessage,
   StoredUser,
 } from "../types.js";
-import { canManageCourse } from "./courses.js";
-import { loadEnrollment } from "./classroom.js";
-import { conversationToMessages, hasEnrollmentAccess, isEnrollmentExpired } from "./mappers.js";
-
-const clock = () =>
-  new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(
-    new Date(),
-  );
+import { loadManagedCourse } from "./courses.js";
+import { assertEnrollmentAccess, loadEnrollment } from "./classroom.js";
+import { conversationToMessages, courseIndex } from "./mappers.js";
 
 async function ensureConversation(
   enrollment: StoredEnrollment,
@@ -60,13 +55,10 @@ export async function listStudentMessages(
 ): Promise<ChatMessageDTO[]> {
   const repos = getRepositories();
   const enrollment = await loadEnrollment(enrollmentId, user);
-  if (!hasEnrollmentAccess(enrollment)) {
-    throw forbidden(
-      isEnrollmentExpired(enrollment)
-        ? "Tu acceso a este curso venció."
-        : "La mensajería se habilita cuando se aprueba tu acceso.",
-    );
-  }
+  assertEnrollmentAccess(enrollment, {
+    expired: "Tu acceso a este curso venció.",
+    denied: "La mensajería se habilita cuando se aprueba tu acceso.",
+  });
   const conversation = await repos.conversations.findByStudentAndCourse(
     enrollment.studentEmail,
     enrollment.courseId,
@@ -83,20 +75,17 @@ export async function sendStudentMessage(
   const enrollment = await loadEnrollment(enrollmentId, user);
   const course = await repos.courses.findById(enrollment.courseId);
   if (!course) throw notFound("Curso no encontrado.");
-  if (!hasEnrollmentAccess(enrollment)) {
-    throw forbidden(
-      isEnrollmentExpired(enrollment)
-        ? "Tu acceso a este curso venció."
-        : "La mensajería se habilita cuando se aprueba tu acceso.",
-    );
-  }
+  assertEnrollmentAccess(enrollment, {
+    expired: "Tu acceso a este curso venció.",
+    denied: "La mensajería se habilita cuando se aprueba tu acceso.",
+  });
 
   const conversation = await ensureConversation(enrollment, course);
   const message: StoredMessage = {
     id: newId("msg"),
     from: "me",
     text,
-    time: `Tú · ${clock()}`,
+    time: `Tú · ${formatTime()}`,
     createdAt: nowIso(),
   };
   const updated = await repos.conversations.addMessage(conversation.id, message);
@@ -105,14 +94,14 @@ export async function sendStudentMessage(
 
 function teacherTime(name: string) {
   const last = name.trim().split(/\s+/).pop() ?? name;
-  return `Prof. ${last} · ${clock()}`;
+  return `Prof. ${last} · ${formatTime()}`;
 }
 
 export async function listTeacherConversations(user: StoredUser): Promise<ConversationDTO[]> {
   const repos = getRepositories();
   const conversations = await repos.conversations.listByTeacher(user.email);
   const courses = await repos.courses.list();
-  const byId = new Map(courses.map((course) => [course.legacyId, course]));
+  const byId = courseIndex(courses);
 
   return conversations.map((conversation) => ({
     id: conversation.id,
@@ -126,18 +115,13 @@ export async function listTeacherConversations(user: StoredUser): Promise<Conver
 
 async function loadTeacherStudentEnrollment(user: StoredUser, courseId: number, enrollmentId: string) {
   const repos = getRepositories();
-  const course = await repos.courses.findById(courseId);
-  if (!course) throw notFound("Curso no encontrado.");
-  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  const course = await loadManagedCourse(courseId, user);
   const enrollment = await repos.enrollments.findById(enrollmentId);
   if (!enrollment || enrollment.courseId !== courseId) throw notFound("Inscripción no encontrada.");
-  if (!hasEnrollmentAccess(enrollment)) {
-    throw forbidden(
-      isEnrollmentExpired(enrollment)
-        ? "El acceso del alumno a este curso venció."
-        : "La mensajería se habilita cuando se aprueba el acceso del alumno.",
-    );
-  }
+  assertEnrollmentAccess(enrollment, {
+    expired: "El acceso del alumno a este curso venció.",
+    denied: "La mensajería se habilita cuando se aprueba el acceso del alumno.",
+  });
   return { course, enrollment };
 }
 
@@ -164,17 +148,28 @@ export async function sendTeacherStudentMessage(
   return sendTeacherMessage(user, conversation.id, text);
 }
 
+async function loadTeacherConversation(
+  user: StoredUser,
+  conversationId: string,
+): Promise<StoredConversation> {
+  const conversation = await getRepositories().conversations.findById(conversationId);
+  if (!conversation) throw notFound("Conversación no encontrada.");
+  if (
+    conversation.teacherEmail.toLowerCase() !== user.email.toLowerCase() &&
+    user.role !== "admin"
+  ) {
+    throw forbidden("No participás en esta conversación.");
+  }
+  return conversation;
+}
+
 export async function sendTeacherMessage(
   user: StoredUser,
   conversationId: string,
   text: string,
 ): Promise<ChatMessageDTO[]> {
   const repos = getRepositories();
-  const conversation = await repos.conversations.findById(conversationId);
-  if (!conversation) throw notFound("Conversación no encontrada.");
-  if (conversation.teacherEmail.toLowerCase() !== user.email.toLowerCase() && user.role !== "admin") {
-    throw forbidden("No participás en esta conversación.");
-  }
+  const conversation = await loadTeacherConversation(user, conversationId);
 
   const message: StoredMessage = {
     id: newId("msg"),
@@ -192,11 +187,7 @@ export async function getConversationForTeacher(
   conversationId: string,
 ): Promise<ConversationDTO> {
   const repos = getRepositories();
-  const conversation = await repos.conversations.findById(conversationId);
-  if (!conversation) throw notFound("Conversación no encontrada.");
-  if (conversation.teacherEmail.toLowerCase() !== user.email.toLowerCase() && user.role !== "admin") {
-    throw forbidden("No participás en esta conversación.");
-  }
+  const conversation = await loadTeacherConversation(user, conversationId);
   const course = await repos.courses.findById(conversation.courseId);
   return {
     id: conversation.id,

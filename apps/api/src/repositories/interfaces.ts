@@ -124,7 +124,6 @@ export interface PaymentEventRepository {
 }
 
 export interface ConversationRepository {
-  listAll(): Promise<StoredConversation[]>;
   listByTeacher(email: string): Promise<StoredConversation[]>;
   findById(id: string): Promise<StoredConversation | null>;
   findByStudentAndCourse(

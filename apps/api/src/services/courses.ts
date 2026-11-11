@@ -8,10 +8,10 @@ import type {
 } from "@rozenblum/shared";
 import { richLessonDocumentSchema } from "@rozenblum/shared";
 import { badRequest, conflict, forbidden, notFound } from "../lib/http.js";
-import { formatArs, newId, nowIso } from "../lib/utils.js";
+import { nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
-import type { CourseInput, StoredCourse, StoredLesson, StoredModule, StoredUser } from "../types.js";
-import { courseStructure, courseToDTO, courseToPublicDTO, enrollmentToDTO, hasEnrollmentAccess, isEnrollmentExpired, moduleStatuses } from "./mappers.js";
+import type { StoredCourse, StoredLesson, StoredModule, StoredUser } from "../types.js";
+import { authoringModulesToDTO, courseStructure, courseToDTO, courseToPublicDTO, enrollmentToDTO } from "./mappers.js";
 import { assertManagedImageUrl } from "./media.js";
 
 /** Optional controls shared by every authoring mutation. */
@@ -49,7 +49,7 @@ function assertExpectedRevision(
 }
 
 function moduleResult(course: StoredCourse): ModuleMutationResult {
-  return { modules: buildModuleDTOs(course), revision: courseRevision(course) };
+  return { modules: authoringModulesToDTO(course), revision: courseRevision(course) };
 }
 
 export function canManageCourse(course: StoredCourse, user: StoredUser): boolean {
@@ -66,6 +66,14 @@ async function resolveProfessor(email: string): Promise<StoredUser> {
   return professor;
 }
 
+/** Loads a course and checks edit rights; every authoring mutation needs both. */
+export async function loadManagedCourse(courseId: number, user: StoredUser): Promise<StoredCourse> {
+  const course = await getRepositories().courses.findById(courseId);
+  if (!course) throw notFound("Curso no encontrado.");
+  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  return course;
+}
+
 export async function listPublishedCourses(): Promise<CourseDTO[]> {
   const courses = await getRepositories().courses.listPublished();
   return courses.map(courseToPublicDTO);
@@ -75,14 +83,6 @@ export async function getLatestPublishedCourse(): Promise<CourseDetailDTO> {
   const latest = await getRepositories().courses.findLatestPublished();
   if (!latest) throw notFound("No hay cursos publicados.");
   return buildPublishedCourseDetail(latest);
-}
-
-export async function getPublishedCourse(slug: string): Promise<CourseDTO> {
-  const course = await getRepositories().courses.findBySlug(slug);
-  if (!course || course.status !== "published") {
-    throw notFound("Curso no encontrado.");
-  }
-  return courseToPublicDTO(course);
 }
 
 /**
@@ -128,55 +128,13 @@ export async function getCourseStructureForTeacher(
   courseId: number,
   user: StoredUser,
 ): Promise<ReturnType<typeof courseStructure>> {
-  const course = await getRepositories().courses.findById(courseId);
-  if (!course) throw notFound("Curso no encontrado.");
-  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  const course = await loadManagedCourse(courseId, user);
   return courseStructure(course);
-}
-
-export async function getCourseStructureForStudent(
-  courseId: number,
-  user: StoredUser,
-): Promise<ReturnType<typeof courseStructure>> {
-  const repos = getRepositories();
-  const enrollment = await repos.enrollments.findByStudentAndCourse(user.email, courseId);
-  if (!enrollment || !hasEnrollmentAccess(enrollment)) {
-    throw forbidden(
-      enrollment && isEnrollmentExpired(enrollment)
-        ? "Tu acceso a este curso venció."
-        : "Tu acceso a este curso todavía no fue aprobado.",
-    );
-  }
-  const course = await repos.courses.findById(courseId);
-  if (!course) throw notFound("Curso no encontrado.");
-  return courseStructure(course, enrollment.completedLessonIds);
 }
 
 export async function getTeacherCourseList(user: StoredUser): Promise<CourseDTO[]> {
   const courses = await getRepositories().courses.list();
   return courses.filter((course) => canManageCourse(course, user)).map(courseToDTO);
-}
-
-export async function createCourse(
-  input: CourseInput,
-  user: StoredUser,
-  requestId?: string,
-): Promise<CourseDTO> {
-  if (user.role !== "admin") throw forbidden("Solo un administrador puede crear cursos.");
-  if (requestId) {
-    const existing = await getRepositories().courses.findByRequestId(requestId);
-    if (existing) return courseToDTO(existing);
-  }
-  if (input.img) assertManagedImageUrl(input.img, "courses");
-  const professor = await resolveProfessor(input.professorEmail);
-  const course = await getRepositories().courses.create({
-    ...input,
-    professor: professor.name,
-    professorEmail: professor.email,
-    status: "draft",
-    requestId,
-  });
-  return courseToDTO(course);
 }
 
 /** Safe recovery for a course creation whose response was lost. */
@@ -193,9 +151,7 @@ export async function updateCourse(
   options: { expectedRevision?: number } = {},
 ): Promise<CourseDTO> {
   const repos = getRepositories();
-  const course = await repos.courses.findById(courseId);
-  if (!course) throw notFound("Curso no encontrado.");
-  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  const course = await loadManagedCourse(courseId, user);
   assertExpectedRevision(course, options.expectedRevision);
   if (patch.img) assertManagedImageUrl(patch.img, "courses");
   if (patch.professorEmail && user.role !== "admin") {
@@ -374,9 +330,7 @@ export async function addModule(
   user: StoredUser,
   options: MutationOptions = {},
 ): Promise<ModuleMutationResult> {
-  const course = await getRepositories().courses.findById(courseId);
-  if (!course) throw notFound("Curso no encontrado.");
-  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  const course = await loadManagedCourse(courseId, user);
 
   if (options.requestId && course.modules.some((mod) => mod.requestId === options.requestId)) {
     return moduleResult(course);
@@ -414,9 +368,7 @@ export async function updateModule(
   user: StoredUser,
   options: { expectedRevision?: number } = {},
 ): Promise<ModuleMutationResult> {
-  const course = await getRepositories().courses.findById(courseId);
-  if (!course) throw notFound("Curso no encontrado.");
-  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  const course = await loadManagedCourse(courseId, user);
   findModule(course, moduleId);
   assertExpectedRevision(course, options.expectedRevision);
 
@@ -436,9 +388,7 @@ export async function deleteModule(
   user: StoredUser,
   options: { expectedRevision?: number } = {},
 ): Promise<ModuleMutationResult> {
-  const course = await getRepositories().courses.findById(courseId);
-  if (!course) throw notFound("Curso no encontrado.");
-  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  const course = await loadManagedCourse(courseId, user);
   findModule(course, moduleId);
   assertExpectedRevision(course, options.expectedRevision);
   await assertAcademicDeletionAllowed(course);
@@ -457,9 +407,7 @@ export async function reorderModules(
   user: StoredUser,
   options: { expectedRevision?: number } = {},
 ): Promise<ModuleMutationResult> {
-  const course = await getRepositories().courses.findById(courseId);
-  if (!course) throw notFound("Curso no encontrado.");
-  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  const course = await loadManagedCourse(courseId, user);
   assertExpectedRevision(course, options.expectedRevision);
   if (ids.length !== course.modules.length || new Set(ids).size !== ids.length) {
     throw badRequest("El orden debe incluir todos los módulos del curso.");
@@ -480,9 +428,7 @@ export async function addLesson(
   user: StoredUser,
   options: MutationOptions = {},
 ): Promise<ModuleMutationResult> {
-  const course = await getRepositories().courses.findById(courseId);
-  if (!course) throw notFound("Curso no encontrado.");
-  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  const course = await loadManagedCourse(courseId, user);
   const mod = findModule(course, moduleId);
 
   if (options.requestId && findLessonByRequestId(course, options.requestId)) {
@@ -526,9 +472,7 @@ export async function updateLesson(
   user: StoredUser,
   options: { expectedRevision?: number } = {},
 ): Promise<ModuleMutationResult> {
-  const course = await getRepositories().courses.findById(courseId);
-  if (!course) throw notFound("Curso no encontrado.");
-  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  const course = await loadManagedCourse(courseId, user);
   const mod = findModule(course, moduleId);
   if (!mod.lessons.some((lesson) => lesson.id === lessonId)) {
     throw notFound("Lección no encontrada.");
@@ -566,9 +510,7 @@ export async function deleteLesson(
   user: StoredUser,
   options: { expectedRevision?: number } = {},
 ): Promise<ModuleMutationResult> {
-  const course = await getRepositories().courses.findById(courseId);
-  if (!course) throw notFound("Curso no encontrado.");
-  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  const course = await loadManagedCourse(courseId, user);
   const mod = findModule(course, moduleId);
   if (!mod.lessons.some((lesson) => lesson.id === lessonId)) {
     throw notFound("Lección no encontrada.");
@@ -598,9 +540,7 @@ export async function reorderLessons(
   user: StoredUser,
   options: { expectedRevision?: number } = {},
 ): Promise<ModuleMutationResult> {
-  const course = await getRepositories().courses.findById(courseId);
-  if (!course) throw notFound("Curso no encontrado.");
-  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  const course = await loadManagedCourse(courseId, user);
   const mod = findModule(course, moduleId);
   assertExpectedRevision(course, options.expectedRevision);
   if (ids.length !== mod.lessons.length || new Set(ids).size !== ids.length) {
@@ -624,37 +564,9 @@ export async function reorderLessons(
   return moduleResult(updated);
 }
 
-function buildModuleDTOs(course: StoredCourse): ModuleDTO[] {
-  const statuses = moduleStatuses(course, []);
-  return [...course.modules]
-    .sort((a, b) => a.position - b.position)
-    .map((mod) => ({
-      id: mod.id,
-      title: mod.title,
-      status: statuses.get(mod.id) ?? "locked",
-      position: mod.position,
-      requestId: mod.requestId,
-      lessons: [...mod.lessons]
-        .sort((a, b) => a.position - b.position)
-        .map((lesson) => ({
-          id: lesson.id,
-          title: lesson.title,
-          type: lesson.type,
-          done: false,
-          highlight: lesson.highlight,
-          position: lesson.position,
-          content: lesson.content,
-          document: lesson.document,
-          requestId: lesson.requestId,
-        })),
-    }));
-}
-
 export async function listCourseEnrollments(courseId: number, user: StoredUser) {
   const repos = getRepositories();
-  const course = await repos.courses.findById(courseId);
-  if (!course) throw notFound("Curso no encontrado.");
-  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  const course = await loadManagedCourse(courseId, user);
 
   const enrollments = await repos.enrollments.listAll();
   return enrollments
@@ -670,7 +582,7 @@ export async function createEmptyCourseForAdmin(input: {
   level?: string;
   duration?: string;
   img?: string;
-  status?: "draft";
+  accessDays?: number;
 }, requestId?: string): Promise<CourseDTO> {
   if (requestId) {
     const existing = await getRepositories().courses.findByRequestId(requestId);
@@ -689,14 +601,7 @@ export async function createEmptyCourseForAdmin(input: {
     status: "draft",
     img: input.img ?? "",
     requestId,
+    accessDays: input.accessDays,
   });
   return courseToDTO(course);
-}
-
-export function priceLabel(cents: number) {
-  return formatArs(cents);
-}
-
-export function newBlockId() {
-  return newId("blk");
 }

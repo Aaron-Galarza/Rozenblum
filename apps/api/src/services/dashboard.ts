@@ -9,8 +9,7 @@ import type {
   TeacherNotificationDTO,
   TeacherStudentDTO,
 } from "@rozenblum/shared";
-import { formatArs } from "../lib/utils.js";
-import { forbidden, notFound } from "../lib/http.js";
+import { formatArs, formatShortDate, formatTime } from "../lib/utils.js";
 import type { Pagination } from "../lib/pagination.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredCourse, StoredEnrollment, StoredOrder, StoredUser } from "../types.js";
@@ -19,10 +18,11 @@ import {
   adminCurso,
   adminProfesor,
   computeProgress,
+  courseIndex,
   enrollmentToDTO,
   orderToDTO,
 } from "./mappers.js";
-import { canManageCourse } from "./courses.js";
+import { canManageCourse, loadManagedCourse } from "./courses.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
@@ -30,10 +30,24 @@ const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "
 const withinDays = (iso: string, days: number) =>
   Date.now() - new Date(iso).getTime() <= days * DAY;
 
-const formatTime = (iso: string) =>
-  new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(
-    new Date(iso),
-  );
+function sameMonth(iso: string, reference: Date): boolean {
+  const date = new Date(iso);
+  return date.getMonth() === reference.getMonth() && date.getFullYear() === reference.getFullYear();
+}
+
+/** Average progress across enrollments that may belong to different courses. */
+function averageProgressFor(
+  courses: StoredCourse[],
+  enrollments: StoredEnrollment[],
+): number {
+  if (enrollments.length === 0) return 0;
+  const byId = courseIndex(courses);
+  const sum = enrollments.reduce((total, enrollment) => {
+    const course = byId.get(enrollment.courseId);
+    return total + (course ? computeProgress(course, enrollment.completedLessonIds) : 0);
+  }, 0);
+  return Math.round(sum / enrollments.length);
+}
 
 function courseEnrollments(
   courses: StoredCourse[],
@@ -70,20 +84,13 @@ export async function getTeacherDashboard(user: StoredUser): Promise<TeacherDash
   const enrollments = [...byCourse.values()].flat();
   const students = new Set(enrollments.map((enrollment) => enrollment.studentEmail));
 
-  const averageProgress =
-    enrollments.length === 0
-      ? 0
-      : Math.round(
-          enrollments.reduce((total, enrollment) => {
-            const course = courses.find((item) => item.legacyId === enrollment.courseId);
-            return total + (course ? computeProgress(course, enrollment.completedLessonIds) : 0);
-          }, 0) / enrollments.length,
-        );
+  const averageProgress = averageProgressFor(courses, enrollments);
 
   const conversations = await repos.conversations.listByTeacher(user.email);
-  const unreadMessages = conversations.filter(
+  const studentMessages = conversations.filter(
     (conversation) => conversation.messages.at(-1)?.from === "me",
-  ).length;
+  );
+  const unreadMessages = studentMessages.length;
 
   const teacherCourses: TeacherCourseDTO[] = courses.map((course) => {
     const list = byCourse.get(course.legacyId) ?? [];
@@ -110,9 +117,7 @@ export async function getTeacherDashboard(user: StoredUser): Promise<TeacherDash
     });
   }
 
-  for (const conversation of conversations
-    .filter((item) => item.messages.at(-1)?.from === "me")
-    .slice(0, 2)) {
+  for (const conversation of studentMessages.slice(0, 2)) {
     notifications.push({
       id: `msg_${conversation.id}`,
       icon: "message",
@@ -136,9 +141,7 @@ export async function getTeacherStudents(
   courseId: number,
 ): Promise<TeacherStudentDTO[]> {
   const repos = getRepositories();
-  const course = await repos.courses.findById(courseId);
-  if (!course) throw notFound("Curso no encontrado.");
-  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  const course = await loadManagedCourse(courseId, user);
 
   const enrollments = (await repos.enrollments.listAll()).filter(
     (enrollment) => enrollment.courseId === courseId,
@@ -253,25 +256,14 @@ export async function getAdminOverview(): Promise<AdminOverviewDTO> {
   const alumnosUsers = users.filter((user) => user.role === "alumno");
   const profesorUsers = users.filter((user) => user.role === "profesor");
   const byCourse = courseEnrollments(courses, enrollments);
+  const byId = courseIndex(courses);
 
   const alumnos = alumnosUsers.map((user) => {
     const own = enrollments.filter(
       (enrollment) => enrollment.studentEmail.toLowerCase() === user.email.toLowerCase(),
     );
-    const progress =
-      own.length === 0
-        ? 0
-        : Math.round(
-            own.reduce((sum, enrollment) => {
-              const course = courses.find((item) => item.legacyId === enrollment.courseId);
-              return sum + (course ? computeProgress(course, enrollment.completedLessonIds) : 0);
-            }, 0) / own.length,
-          );
-    const fecha = own[0]
-      ? new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "2-digit" }).format(
-          new Date(own[0].startedAt),
-        )
-      : "—";
+    const progress = averageProgressFor(courses, own);
+    const fecha = own[0] ? formatShortDate(own[0].startedAt) : "—";
     return adminAlumno(user, own.length, progress, fecha);
   });
 
@@ -299,17 +291,13 @@ export async function getAdminOverview(): Promise<AdminOverviewDTO> {
 
   const inscripciones: AdminInscripcionDTO[] = enrollments
     .map((enrollment): AdminInscripcionDTO | null => {
-      const course = courses.find((item) => item.legacyId === enrollment.courseId);
+      const course = byId.get(enrollment.courseId);
       if (!course) return null;
-      const date = new Intl.DateTimeFormat("es-AR", {
-        day: "2-digit",
-        month: "2-digit",
-      }).format(new Date(enrollment.startedAt));
       return {
         id: enrollment.id,
         alumno: enrollment.studentName,
         curso: course.title,
-        fecha: date,
+        fecha: formatShortDate(enrollment.startedAt),
         docente: course.professor.replace(/^(Abg\.|Dr\.|Dra\.)\s*/i, ""),
         estado: enrollment.status,
       };
@@ -318,28 +306,19 @@ export async function getAdminOverview(): Promise<AdminOverviewDTO> {
 
   const paid = orders.filter((order) => order.estado === "Pagado");
   const now = new Date();
-  const thisMonth = paid.filter((order) => {
-    const date = new Date(order.createdAt);
-    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-  });
-  const previousMonth = paid.filter((order) => {
-    const date = new Date(order.createdAt);
-    const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    return date.getMonth() === previous.getMonth() && date.getFullYear() === previous.getFullYear();
-  });
+  const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const thisMonth = paid.filter((order) => sameMonth(order.createdAt, now));
+  const previousMonth = paid.filter((order) => sameMonth(order.createdAt, previousMonthDate));
 
   const revenueThis = thisMonth.reduce((sum, order) => sum + order.montoCents, 0);
   const revenuePrev = previousMonth.reduce((sum, order) => sum + order.montoCents, 0);
 
-  const inscripcionesThis = enrollments.filter((enrollment) => {
-    const date = new Date(enrollment.startedAt);
-    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-  });
-  const inscripcionesPrev = enrollments.filter((enrollment) => {
-    const date = new Date(enrollment.startedAt);
-    const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    return date.getMonth() === previous.getMonth() && date.getFullYear() === previous.getFullYear();
-  });
+  const inscripcionesThis = enrollments.filter((enrollment) =>
+    sameMonth(enrollment.startedAt, now),
+  );
+  const inscripcionesPrev = enrollments.filter((enrollment) =>
+    sameMonth(enrollment.startedAt, previousMonthDate),
+  );
 
   const reportes = buildReportes(courses, enrollments, orders);
 
@@ -375,7 +354,7 @@ export async function getAdminOverview(): Promise<AdminOverviewDTO> {
 export async function listAdminEnrollments(page?: Pagination) {
   const repos = getRepositories();
   const courses = await repos.courses.list();
-  const byId = new Map(courses.map((course) => [course.legacyId, course]));
+  const byId = courseIndex(courses);
   const items = (await repos.enrollments.listAll(page))
     .map((enrollment) => {
       const course = byId.get(enrollment.courseId);

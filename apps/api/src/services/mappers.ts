@@ -5,6 +5,7 @@ import type {
   ChatMessageDTO,
   CourseDTO,
   EnrollmentDTO,
+  ModuleDTO,
   ModuleStatus,
   OrderDTO,
   UserDTO,
@@ -112,14 +113,6 @@ export function computeProgress(course: StoredCourse, completedLessonIds: string
   return Math.round((done / total) * 100);
 }
 
-export function completedCount(course: StoredCourse, completedLessonIds: string[]): number {
-  const completed = new Set(completedLessonIds);
-  return course.modules.reduce(
-    (sum, mod) => sum + mod.lessons.filter((lesson) => completed.has(lesson.id)).length,
-    0,
-  );
-}
-
 export function totalLessons(course: StoredCourse): number {
   return course.modules.reduce((sum, mod) => sum + mod.lessons.length, 0);
 }
@@ -144,6 +137,65 @@ export function hasEnrollmentAccess(
     enrollment.status !== "Revocado" &&
     !isEnrollmentExpired(enrollment, now)
   );
+}
+
+type ModuleMappingOptions = {
+  statuses: Map<number, ModuleStatus>;
+  completed: Set<string>;
+  includeContent: boolean;
+  /** Shape returned when a module or lesson cannot be read. */
+  hiddenContent: "empty" | "undefined";
+  includeRequestId?: boolean;
+  canReadModule?: (moduleId: number) => boolean;
+};
+
+function modulesToDTO(course: StoredCourse, options: ModuleMappingOptions): ModuleDTO[] {
+  return [...course.modules]
+    .sort((a, b) => a.position - b.position)
+    .map((mod) => {
+      const readable =
+        options.includeContent && (options.canReadModule?.(mod.id) ?? true);
+      return {
+        id: mod.id,
+        title: mod.title,
+        status: options.statuses.get(mod.id) ?? "locked",
+        position: mod.position,
+        ...(options.includeRequestId ? { requestId: mod.requestId } : {}),
+        lessons: [...mod.lessons]
+          .sort((a, b) => a.position - b.position)
+          .map((lesson) => ({
+            id: lesson.id,
+            title: lesson.title,
+            type: lesson.type,
+            done: options.completed.has(lesson.id),
+            highlight: lesson.highlight,
+            position: lesson.position,
+            ...(options.includeRequestId ? { requestId: lesson.requestId } : {}),
+            content: readable
+              ? lesson.content
+              : options.hiddenContent === "empty"
+                ? []
+                : undefined,
+            document: readable ? lesson.document : undefined,
+          })),
+      };
+    });
+}
+
+/** Index courses by their public numeric id (`legacyId`). */
+export function courseIndex(courses: StoredCourse[]): Map<number, StoredCourse> {
+  return new Map(courses.map((course) => [course.legacyId, course]));
+}
+
+/** Module list for the authoring view: full content and request ids included. */
+export function authoringModulesToDTO(course: StoredCourse): ModuleDTO[] {
+  return modulesToDTO(course, {
+    statuses: moduleStatuses(course, []),
+    completed: new Set(),
+    includeContent: true,
+    hiddenContent: "empty",
+    includeRequestId: true,
+  });
 }
 
 export function enrollmentToDTO(
@@ -175,29 +227,13 @@ export function enrollmentToDTO(
     progress,
     status,
     ...(enrollment.expiresAt ? { expiresAt: enrollment.expiresAt } : {}),
-    modules: [...course.modules]
-      .sort((a, b) => a.position - b.position)
-      .map((mod) => ({
-        id: mod.id,
-        title: mod.title,
-        status: statuses.get(mod.id) ?? "locked",
-        position: mod.position,
-        lessons: [...mod.lessons]
-          .sort((a, b) => a.position - b.position)
-          .map((lesson) => ({
-            id: lesson.id,
-            title: lesson.title,
-            type: lesson.type,
-            done: completed.has(lesson.id),
-            highlight: lesson.highlight,
-            position: lesson.position,
-            content:
-              canAccess && statuses.get(mod.id) !== "locked"
-                ? lesson.content
-                : [],
-            document: canAccess && statuses.get(mod.id) !== "locked" ? lesson.document : undefined,
-          })),
-      })),
+    modules: modulesToDTO(course, {
+      statuses,
+      completed,
+      includeContent: canAccess,
+      hiddenContent: "empty",
+      canReadModule: (moduleId) => statuses.get(moduleId) !== "locked",
+    }),
   };
 }
 
@@ -211,28 +247,13 @@ export function courseStructure(
 
   return {
     course: courseToDTO(course),
-    modules: [...course.modules]
-      .sort((a, b) => a.position - b.position)
-      .map((mod) => ({
-        id: mod.id,
-        title: mod.title,
-        status: statuses.get(mod.id) ?? "locked",
-        position: mod.position,
-        requestId: includeContent ? mod.requestId : undefined,
-        lessons: [...mod.lessons]
-          .sort((a, b) => a.position - b.position)
-          .map((lesson) => ({
-            id: lesson.id,
-            title: lesson.title,
-            type: lesson.type,
-            done: completed.has(lesson.id),
-            highlight: lesson.highlight,
-            position: lesson.position,
-            requestId: includeContent ? lesson.requestId : undefined,
-            content: includeContent ? lesson.content : undefined,
-            document: includeContent ? lesson.document : undefined,
-          })),
-      })),
+    modules: modulesToDTO(course, {
+      statuses,
+      completed,
+      includeContent,
+      hiddenContent: "undefined",
+      includeRequestId: includeContent,
+    }),
   };
 }
 

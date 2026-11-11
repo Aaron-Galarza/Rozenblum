@@ -4,9 +4,6 @@ import { clone, type Memory } from "./mock-memory.js";
 
 export function createMockConversationsRepositories(db: Memory) {
   const conversations: ConversationRepository = {
-    async listAll() {
-      return db.conversations.map(clone);
-    },
     async listByTeacher(email) {
       return db.conversations
         .filter((c) => c.teacherEmail.toLowerCase() === email.toLowerCase())

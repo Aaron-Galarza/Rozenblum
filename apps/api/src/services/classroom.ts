@@ -1,15 +1,29 @@
 import type { EnrollmentDTO } from "@rozenblum/shared";
 import { badRequest, forbidden, notFound } from "../lib/http.js";
 import { getRepositories } from "../repositories/index.js";
-import type { StoredUser } from "../types.js";
+import type { StoredEnrollment, StoredUser } from "../types.js";
 import {
   computeProgress,
+  courseIndex,
   enrollmentToDTO,
   hasEnrollmentAccess,
   isEnrollmentExpired,
   moduleStatuses,
   totalLessons,
 } from "./mappers.js";
+
+/**
+ * Rejects pending, revoked and expired enrollments. Callers pass the wording
+ * that fits their flow so the same rule is not reimplemented in each service.
+ */
+export function assertEnrollmentAccess(
+  enrollment: Pick<StoredEnrollment, "status" | "expiresAt">,
+  messages: { expired: string; denied: string },
+): void {
+  if (!hasEnrollmentAccess(enrollment)) {
+    throw forbidden(isEnrollmentExpired(enrollment) ? messages.expired : messages.denied);
+  }
+}
 
 export async function loadEnrollment(courseIdOrEnrollmentId: string, user: StoredUser) {
   const repos = getRepositories();
@@ -32,7 +46,7 @@ export async function listStudentEnrollments(user: StoredUser): Promise<Enrollme
   const repos = getRepositories();
   const enrollments = await repos.enrollments.listByStudent(user.email);
   const courses = await repos.courses.list();
-  const byId = new Map(courses.map((course) => [course.legacyId, course]));
+  const byId = courseIndex(courses);
 
   return enrollments
     .map((enrollment) => {
@@ -73,13 +87,10 @@ export async function setLessonProgress(
 ): Promise<EnrollmentDTO> {
   const repos = getRepositories();
   const enrollment = await loadEnrollment(enrollmentId, user);
-  if (!hasEnrollmentAccess(enrollment)) {
-    throw forbidden(
-      isEnrollmentExpired(enrollment)
-        ? "Tu acceso a este curso venció."
-        : "Tu inscripción no tiene acceso activo.",
-    );
-  }
+  assertEnrollmentAccess(enrollment, {
+    expired: "Tu acceso a este curso venció.",
+    denied: "Tu inscripción no tiene acceso activo.",
+  });
 
   const course = await repos.courses.findById(enrollment.courseId);
   if (!course) throw notFound("Curso no encontrado.");

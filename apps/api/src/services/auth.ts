@@ -13,6 +13,18 @@ import { userToDTO } from "./mappers.js";
  */
 const DUMMY_PASSWORD_HASH = hashPassword("rozenblum-invalid-account");
 
+function sessionFor(user: StoredUser): SessionDTO {
+  return {
+    token: createToken({
+      sub: user.id,
+      role: user.role,
+      email: user.email,
+      ver: user.sessionVersion ?? 0,
+    }),
+    user: userToDTO(user),
+  };
+}
+
 export async function login(input: LoginInput): Promise<SessionDTO> {
   const repos = getRepositories();
   const email = input.email.toLowerCase();
@@ -27,14 +39,7 @@ export async function login(input: LoginInput): Promise<SessionDTO> {
     throw unauthorized("Correo o contraseña incorrectos.");
   }
 
-  const token = createToken({
-    sub: user.id,
-    role: user.role,
-    email: user.email,
-    ver: user.sessionVersion ?? 0,
-  });
-
-  return { token, user: userToDTO(user) };
+  return sessionFor(user);
 }
 
 /**
@@ -60,13 +65,5 @@ export async function changeOwnPassword(
   );
   if (!updated) throw unauthorized();
 
-  return {
-    token: createToken({
-      sub: updated.id,
-      role: updated.role,
-      email: updated.email,
-      ver: updated.sessionVersion ?? 0,
-    }),
-    user: userToDTO(updated),
-  };
+  return sessionFor(updated);
 }

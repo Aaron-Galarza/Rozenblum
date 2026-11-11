@@ -17,6 +17,3 @@ export function setRepositoriesForTests(repositories: Repositories) {
   instance = repositories;
 }
 
-export function resetRepositories() {
-  instance = null;
-}

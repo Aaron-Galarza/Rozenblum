@@ -36,10 +36,6 @@ export async function disconnectDatabase(): Promise<void> {
   }
 }
 
-export function isDatabaseConnected(): boolean {
-  return mongoose.connection.readyState === 1;
-}
-
 /** Readiness probe used by orchestrators. */
 export async function checkDatabaseHealth(): Promise<boolean> {
   if (env.isTest) return true;

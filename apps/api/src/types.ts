@@ -1,5 +1,4 @@
 import type {
-  BlockType,
   CourseDTO,
   CourseSyllabusModule,
   LessonBlockDTO,
@@ -182,15 +181,6 @@ export type CourseStructure = {
       content?: LessonBlockDTO[];
     }[];
   }[];
-};
-
-export type LessonContent = {
-  id: string;
-  type: BlockType;
-  content: string;
-  items?: string[];
-  expanded?: boolean;
-  toggleContent?: string;
 };
 
 export type CourseInput = {
