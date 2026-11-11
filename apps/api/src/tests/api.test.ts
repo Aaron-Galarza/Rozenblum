@@ -1102,7 +1102,7 @@ test("teacher chat stays in the selected course and can start before the student
   });
   assert.equal(initiated.status, 201);
   assert.deepEqual(initiated.body.data.map((message) => message.text), ["Second course greeting"]);
-  assert.equal(initiated.body.data[0]?.from, "prof");
+  assert.equal(initiated.body.data[0]?.from, "me");
 
   const first = await api<{ data: { text: string }[] }>(server.baseUrl, firstPath, { token: teacherToken });
   assert.equal(first.status, 200);
@@ -1632,7 +1632,7 @@ test("reassigning a course professor moves its conversations", async () => {
   assert.equal(former.status, 403);
 });
 
-test("deleting a student also removes their conversations", async () => {
+test("closing a student account preserves academic and chat history", async () => {
   const adminToken = await login("admin", adminEmail);
   const student = await repositories.users.create({
     name: "Deletable Student",
@@ -1662,9 +1662,11 @@ test("deleting a student also removes their conversations", async () => {
     token: adminToken,
   });
   assert.equal(removed.status, 204);
-  assert.equal(await repositories.users.findById(student.id), null);
-  assert.equal(await repositories.enrollments.findById(enrollment.id), null);
-  assert.equal(await repositories.conversations.findById(conversation.id), null);
+  const closed = await repositories.users.findById(student.id);
+  assert.equal(closed?.status, "Suspendido");
+  assert.ok(closed?.deletedAt);
+  assert.ok(await repositories.enrollments.findById(enrollment.id));
+  assert.ok(await repositories.conversations.findById(conversation.id));
 });
 
 test("login is rate limited after repeated invalid attempts", async () => {
