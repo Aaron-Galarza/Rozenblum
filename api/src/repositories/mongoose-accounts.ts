@@ -91,9 +91,6 @@ export function createMongooseAccountsRepositories() {
         .exec();
       return docs.map((doc) => clean<StoredEnrollment>(doc));
     },
-    async countAll() {
-      return EnrollmentModel.countDocuments({}).exec();
-    },
     async listVisibleForAdmin(page) {
       const docs = await EnrollmentModel.find({ status: { $ne: "Pendiente" } })
         .sort({ startedAt: -1 })
@@ -242,12 +239,6 @@ export function createMongooseAccountsRepositories() {
         .lean()
         .exec();
       return doc ? clean<StoredEnrollment>(doc) : null;
-    },
-    async deleteByStudent(email) {
-      const result = await EnrollmentModel.deleteMany({
-        studentEmail: email.toLowerCase(),
-      }).exec();
-      return result.deletedCount ?? 0;
     },
   };
   return { users, enrollments };

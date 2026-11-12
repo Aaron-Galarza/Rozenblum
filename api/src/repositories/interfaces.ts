@@ -113,7 +113,6 @@ export interface CourseRepository {
 
 export interface EnrollmentRepository {
   listAll(page?: Pagination): Promise<StoredEnrollment[]>;
-  countAll(): Promise<number>;
   listVisibleForAdmin(page?: Pagination): Promise<StoredEnrollment[]>;
   countVisibleForAdmin(): Promise<number>;
   /** Streams all visible records for an administrator export. */
@@ -144,12 +143,10 @@ export interface EnrollmentRepository {
   ): Promise<StoredEnrollment | null>;
   updateStatus(id: string, status: StoredEnrollment["status"]): Promise<StoredEnrollment | null>;
   setExpiresAt(id: string, expiresAt?: string): Promise<StoredEnrollment | null>;
-  deleteByStudent(email: string): Promise<number>;
 }
 
 export interface OrderRepository {
   list(page?: Pagination): Promise<StoredOrder[]>;
-  countAll(): Promise<number>;
   listVisibleForAdmin(page?: Pagination): Promise<StoredOrder[]>;
   countVisibleForAdmin(): Promise<number>;
   /** Streams all visible records for an administrator export. */
@@ -186,8 +183,6 @@ export interface ConversationRepository {
   ): Promise<{ messages: StoredMessage[]; total: number } | null>;
   /** Moves every thread of a course to its new professor. */
   reassignTeacher(courseId: number, teacherEmail: string, teacherName: string): Promise<number>;
-  /** Removes the threads of a deleted student, including their messages. */
-  deleteByStudent(email: string): Promise<number>;
 }
 
 export interface ContactRepository {

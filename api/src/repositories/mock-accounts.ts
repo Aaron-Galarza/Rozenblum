@@ -72,9 +72,6 @@ export function createMockAccountsRepositories(db: Memory) {
       const items = db.enrollments.map(clone);
       return page ? items.slice(page.offset, page.offset + page.limit) : items;
     },
-    async countAll() {
-      return db.enrollments.length;
-    },
     async listVisibleForAdmin(page) {
       const items = db.enrollments.filter((item) => item.status !== "Pendiente").map(clone);
       return page ? items.slice(page.offset, page.offset + page.limit) : items;
@@ -196,13 +193,6 @@ export function createMockAccountsRepositories(db: Memory) {
       if (expiresAt) enrollment.expiresAt = expiresAt;
       else delete enrollment.expiresAt;
       return clone(enrollment);
-    },
-    async deleteByStudent(email) {
-      const before = db.enrollments.length;
-      db.enrollments = db.enrollments.filter(
-        (e) => e.studentEmail.toLowerCase() !== email.toLowerCase(),
-      );
-      return before - db.enrollments.length;
     },
   };
   return { users, enrollments };

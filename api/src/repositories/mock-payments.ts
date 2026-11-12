@@ -20,9 +20,6 @@ export function createMockPaymentsRepositories(db: Memory) {
         .map(clone);
       return page ? items.slice(page.offset, page.offset + page.limit) : items;
     },
-    async countAll() {
-      return db.orders.length;
-    },
     async listVisibleForAdmin(page) {
       const items = db.orders.filter(isVisibleForAdmin)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(clone);

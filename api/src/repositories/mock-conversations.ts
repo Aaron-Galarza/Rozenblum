@@ -55,13 +55,6 @@ export function createMockConversationsRepositories(db: Memory) {
       }
       return changed;
     },
-    async deleteByStudent(email) {
-      const before = db.conversations.length;
-      db.conversations = db.conversations.filter(
-        (c) => c.studentEmail.toLowerCase() !== email.toLowerCase(),
-      );
-      return before - db.conversations.length;
-    },
   };
   return { conversations };
 }

@@ -67,12 +67,6 @@ export function createMongooseConversationsRepositories() {
       ).exec();
       return result.modifiedCount ?? 0;
     },
-    async deleteByStudent(email) {
-      const result = await ConversationModel.deleteMany({
-        studentEmail: email.toLowerCase(),
-      }).exec();
-      return result.deletedCount ?? 0;
-    },
   };
   return { conversations };
 }

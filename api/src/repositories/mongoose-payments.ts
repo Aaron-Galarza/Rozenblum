@@ -36,9 +36,6 @@ export function createMongoosePaymentsRepositories() {
         .exec();
       return docs.map((doc) => clean<StoredOrder>(doc));
     },
-    async countAll() {
-      return OrderModel.countDocuments({}).exec();
-    },
     async listVisibleForAdmin(page) {
       const docs = await OrderModel.find(ADMIN_VISIBLE_FILTER).sort({ createdAt: -1 })
         .skip(page?.offset ?? 0).limit(page?.limit ?? LIST_HARD_LIMIT).lean().exec();
