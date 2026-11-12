@@ -1,4 +1,5 @@
 import { formatArs, nowIso, slugify } from "../lib/utils.js";
+import { isCourseExpired } from "../lib/course-expiry.js";
 import type { PublicCourseRecord, StoredCourse } from "../types.js";
 import type { CourseRepository } from "./interfaces.js";
 import { clone, type Memory } from "./mock-memory.js";
@@ -27,13 +28,14 @@ export function createMockCoursesRepositories(db: Memory) {
         img: course.img,
         professor: course.professor,
         status: course.status,
+        expiresOn: course.expiresOn,
         temario: clone(course.temario),
         modules: course.modules.map(({ id }) => ({ id })),
       }));
     },
     async findLatestPublished() {
       const latest = db.courses
-        .filter((c) => c.status === "published")
+        .filter((c) => c.status === "published" && !isCourseExpired(c))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.legacyId - a.legacyId)[0];
       return latest ? clone(latest) : null;
     },
@@ -86,6 +88,7 @@ export function createMockCoursesRepositories(db: Memory) {
         nextLessonNumber: 0,
         requestId: input.requestId,
         accessDays: input.accessDays,
+        expiresOn: input.expiresOn,
       };
       db.courses.push(course);
       return clone(course);

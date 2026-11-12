@@ -170,7 +170,7 @@ export default function AdminView() {
                 <CursosSection
                   cursos={overview.cursos}
                   profesores={overview.profesores}
-                  onCreate={async ({ name, professorEmail, description, priceCents, duration, level, img }, idempotencyKey) => {
+                  onCreate={async ({ name, professorEmail, description, priceCents, duration, level, expiresOn, img }, idempotencyKey) => {
                     try {
                       await apiFetch("/api/admin/courses", {
                         method: "POST",
@@ -184,6 +184,7 @@ export default function AdminView() {
                           priceCents,
                           duration,
                           level,
+                          expiresOn,
                           ...(img ? { img } : {}),
                         },
                       });

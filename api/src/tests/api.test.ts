@@ -23,6 +23,7 @@ const studentDni = "30123456";
 const studentEmail = "student@example.test";
 const teacherEmail = "teacher@example.test";
 const adminEmail = "admin@example.test";
+const futureCourseExpiry = "2099-12-31";
 const repositories = createMockRepositories({
   homeContent: {
     key: "home",
@@ -957,6 +958,7 @@ test("admin course creation is idempotent and recoverable by request key", async
     level: "Inicial",
     duration: "Online",
     professorEmail: teacherEmail,
+    expiresOn: futureCourseExpiry,
   });
   const create = () => api<{ data: { id: number; slug: string; requestId?: string } }>(
     server.baseUrl, "/api/admin/courses",
@@ -988,6 +990,7 @@ test("draft lessons keep unique IDs and launched courses cannot be deleted", asy
     title: "Academic Lifecycle", description: "Draft deletion and launch protection",
     priceCents: 60_000, duration: "Online", level: "Inicial",
     professor: "Test profesor", professorEmail: teacherEmail, status: "draft", img: image,
+    expiresOn: futureCourseExpiry,
   });
   const teacherToken = await login("profesor", teacherEmail);
   const adminToken = await login("admin", adminEmail);
@@ -1396,7 +1399,16 @@ test("course creation requires selecting an active registered professor", async 
   const input = {
     title: "Professor Assignment Course", description: "Requires a real professor account",
     priceCents: 100_000, duration: "Online", level: "Inicial", status: "draft",
+    expiresOn: futureCourseExpiry,
   };
+  assert.equal((await api(server.baseUrl, "/api/admin/courses", {
+    method: "POST", token: adminToken,
+    body: JSON.stringify({ ...input, professorEmail: teacherEmail, expiresOn: undefined }),
+  })).status, 400);
+  assert.equal((await api(server.baseUrl, "/api/admin/courses", {
+    method: "POST", token: adminToken,
+    body: JSON.stringify({ ...input, professorEmail: teacherEmail, expiresOn: "2020-01-01" }),
+  })).status, 400);
   for (const professorEmail of [undefined, "missing@example.test", adminEmail]) {
     const response = await api(server.baseUrl, "/api/admin/courses", {
       method: "POST", token: adminToken,
@@ -1423,11 +1435,32 @@ test("course creation requires selecting an active registered professor", async 
   assert.equal(created.body.data.professorId, teacherEmail);
   assert.equal(created.body.data.status, "draft");
   assert.equal((await repositories.courses.findById(created.body.data.id))?.professorEmail, teacherEmail);
+  assert.equal((await repositories.courses.findById(created.body.data.id))?.expiresOn, futureCourseExpiry);
   const premature = await api(server.baseUrl, "/api/admin/courses", {
     method: "POST", token: adminToken,
     body: JSON.stringify({ ...input, professorEmail: teacherEmail, status: "published" }),
   });
   assert.equal(premature.status, 400);
+});
+
+test("expired courses disappear from the catalogue and refuse new checkout", async () => {
+  const expired = await repositories.courses.create({
+    title: "Expired Course", description: "No longer for sale or public viewing.",
+    priceCents: 10_000, duration: "Online", level: "Inicial", status: "published",
+    professor: "Test profesor", professorEmail: teacherEmail,
+    img: "https://example.test/expired.jpg", expiresOn: "2020-01-01",
+  });
+  const catalogue = await api<{ data: { id: number }[] }>(server.baseUrl, "/api/courses");
+  assert.equal(catalogue.body.data.some((course) => course.id === expired.legacyId), false);
+  assert.equal((await api(server.baseUrl, `/api/courses/${expired.slug}`)).status, 404);
+  assert.notEqual((await api<{ data: { course: { id: number } } }>(
+    server.baseUrl, "/api/courses/latest")).body.data.course.id, expired.legacyId);
+  const checkout = await api(server.baseUrl, "/api/checkout", {
+    method: "POST", body: JSON.stringify({
+      courseSlug: expired.slug, nombre: "Late Buyer", email: "late@example.test", dni: "30123456",
+    }),
+  });
+  assert.equal(checkout.status, 404);
 });
 
 test("checkout rejects a course whose professor is no longer available without creating records", async () => {
@@ -1457,6 +1490,7 @@ test("empty courses cannot be published or sold, and related records block delet
     method: "POST", token: adminToken, body: JSON.stringify({
       title: "Boundary Course", description: "A course for publication boundaries", priceCents: 123_400,
       professorEmail: teacherEmail, duration: "Two weeks", level: "Inicial", status: "draft",
+      expiresOn: futureCourseExpiry,
     }),
   });
   assert.equal(created.status, 201);

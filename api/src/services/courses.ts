@@ -8,6 +8,7 @@ import type {
 } from "@rozenblum/shared";
 import { richLessonDocumentSchema } from "@rozenblum/shared";
 import { badRequest, conflict, forbidden, notFound } from "../lib/http.js";
+import { isCourseExpired } from "../lib/course-expiry.js";
 import { nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredCourse, StoredLesson, StoredModule, StoredUser } from "../types.js";
@@ -77,7 +78,7 @@ export async function loadManagedCourse(courseId: number, user: StoredUser): Pro
 
 export async function listPublishedCourses(): Promise<CourseDTO[]> {
   const courses = await getRepositories().courses.listPublished();
-  return courses.map(courseToPublicDTO);
+  return courses.filter((course) => !isCourseExpired(course)).map(courseToPublicDTO);
 }
 
 export async function getLatestPublishedCourse(): Promise<CourseDetailDTO> {
@@ -96,7 +97,7 @@ export async function getPublishedCourseDetail(slug: string): Promise<CourseDeta
 }
 
 async function buildPublishedCourseDetail(course: StoredCourse | null): Promise<CourseDetailDTO> {
-  if (!course || course.status !== "published") {
+  if (!course || course.status !== "published" || isCourseExpired(course)) {
     throw notFound("Curso no encontrado.");
   }
 
@@ -168,6 +169,10 @@ export async function updateCourse(
   }
   if (patch.status === "published" && !(patch.img ?? course.img)) {
     throw badRequest("Seleccioná una imagen del curso antes de publicarlo.");
+  }
+  if (patch.status === "published" &&
+      (!(patch.expiresOn ?? course.expiresOn) || isCourseExpired({ expiresOn: patch.expiresOn ?? course.expiresOn }))) {
+    throw badRequest("Asigná una fecha de vencimiento futura antes de publicar el curso.");
   }
   const nextPatch = professor && patch.professorEmail
     ? { ...patch, professor: professor.name, professorEmail: professor.email }
@@ -606,6 +611,7 @@ export async function createEmptyCourseForAdmin(
     duration?: string;
     img?: string;
     accessDays?: number;
+    expiresOn: string;
   },
   requestId: string | undefined,
   actor: StoredUser,
@@ -628,6 +634,7 @@ export async function createEmptyCourseForAdmin(
     img: input.img ?? "",
     requestId,
     accessDays: input.accessDays,
+    expiresOn: input.expiresOn,
   });
   await recordAdminEvent({
     actor,

@@ -7,12 +7,12 @@ import Modal from "../../../components/ui/Modal";
 import Toast from "../../../components/ui/Toast";
 import ImagePicker from "../../../components/ui/ImagePicker";
 
-type CursoFormInput = { title: string; professorEmail: string; description: string; priceCents: number; duration: string; level: string; img?: string };
+type CursoFormInput = { title: string; professorEmail: string; description: string; priceCents: number; duration: string; level: string; expiresOn: string; img?: string };
 
 type CursosSectionProps = {
   cursos: AdminCursoDTO[];
   profesores: AdminProfesorDTO[];
-  onCreate: (input: { name: string; professorEmail: string; description: string; priceCents: number; duration: string; level: string; img?: string }, idempotencyKey?: string) => Promise<void>;
+  onCreate: (input: { name: string; professorEmail: string; description: string; priceCents: number; duration: string; level: string; expiresOn: string; img?: string }, idempotencyKey?: string) => Promise<void>;
   onLoadCourse: (id: number) => Promise<CourseDTO>;
   onUpdate: (curso: AdminCursoDTO, patch: CursoFormInput) => Promise<void>;
   onToggleStatus: (curso: AdminCursoDTO) => Promise<void>;
@@ -29,7 +29,7 @@ type ModalState = { type: "ver" | "crear" | "editar"; item?: AdminCursoDTO } | n
 
 export default function CursosSection({ cursos, profesores, onCreate, onLoadCourse, onUpdate, onToggleStatus, onDelete }: CursosSectionProps) {
   const [modal, setModal] = useState<ModalState>(null);
-  const [form, setForm] = useState({ name: "", professorEmail: "", description: "", price: "", duration: "", level: "", img: "" });
+  const [form, setForm] = useState({ name: "", professorEmail: "", description: "", price: "", duration: "", level: "", expiresOn: "", img: "" });
   const { busy, toast, showToast, run } = useAdminAction();
   const [formError, setFormError] = useState("");
   /** Stable across retries of the same creation, so a lost response cannot duplicate the course. */
@@ -48,6 +48,11 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
       setFormError("Completá todos los campos con datos válidos. El precio debe ser positivo y tener hasta dos decimales.");
       return;
     }
+    const today = new Date(Date.now() - 3 * 60 * 60_000).toISOString().slice(0, 10);
+    if (!form.expiresOn || form.expiresOn <= today) {
+      setFormError("Elegí una fecha de vencimiento posterior a hoy.");
+      return;
+    }
     if (form.img.trim() && !/^https?:\/\//i.test(form.img.trim())) {
       setFormError("La imagen debe tener una URL http(s) válida.");
       return;
@@ -57,10 +62,11 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
       const input = {
         name: form.name.trim(), professorEmail: form.professorEmail, description: form.description.trim(),
         priceCents: Math.round(price * 100), duration: form.duration.trim(),
-        level: form.level.trim(), ...(form.img.trim() ? { img: form.img.trim() } : {}),
+        level: form.level.trim(), expiresOn: form.expiresOn,
+        ...(form.img.trim() ? { img: form.img.trim() } : {}),
       };
       if (modal?.type === "editar" && modal.item) {
-        const patch: CursoFormInput = { title: input.name, professorEmail: input.professorEmail, description: input.description, priceCents: input.priceCents, duration: input.duration, level: input.level, ...(input.img ? { img: input.img } : {}) };
+        const patch: CursoFormInput = { title: input.name, professorEmail: input.professorEmail, description: input.description, priceCents: input.priceCents, duration: input.duration, level: input.level, expiresOn: input.expiresOn, ...(input.img ? { img: input.img } : {}) };
         await onUpdate(modal.item, patch);
       } else {
         await onCreate(input, createKey.current || newIdempotencyKey());
@@ -80,6 +86,7 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
         price: String(full.priceCents / 100),
         duration: full.duration,
         level: full.level,
+        expiresOn: full.expiresOn ?? "",
         img: full.img,
       });
       setFormError("");
@@ -91,7 +98,7 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
     <>
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Gestión de Cursos</h2>
-        <button disabled={!profesores.some((p) => p.estado === "Activo")} title={profesores.some((p) => p.estado === "Activo") ? undefined : "Primero creá un profesor activo"} onClick={() => { createKey.current = newIdempotencyKey(); setForm({ name: "", professorEmail: "", description: "", price: "", duration: "", level: "", img: "" }); setFormError(""); setModal({ type: "crear" }); }} className="min-h-11 self-start px-5 py-2.5 text-xs font-bold tracking-widest transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
+        <button disabled={!profesores.some((p) => p.estado === "Activo")} title={profesores.some((p) => p.estado === "Activo") ? undefined : "Primero creá un profesor activo"} onClick={() => { createKey.current = newIdempotencyKey(); setForm({ name: "", professorEmail: "", description: "", price: "", duration: "", level: "", expiresOn: "", img: "" }); setFormError(""); setModal({ type: "crear" }); }} className="min-h-11 self-start px-5 py-2.5 text-xs font-bold tracking-widest transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
           + CREAR NUEVO CURSO
         </button>
       </div>
@@ -99,13 +106,13 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
       <div className="overflow-x-auto rounded-lg shadow-sm" style={{ border: "1px solid rgba(23,59,108,0.08)" }}>
         <table className="min-w-[720px] w-full text-xs">
           <thead><tr style={{ backgroundColor: "#173B6C" }}>
-            {["Nombre", "Profesor", "Alumnos", "Completion %", "Estado", "Acciones"].map((h) => (
+            {["Nombre", "Profesor", "Alumnos", "Completion %", "Vence", "Estado", "Acciones"].map((h) => (
               <th key={h} className="px-4 py-3 text-left font-medium" style={{ color: "#FAF8F5" }}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
             {cursos.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-xs" style={{ color: "rgba(23,59,108,0.4)" }}>Todavía no hay cursos cargados</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-xs" style={{ color: "rgba(23,59,108,0.4)" }}>Todavía no hay cursos cargados</td></tr>
             ) : cursos.map((c, i) => (
               <tr key={c.id} style={{ backgroundColor: i % 2 === 0 ? "#FFFFFF" : "#F5F5F5" }}>
                 <td className="px-4 py-3 font-medium" style={{ color: "#173B6C" }}>{c.name}</td>
@@ -118,6 +125,9 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
                     </div>
                     <span style={{ color: "#173B6C" }}>{c.completion}%</span>
                   </div>
+                </td>
+                <td className="px-4 py-3" style={{ color: c.expiresOn ? "#173B6C" : "#72132C" }}>
+                  {c.expiresOn ? c.expiresOn.split("-").reverse().join("/") : "Sin fecha"}
                 </td>
                 <td className="px-4 py-3">
                   <button disabled={busy} onClick={() => void toggleEstado(c)} className="px-2 py-0.5 rounded text-[10px] font-bold transition-opacity hover:opacity-70 disabled:opacity-40" style={c.estado === "Publicado" ? { backgroundColor: "#dcfce7", color: "#166534" } : { backgroundColor: "#fef3c7", color: "#92400e" }}>
@@ -140,7 +150,7 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
       {modal?.type === "ver" && modal.item && (
         <Modal title={modal.item.name} onClose={() => setModal(null)}>
           <div className="space-y-2 mb-5">
-            {[["Profesor", modal.item.profesor], ["Alumnos", String(modal.item.alumnos)], ["Completion", `${modal.item.completion}%`], ["Estado", modal.item.estado]].map(([k, v]) => (
+            {[["Profesor", modal.item.profesor], ["Alumnos", String(modal.item.alumnos)], ["Completion", `${modal.item.completion}%`], ["Vencimiento", modal.item.expiresOn ?? "Sin fecha"], ["Estado", modal.item.estado]].map(([k, v]) => (
               <div key={k} className="flex justify-between py-2" style={{ borderBottom: "1px solid rgba(23,59,108,0.06)" }}>
                 <span className="text-xs" style={{ color: "rgba(23,59,108,0.55)" }}>{k}</span>
                 <span className="text-xs font-semibold" style={{ color: "#173B6C" }}>{v}</span>
@@ -179,6 +189,15 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
                 />
               </div>
             ))}
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="course-expires-on" className="text-xs font-medium tracking-wide uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>Último día disponible *</label>
+              <input id="course-expires-on" type="date" required value={form.expiresOn}
+                min={new Date(Date.now() - 3 * 60 * 60_000 + 86_400_000).toISOString().slice(0, 10)}
+                onChange={(event) => setForm((previous) => ({ ...previous, expiresOn: event.target.value }))}
+                className="px-3 py-2.5 text-sm outline-none"
+                style={{ border: "1px solid rgba(23,59,108,0.2)", borderRadius: 4, color: "#173B6C", backgroundColor: "#FAF8F5" }} />
+              <p className="text-[11px]" style={{ color: "rgba(23,59,108,0.55)" }}>Al terminar ese día se retirará el curso y el acceso de sus alumnos.</p>
+            </div>
             <ImagePicker category="courses" label="Imagen del curso" value={form.img} onChange={(img) => setForm((previous) => ({ ...previous, img }))} />
             {formError && <p role="alert" className="text-xs" style={{ color: "#991b1b" }}>{formError}</p>}
             <p className="text-[11px] leading-relaxed" style={{ color: "rgba(23,59,108,0.5)" }}>

@@ -50,6 +50,7 @@ function baseCourseDTO(course: PublicCourseRecord): CourseDTO {
     status: course.status,
     temario: course.temario.map(({ mod, title, lessons }) => ({ mod, title, lessons: [...lessons] })),
     ...(course.accessDays !== undefined ? { accessDays: course.accessDays } : {}),
+    ...(course.expiresOn ? { expiresOn: course.expiresOn } : {}),
   };
 }
 
@@ -363,6 +364,7 @@ export function adminCurso(
     alumnos: students,
     completion,
     estado: course.status === "published" ? "Publicado" : "Borrador",
+    expiresOn: course.expiresOn,
     revision: course.revision ?? 0,
   };
 }

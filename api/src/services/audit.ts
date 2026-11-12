@@ -29,6 +29,7 @@ export function safeCourseState(course: StoredCourse): Record<string, unknown> {
     professorEmail: course.professorEmail,
     priceCents: course.priceCents,
     accessDays: course.accessDays,
+    expiresOn: course.expiresOn,
     revision: course.revision ?? 0,
   };
 }

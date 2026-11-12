@@ -98,6 +98,7 @@ export interface CourseRepository {
         | "temario"
         | "everPublished"
         | "accessDays"
+        | "expiresOn"
       >
     >,
     expectedRevision: number,

@@ -84,6 +84,8 @@ export type StoredCourse = {
   requestId?: string;
   /** Days of access granted after payment. 0/undefined means no expiry. */
   accessDays?: number;
+  /** Last day of the course in Buenos Aires. Legacy courses may lack it. */
+  expiresOn?: string;
 };
 
 /** Fields needed by the catalogue, with module IDs but no lesson bodies. */
@@ -91,6 +93,7 @@ export type PublicCourseRecord = Pick<
   StoredCourse,
   | "legacyId" | "slug" | "title" | "description" | "price" | "priceCents"
   | "duration" | "level" | "img" | "professor" | "accessDays"
+  | "expiresOn"
   | "status" | "temario"
 > & { modules: { id: number }[] };
 
@@ -225,4 +228,5 @@ export type CourseInput = {
   img: string;
   requestId?: string;
   accessDays?: number;
+  expiresOn?: string;
 };

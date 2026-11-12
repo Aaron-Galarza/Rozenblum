@@ -105,12 +105,14 @@ const courseSchema = new Schema<StoredCourse>(
     nextLessonNumber: { type: Number, required: true, default: 0 },
     requestId: { type: String, default: undefined },
     accessDays: { type: Number, default: undefined, min: 0 },
+    expiresOn: { type: String, default: undefined },
   },
   { versionKey: false, collection: "courses", minimize: false },
 );
 
 courseSchema.index({ status: 1, legacyId: 1 });
 courseSchema.index({ status: 1, createdAt: -1, legacyId: -1 });
+courseSchema.index({ expiresOn: 1 });
 courseSchema.index({ requestId: 1 }, {
   unique: true,
   partialFilterExpression: { requestId: { $type: "string" } },

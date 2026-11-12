@@ -100,6 +100,7 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
       img: `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/image/upload/v1/Rozenblum/courses/test.jpg`,
       status: "draft", professorEmail: "professor@example.test",
       accessDays: 30,
+      expiresOn: "2099-12-31",
     };
     const missingProfessor = await api(server.baseUrl, "/api/admin/courses", {
       method: "POST", token: adminLogin.body.data.token,

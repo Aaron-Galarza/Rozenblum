@@ -112,6 +112,8 @@ export type CourseDTO = {
   revision?: number;
   /** Days of access granted after payment. 0/undefined means no expiry. */
   accessDays?: number;
+  /** Last calendar day when the course remains available in Buenos Aires. */
+  expiresOn?: string;
 };
 
 export type LessonDTO = {
@@ -296,6 +298,14 @@ export const reorderSchema = z.object({
   ids: z.array(z.union([z.string(), z.number()])).min(1),
 });
 
+export const courseExpiryDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }, "Ingresá una fecha válida.")
+  .refine((value) => value > new Date(Date.now() - 3 * 60 * 60_000).toISOString().slice(0, 10),
+    "El vencimiento debe ser posterior a hoy.");
+
 export const coursePayloadSchema = z.object({
   title: z.string().trim().min(3).max(180),
   description: z.string().trim().min(3).max(2000),
@@ -307,6 +317,7 @@ export const coursePayloadSchema = z.object({
   img: z.string().trim().url().refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
   /** Days of access after payment. 0 means the course never expires. */
   accessDays: z.number().int().min(0).max(3650).optional(),
+  expiresOn: courseExpiryDateSchema,
 });
 
 /* ──────────────────────────────────────────────────────────────────────────────
@@ -437,6 +448,7 @@ export const adminCoursePatchSchema = z.object({
   img: z.string().trim().url().refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
   /** Days of access after payment. 0 means the course never expires. */
   accessDays: z.number().int().min(0).max(3650).optional(),
+  expiresOn: courseExpiryDateSchema.optional(),
 });
 
 export const orderStatusSchema = z.object({
@@ -534,6 +546,7 @@ export type AdminCursoDTO = {
   alumnos: number;
   completion: number;
   estado: "Publicado" | "Borrador";
+  expiresOn?: string;
   /** Optimistic-concurrency version for admin edits. */
   revision?: number;
 };

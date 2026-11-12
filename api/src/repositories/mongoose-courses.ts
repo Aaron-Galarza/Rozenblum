@@ -1,5 +1,6 @@
 import { CourseModel } from "../models/index.js";
 import { formatArs, nowIso, slugify } from "../lib/utils.js";
+import { todayInBuenosAires } from "../lib/course-expiry.js";
 import type { StoredCourse, StoredModule, PublicCourseRecord } from "../types.js";
 import type { CourseRepository } from "./interfaces.js";
 import { clean, courseRevisionFilter } from "./mongoose-common.js";
@@ -22,14 +23,16 @@ export function createMongooseCoursesRepositories() {
     },
     async listPublished() {
       const docs = await CourseModel.find({ status: "published" })
-        .select("legacyId slug title description price priceCents duration level img professor accessDays status temario modules.id")
+        .select("legacyId slug title description price priceCents duration level img professor accessDays expiresOn status temario modules.id")
         .sort({ legacyId: 1 })
         .lean()
         .exec();
       return docs.map((doc) => clean<PublicCourseRecord>(doc));
     },
     async findLatestPublished() {
-      const doc = await CourseModel.findOne({ status: "published" })
+      const doc = await CourseModel.findOne({ status: "published", $or: [
+        { expiresOn: { $exists: false } }, { expiresOn: { $gte: todayInBuenosAires() } },
+      ] })
         .sort({ createdAt: -1, legacyId: -1 })
         .lean()
         .exec();
@@ -83,6 +86,7 @@ export function createMongooseCoursesRepositories() {
             nextLessonNumber: 0,
             requestId: input.requestId,
             accessDays: input.accessDays,
+            expiresOn: input.expiresOn,
           });
           return clean<StoredCourse>(doc.toObject());
         } catch (error) {
