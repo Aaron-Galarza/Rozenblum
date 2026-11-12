@@ -2,10 +2,9 @@
 
 import { useRef, useState } from "react";
 import type { AdminCursoDTO, AdminProfesorDTO, CourseDTO } from "@rozenblum/shared";
-import { errorMessage } from "../../../lib/api";
+import { useAdminAction } from "../../../lib/use-admin-action";
 import Modal from "../../../components/ui/Modal";
 import Toast from "../../../components/ui/Toast";
-import { useToast } from "../../../lib/use-toast";
 import ImagePicker from "../../../components/ui/ImagePicker";
 
 type CursoFormInput = { title: string; professorEmail: string; description: string; priceCents: number; duration: string; level: string; img?: string };
@@ -31,23 +30,11 @@ type ModalState = { type: "ver" | "crear" | "editar"; item?: AdminCursoDTO } | n
 export default function CursosSection({ cursos, profesores, onCreate, onLoadCourse, onUpdate, onToggleStatus, onDelete }: CursosSectionProps) {
   const [modal, setModal] = useState<ModalState>(null);
   const [form, setForm] = useState({ name: "", professorEmail: "", description: "", price: "", duration: "", level: "", img: "" });
-  const { toast, showToast } = useToast();
-  const [busy, setBusy] = useState(false);
+  const { busy, toast, showToast, run } = useAdminAction();
   const [formError, setFormError] = useState("");
   /** Stable across retries of the same creation, so a lost response cannot duplicate the course. */
   const createKey = useRef("");
 
-
-  const run = async (action: () => Promise<void>) => {
-    setBusy(true);
-    try {
-      await action();
-    } catch (err) {
-      showToast(errorMessage(err), true);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const toggleEstado = (c: AdminCursoDTO) =>
     run(async () => {

@@ -2,10 +2,9 @@
 
 import { useState } from "react";
 import type { AdminAlumnoDTO } from "@rozenblum/shared";
-import { errorMessage } from "../../../lib/api";
+import { useAdminAction } from "../../../lib/use-admin-action";
 import Modal from "../../../components/ui/Modal";
 import Toast from "../../../components/ui/Toast";
-import { useToast } from "../../../lib/use-toast";
 import { IconSearch } from "../../../components/icons";
 
 const inputStyle: React.CSSProperties = { border: "1px solid rgba(23,59,108,0.2)", borderRadius: 4, color: "#173B6C", backgroundColor: "#FAF8F5" };
@@ -23,20 +22,7 @@ export default function AlumnosSection({ alumnos, onUpdate, onToggleStatus, onDe
   const [estadoFilter, setEstadoFilter] = useState("Todos");
   const [modal, setModal] = useState<ModalState>(null);
   const [form, setForm] = useState({ name: "", email: "" });
-  const { toast, showToast } = useToast();
-  const [busy, setBusy] = useState(false);
-
-
-  const run = async (action: () => Promise<void>) => {
-    setBusy(true);
-    try {
-      await action();
-    } catch (err) {
-      showToast(errorMessage(err), true);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { busy, toast, showToast, run } = useAdminAction();
 
   const filtered = alumnos.filter((a) => {
     const matchSearch = a.name.toLowerCase().includes(search.toLowerCase()) || a.email.toLowerCase().includes(search.toLowerCase());
