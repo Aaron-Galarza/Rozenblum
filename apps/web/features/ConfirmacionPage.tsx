@@ -29,7 +29,11 @@ export default function ConfirmacionPage({
       : apiFetch<OrderDTO>(`/api/orders/${encodeURIComponent(reference)}/reconcile`, {
         method: "POST", body: { paymentId },
       }))
-      .then((data) => { setOrder(data); setError(""); }).catch((err) => setError(errorMessage(err)));
+      .then((data) => {
+        setOrder((current) => current?.estado === "Pagado" &&
+          ["Pendiente", "Rechazado"].includes(data.estado) ? current : data);
+        setError("");
+      }).catch((err) => setError(errorMessage(err)));
     let settled = false;
     let reconciling = false;
     const reconcile = async () => {
@@ -40,7 +44,8 @@ export default function ConfirmacionPage({
           method: "POST", body: { ...(receiptEmail ? { email: receiptEmail } : {}),
             ...(paymentId ? { paymentId } : {}) },
         });
-        setOrder(data);
+        setOrder((current) => current?.estado === "Pagado" &&
+          ["Pendiente", "Rechazado"].includes(data.estado) ? current : data);
         setError("");
         settled = data.estado === "Pagado" || data.estado === "Reembolsado";
       } catch (err) {
