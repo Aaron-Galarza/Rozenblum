@@ -2,6 +2,7 @@
 
 import type { ChatMessage } from "../../types";
 import { useChatScroll } from "../../lib/use-chat-scroll";
+import ChatMessageBubble from "../../components/ui/ChatMessageBubble";
 
 type ChatSidebarProps = {
   messages: ChatMessage[];
@@ -13,14 +14,18 @@ type ChatSidebarProps = {
   error: string;
   onRetry: () => void;
   conversationKey: string | null;
+  connectionState: "connecting" | "live" | "offline";
 };
 
-export default function ChatSidebar({ messages, chatMsg, onChatMsgChange, onSend, loading, sending, error, onRetry, conversationKey }: ChatSidebarProps) {
+export default function ChatSidebar({ messages, chatMsg, onChatMsgChange, onSend, loading, sending, error, onRetry, conversationKey, connectionState }: ChatSidebarProps) {
   const chatScroll = useChatScroll<HTMLDivElement>(messages, conversationKey);
   return (
     <aside className="flex h-[min(34rem,65dvh)] min-h-64 w-full flex-shrink-0 flex-col lg:h-auto lg:min-h-0 lg:w-80" style={{ backgroundColor: "#FFFFFF", borderLeft: "2px solid #B58A43" }}>
       <div className="px-5 py-4 flex-shrink-0" style={{ borderBottom: "1px solid rgba(23,59,108,0.08)" }}>
         <h4 className="text-lg font-semibold" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Contactar al Profesor</h4>
+        <p role="status" className="mt-1 text-[11px]" style={{ color: connectionState === "live" ? "#27704A" : "#8A6529" }}>
+          {connectionState === "live" ? "En vivo" : connectionState === "connecting" ? "Conectando…" : "Reconectando el chat…"}
+        </p>
       </div>
 
       {/* Messages */}
@@ -28,19 +33,7 @@ export default function ChatSidebar({ messages, chatMsg, onChatMsgChange, onSend
         {loading ? <p role="status" className="text-sm">Cargando mensajes...</p> : error ? (
           <div role="alert" className="text-sm"><p>{error}</p><button type="button" onClick={onRetry} className="underline">Reintentar</button></div>
         ) : messages.length === 0 ? <p className="text-sm">Todavía no hay mensajes.</p> : null}
-        {messages.map((msg) => (
-          <div key={msg.id} className={`flex flex-col ${msg.from === "me" ? "items-end" : "items-start"}`}>
-            <div
-              className="max-w-[90%] break-words rounded-lg px-4 py-3 text-sm leading-relaxed"
-              style={msg.from === "me"
-                ? { backgroundColor: "#B58A43", color: "#FAF8F5" }
-                : { backgroundColor: "#F0F0F0", color: "#173B6C" }}
-            >
-              {msg.text}
-            </div>
-            <p className="text-[10px] mt-1 px-1" style={{ color: "rgba(23,59,108,0.45)" }}>{msg.time}</p>
-          </div>
-        ))}
+        {messages.map((msg) => <ChatMessageBubble key={msg.id} message={msg} />)}
       </div>
 
       {/* Input */}

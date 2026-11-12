@@ -35,7 +35,7 @@ export default function AlumnoView() {
   const chatPath = enrollment && enrollment.status !== "Pendiente" && enrollment.status !== "Revocado"
     ? `/api/student/enrollments/${encodeURIComponent(enrollment.id)}/messages`
     : null;
-  const { messages, loading: chatLoading, sending: chatSending, error: chatError,
+  const { messages, loading: chatLoading, sending: chatSending, error: chatError, connectionState: chatConnectionState,
     sendMessage: postChatMessage, retry: retryChat } = useLiveChat(chatPath);
 
   const modules: CourseModuleView[] = useMemo(
@@ -231,6 +231,7 @@ export default function AlumnoView() {
               loading={chatLoading}
               sending={chatSending}
               error={chatError}
+              connectionState={chatConnectionState}
               onRetry={retryChat}
               chatMsg={chatMsg}
               onChatMsgChange={setChatMsg}

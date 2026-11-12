@@ -7,7 +7,9 @@ import { apiFetch, CHAT_SOCKET_URL, errorMessage, getSession, SESSION_CHANGED } 
 function sameMessages(current: ChatMessageDTO[], next: ChatMessageDTO[]) {
   return current.length === next.length && current.every((message, index) =>
     message.id === next[index]?.id && message.text === next[index]?.text &&
-    message.from === next[index]?.from && message.time === next[index]?.time);
+    message.from === next[index]?.from && message.time === next[index]?.time &&
+    message.authorName === next[index]?.authorName &&
+    message.authorRole === next[index]?.authorRole);
 }
 
 /** Receive change signals over WebSocket; reads and writes keep using the HTTP API. */
@@ -16,6 +18,7 @@ export function useLiveChat(path: string | null) {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [connectionState, setConnectionState] = useState<"connecting" | "live" | "offline">("offline");
   const activePath = useRef<string | null>(null);
   const version = useRef(0);
   const sendingNow = useRef(false);
@@ -29,13 +32,14 @@ export function useLiveChat(path: string | null) {
     setLoading(Boolean(path));
     setSending(false);
     setError("");
+    setConnectionState(path ? "connecting" : "offline");
     if (!path) return;
 
     let active = true;
     let reading = false;
     let refreshPending = false;
     const refresh = async () => {
-      if (!active || document.hidden) return;
+      if (!active) return;
       if (reading || sendingNow.current) { refreshPending = true; return; }
       reading = true;
       const readVersion = version.current;
@@ -66,10 +70,11 @@ export function useLiveChat(path: string | null) {
     const connect = () => {
       if (!active) return;
       const token = getSession()?.token;
-      if (!token) return;
+      if (!token) { setConnectionState("offline"); return; }
       try {
         socket = new WebSocket(CHAT_SOCKET_URL);
       } catch {
+        setConnectionState("offline");
         scheduleReconnect();
         return;
       }
@@ -78,7 +83,7 @@ export function useLiveChat(path: string | null) {
       connectedSocket.onmessage = (event) => {
         try {
           const notice = JSON.parse(String(event.data)) as { type?: string };
-          if (notice.type === "ready") retryCount = 0;
+          if (notice.type === "ready") { retryCount = 0; setConnectionState("live"); }
           if (notice.type === "ready" || notice.type === "refresh") void refresh();
           if (notice.type === "course_removed") window.location.reload();
         } catch { /* Ignore malformed notifications. */ }
@@ -86,6 +91,7 @@ export function useLiveChat(path: string | null) {
       connectedSocket.onclose = () => {
         if (socket !== connectedSocket) return;
         socket = null;
+        setConnectionState("offline");
         scheduleReconnect();
       };
       connectedSocket.onerror = () => connectedSocket.close();
@@ -106,16 +112,19 @@ export function useLiveChat(path: string | null) {
     };
     connect();
     const onVisibility = () => { if (!document.hidden) void refresh(); };
+    const onFocus = () => { void refresh(); };
     document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onFocus);
     window.addEventListener(SESSION_CHANGED, onSessionChange);
     return () => {
       active = false;
       activePath.current = null;
       version.current += 1;
       refreshNow.current = () => {};
-      socket?.close();
+      if (socket) { socket.onclose = null; socket.close(); }
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onFocus);
       window.removeEventListener(SESSION_CHANGED, onSessionChange);
     };
   }, [path]);
@@ -150,5 +159,5 @@ export function useLiveChat(path: string | null) {
   }, [path]);
 
   const retry = useCallback(() => refreshNow.current(), []);
-  return { messages, loading, sending, error, sendMessage, retry };
+  return { messages, loading, sending, error, connectionState, sendMessage, retry };
 }

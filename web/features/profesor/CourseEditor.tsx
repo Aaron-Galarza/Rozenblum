@@ -9,6 +9,7 @@ import Modal from "../../components/ui/Modal";
 import Toast from "../../components/ui/Toast";
 import { useToast } from "../../lib/use-toast";
 import { useLiveChat } from "../../lib/use-live-chat";
+import ChatMessageBubble from "../../components/ui/ChatMessageBubble";
 import { useChatScroll } from "../../lib/use-chat-scroll";
 import { canRetryEditorOperation, editorErrorMessage, newIdempotencyKey } from "../../lib/editor-operations";
 
@@ -91,7 +92,8 @@ export default function CourseEditor({
     ? `/api/teacher/courses/${courseId}/students/${encodeURIComponent(studentModal.student.id)}/messages`
     : null;
   const { messages: chatMessages, loading: chatLoading, sending: chatSending,
-    error: chatError, sendMessage: postChatMessage, retry: retryChat } = useLiveChat(chatPath);
+    error: chatError, connectionState: chatConnectionState,
+    sendMessage: postChatMessage, retry: retryChat } = useLiveChat(chatPath);
   const chatScroll = useChatScroll<HTMLDivElement>(chatMessages, chatPath);
 
   const run = async (
@@ -476,6 +478,9 @@ export default function CourseEditor({
       {/* Student "Chat" modal */}
       {studentModal?.type === "chat" && (
         <Modal title={`Chat con ${studentModal.student.name}`} onClose={() => setStudentModal(null)} variant="chat">
+          <p role="status" className="mb-3 text-xs" style={{ color: chatConnectionState === "live" ? "#27704A" : "#8A6529" }}>
+            {chatConnectionState === "live" ? "En vivo" : chatConnectionState === "connecting" ? "Conectando…" : "Reconectando el chat…"}
+          </p>
           {chatLoading && <p role="status" className="mb-3 text-xs" style={{ color: "#173B6C" }}>Cargando mensajes...</p>}
           {chatError && (
             <div role="alert" className="mb-3 text-xs" style={{ color: "#72132C" }}>
@@ -486,13 +491,7 @@ export default function CourseEditor({
             {!chatLoading && !chatError && chatMessages.length === 0 && (
               <p className="text-xs" style={{ color: "rgba(23,59,108,0.55)" }}>No hay mensajes todavía.</p>
             )}
-            {chatMessages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.from === "prof" ? "justify-end" : "justify-start"}`}>
-                <div className="max-w-[85%] break-words rounded-lg px-3 py-2 text-sm leading-relaxed" style={msg.from === "prof" ? { backgroundColor: "#B58A43", color: "#FAF8F5" } : { backgroundColor: "#F0F0F0", color: "#173B6C" }}>
-                  {msg.text}
-                </div>
-              </div>
-            ))}
+            {chatMessages.map((msg) => <ChatMessageBubble key={msg.id} message={msg} />)}
           </div>
           <div className="flex shrink-0 gap-2 border-t border-[#e5ded2] pt-4">
             <input
