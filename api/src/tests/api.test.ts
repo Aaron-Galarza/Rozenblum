@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { createHmac, scryptSync } from "node:crypto";
+import { once } from "node:events";
 import { after, before, test } from "node:test";
+import WebSocket from "ws";
 import { BRAND_HERO_URL, loginSchema } from "@rozenblum/shared";
 import { hashPassword, verifyPassword } from "../lib/password.js";
+import { chatDayStartIso } from "../lib/chat-limit.js";
 import { createMockRepositories } from "../repositories/mock.js";
 import { setRepositoriesForTests } from "../repositories/index.js";
 import { parseYouTubeId } from "../services/youtube.js";
@@ -1081,6 +1084,54 @@ test("student and teacher can exchange messages on an active enrollment", async 
   assert.equal(reply.status, 201);
 });
 
+test("chat sockets notify both participants and reject unauthorized subscriptions", async () => {
+  const studentToken = await login("alumno", studentEmail);
+  const teacherToken = await login("profesor", teacherEmail);
+  const url = server.baseUrl.replace(/^http:/, "ws:") + "/api/chat/socket";
+  const options = { origin: "http://localhost:3000" };
+  const subscribe = async (token: string, path: string) => {
+    const socket = new WebSocket(url, options);
+    await once(socket, "open");
+    const ready = once(socket, "message");
+    socket.send(JSON.stringify({ type: "subscribe", token, path }));
+    assert.equal(JSON.parse(String((await ready)[0])).type, "ready");
+    return socket;
+  };
+  const studentPath = `/api/student/enrollments/${enrollmentId}/messages`;
+  const teacherPath = `/api/teacher/courses/${courseId}/students/${enrollmentId}/messages`;
+  const student = await subscribe(studentToken, studentPath);
+  const teacher = await subscribe(teacherToken, teacherPath);
+  try {
+    const studentNotice = once(student, "message");
+    const teacherNotice = once(teacher, "message");
+    const sent = await api(server.baseUrl, studentPath, {
+      method: "POST", token: studentToken, body: JSON.stringify({ text: "Live notification" }),
+    });
+    assert.equal(sent.status, 201);
+    assert.equal(JSON.parse(String((await studentNotice)[0])).type, "refresh");
+    assert.equal(JSON.parse(String((await teacherNotice)[0])).type, "refresh");
+
+    const forbiddenSocket = new WebSocket(url, options);
+    await once(forbiddenSocket, "open");
+    const closed = once(forbiddenSocket, "close");
+    forbiddenSocket.send(JSON.stringify({ type: "subscribe", token: studentToken, path: teacherPath }));
+    assert.equal((await closed)[0], 1008);
+    const invalidSocket = new WebSocket(url, options);
+    await once(invalidSocket, "open");
+    const invalidClosed = once(invalidSocket, "close");
+    invalidSocket.send(JSON.stringify({ type: "subscribe", token: "invalid", path: studentPath }));
+    assert.equal((await invalidClosed)[0], 1008);
+  } finally {
+    student.close();
+    teacher.close();
+  }
+});
+
+test("chat daily boundary follows midnight in Buenos Aires", () => {
+  assert.equal(chatDayStartIso("2026-11-12T02:59:59.000Z"), "2026-11-11T03:00:00.000Z");
+  assert.equal(chatDayStartIso("2026-11-12T03:00:00.000Z"), "2026-11-12T03:00:00.000Z");
+});
+
 test("sending a message returns only the latest page while older history remains available", async () => {
   const studentToken = await login("alumno", studentEmail);
   const course = await repositories.courses.create({
@@ -1098,7 +1149,8 @@ test("sending a message returns only the latest page while older history remains
   for (let index = 0; index < 500; index += 1) {
     await repositories.conversations.addMessage(conversation.id, {
       id: `msg_long_${index}`, authorEmail: studentEmail, authorRole: "alumno",
-      text: `Old message ${index}`, time: "Tú · 12:00", createdAt: new Date().toISOString(),
+      text: `Old message ${index}`, time: "Tú · 12:00",
+      createdAt: new Date(Date.UTC(2020, 0, 1 + Math.floor(index / 99), 12)).toISOString(),
     });
   }
   const path = `/api/student/enrollments/${enrollment.id}/messages`;
@@ -1114,6 +1166,57 @@ test("sending a message returns only the latest page while older history remains
   assert.equal(older.status, 200);
   assert.equal(older.headers.get("x-total-count"), "501");
   assert.equal(older.body.data[0]?.text, "Old message 0");
+});
+
+test("student and teacher share an atomic daily limit of 100 messages", async () => {
+  const course = await repositories.courses.create({
+    title: "Daily Chat Course", description: "Daily chat limit test.",
+    priceCents: 100_000, duration: "Online", level: "Inicial", status: "draft",
+    professor: "Test profesor", professorEmail: teacherEmail, img: "",
+  });
+  const enrollment = await repositories.enrollments.create({
+    studentEmail, studentName: "Test alumno", courseId: course.legacyId, status: "Activo",
+  });
+  const conversation = await repositories.conversations.create({
+    id: "cnv_daily_limit", courseId: course.legacyId, studentEmail,
+    studentName: "Test alumno", teacherEmail, teacherName: "Test profesor", messages: [],
+  });
+  for (let index = 0; index < 99; index += 1) {
+    assert.equal(await repositories.conversations.addMessage(conversation.id, {
+      id: `msg_daily_${index}`, authorEmail: studentEmail, authorRole: "alumno",
+      text: `Message ${index}`, time: "Tú · 12:00", createdAt: new Date().toISOString(),
+    }), "added");
+  }
+  const studentToken = await login("alumno", studentEmail);
+  const teacherToken = await login("profesor", teacherEmail);
+  const replies = await Promise.all([
+    api(server.baseUrl, `/api/student/enrollments/${enrollment.id}/messages`, {
+      method: "POST", token: studentToken, body: JSON.stringify({ text: "Student message" }),
+    }),
+    api(server.baseUrl, `/api/teacher/courses/${course.legacyId}/students/${enrollment.id}/messages`, {
+      method: "POST", token: teacherToken, body: JSON.stringify({ text: "Teacher message" }),
+    }),
+  ]);
+  assert.deepEqual(replies.map((reply) => reply.status).sort(), [201, 429]);
+  assert.equal((await repositories.conversations.findById(conversation.id))?.messages.length, 100);
+});
+
+test("deleting a draft course removes its orphaned chat in the same operation", async () => {
+  const course = await repositories.courses.create({
+    title: "Discarded Draft", description: "A draft with an orphaned chat.",
+    priceCents: 100_000, duration: "Online", level: "Inicial", status: "draft",
+    professor: "Test profesor", professorEmail: teacherEmail, img: "",
+  });
+  const conversation = await repositories.conversations.create({
+    id: "cnv_discarded_draft", courseId: course.legacyId, studentEmail,
+    studentName: "Test alumno", teacherEmail, teacherName: "Test profesor", messages: [],
+  });
+  const adminToken = await login("admin", adminEmail);
+  assert.equal((await api(server.baseUrl, `/api/admin/courses/${course.legacyId}`, {
+    method: "DELETE", token: adminToken,
+  })).status, 204);
+  assert.equal(await repositories.courses.findById(course.legacyId), null);
+  assert.equal(await repositories.conversations.findById(conversation.id), null);
 });
 
 test("teacher chat stays in the selected course and can start before the student writes", async () => {

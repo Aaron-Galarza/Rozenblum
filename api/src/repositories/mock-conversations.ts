@@ -1,4 +1,5 @@
 import type { StoredMessage } from "../types.js";
+import { CHAT_DAILY_LIMIT, chatDayEndIso, chatDayStartIso } from "../lib/chat-limit.js";
 import type { ConversationRepository } from "./interfaces.js";
 import { clone, type Memory } from "./mock-memory.js";
 
@@ -29,9 +30,15 @@ export function createMockConversationsRepositories(db: Memory) {
     },
     async addMessage(id, message: StoredMessage) {
       const conversation = db.conversations.find((c) => c.id === id);
-      if (!conversation) return false;
+      if (!conversation) return "missing";
+      const dayStart = chatDayStartIso(message.createdAt);
+      const dayEnd = chatDayEndIso(message.createdAt);
+      if (conversation.messages.filter((item) =>
+        item.createdAt >= dayStart && item.createdAt < dayEnd).length >= CHAT_DAILY_LIMIT) {
+        return "limit";
+      }
       conversation.messages.push(clone(message));
-      return true;
+      return "added";
     },
     async listMessages(id, page) {
       const conversation = db.conversations.find((c) => c.id === id);
@@ -54,6 +61,11 @@ export function createMockConversationsRepositories(db: Memory) {
         changed += 1;
       }
       return changed;
+    },
+    async deleteByCourse(courseId) {
+      const previous = db.conversations.length;
+      db.conversations = db.conversations.filter((conversation) => conversation.courseId !== courseId);
+      return previous - db.conversations.length;
     },
   };
   return { conversations };

@@ -1,6 +1,7 @@
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { createApp } from "../app.js";
+import { attachChatWebSocket } from "../lib/chat-websocket.js";
 
 export type TestServer = {
   baseUrl: string;
@@ -10,6 +11,7 @@ export type TestServer = {
 export async function startTestServer(): Promise<TestServer> {
   const app = createApp();
   const server = app.listen(0);
+  const closeChat = attachChatWebSocket(server);
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
 
@@ -17,6 +19,7 @@ export async function startTestServer(): Promise<TestServer> {
     baseUrl: `http://127.0.0.1:${port}`,
     close: () =>
       new Promise<void>((resolve) => {
+        closeChat();
         server.close(() => resolve());
       }),
   };

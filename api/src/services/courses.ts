@@ -230,18 +230,21 @@ export async function deleteCourse(
       await repos.orders.existsByCourse(courseId)) {
     throw badRequest("El curso tiene inscripciones u órdenes y no se puede eliminar.");
   }
-  if (!await repos.courses.delete(courseId, options.expectedRevision ?? courseRevision(course))) {
-    const current = await repos.courses.findById(courseId);
-    if (current) throw revisionConflict(current);
-    throw notFound("Curso no encontrado.");
-  }
-  await recordAdminEvent({
-    actor: user,
-    action: "delete",
-    entity: "course",
-    entityId: String(courseId),
-    reason: "Eliminación administrativa del curso.",
-    previousState: safeCourseState(course),
+  await repos.withTransaction(async () => {
+    if (!await repos.courses.delete(courseId, options.expectedRevision ?? courseRevision(course))) {
+      const current = await repos.courses.findById(courseId);
+      if (current) throw revisionConflict(current);
+      throw notFound("Curso no encontrado.");
+    }
+    await repos.conversations.deleteByCourse(courseId);
+    await recordAdminEvent({
+      actor: user,
+      action: "delete",
+      entity: "course",
+      entityId: String(courseId),
+      reason: "Eliminación administrativa del curso.",
+      previousState: safeCourseState(course),
+    });
   });
 }
 

@@ -1,5 +1,6 @@
 import type { ChatMessageDTO, ConversationDTO } from "@rozenblum/shared";
-import { forbidden, notFound } from "../lib/http.js";
+import { ApiError, forbidden, notFound } from "../lib/http.js";
+import { publishChatChanged } from "../lib/chat-events.js";
 import type { Pagination } from "../lib/pagination.js";
 import { formatTime, newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
@@ -77,9 +78,11 @@ async function appendMessage(
     id: newId("msg"), authorEmail: user.email.toLowerCase(), authorRole: user.role,
     text, time: `Tú · ${formatTime()}`, createdAt: nowIso(),
   };
-  if (!await getRepositories().conversations.addMessage(conversation.id, message)) {
-    throw notFound("Conversación no encontrada.");
-  }
+  const result = await getRepositories().conversations.addMessage(conversation.id, message);
+  if (result === "missing") throw notFound("Conversación no encontrada.");
+  if (result === "limit") throw new ApiError(429, "CHAT_DAILY_LIMIT",
+    "Este chat alcanzó el límite de 100 mensajes de hoy. Podés volver a escribir mañana.");
+  publishChatChanged(conversation.courseId, conversation.studentEmail);
   return (await messagePage(conversation, user.email, LATEST_MESSAGE_PAGE)).messages;
 }
 

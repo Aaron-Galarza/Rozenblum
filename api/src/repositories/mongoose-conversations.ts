@@ -1,4 +1,5 @@
 import { ConversationModel } from "../models/index.js";
+import { CHAT_DAILY_LIMIT, chatDayEndIso, chatDayStartIso } from "../lib/chat-limit.js";
 import type { StoredConversation, StoredMessage } from "../types.js";
 import type { ConversationRepository } from "./interfaces.js";
 import { clean } from "./mongoose-common.js";
@@ -29,11 +30,23 @@ export function createMongooseConversationsRepositories() {
       return clean<StoredConversation>(doc.toObject());
     },
     async addMessage(id, message: StoredMessage) {
+      const dayStart = chatDayStartIso(message.createdAt);
+      const dayEnd = chatDayEndIso(message.createdAt);
       const result = await ConversationModel.updateOne(
-        { id },
+        { id, $expr: { $lt: [
+          { $size: { $filter: {
+            input: "$messages", as: "message",
+            cond: { $and: [
+              { $gte: ["$$message.createdAt", dayStart] },
+              { $lt: ["$$message.createdAt", dayEnd] },
+            ] },
+          } } },
+          CHAT_DAILY_LIMIT,
+        ] } },
         { $push: { messages: message } },
       ).exec();
-      return result.matchedCount === 1;
+      if (result.matchedCount === 1) return "added";
+      return await ConversationModel.exists({ id }) ? "limit" : "missing";
     },
     async listMessages(id, page) {
       const limit = page?.limit ?? 500;
@@ -66,6 +79,10 @@ export function createMongooseConversationsRepositories() {
         { $set: { teacherEmail: teacherEmail.toLowerCase(), teacherName } },
       ).exec();
       return result.modifiedCount ?? 0;
+    },
+    async deleteByCourse(courseId) {
+      const result = await ConversationModel.deleteMany({ courseId }).exec();
+      return result.deletedCount ?? 0;
     },
   };
   return { conversations };

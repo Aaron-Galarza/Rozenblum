@@ -216,10 +216,16 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     assert.equal((await api(server.baseUrl, `${draftPath}/modules/${draftModuleId}`, {
       method: "DELETE", token: teacherLogin.body.data.token,
     })).status, 200);
+    await ConversationModel.create({
+      id: "cnv_discarded_atlas", courseId: draft.body.data.id,
+      studentEmail: "orphan@example.test", studentName: "Orphan",
+      teacherEmail: professor.email, teacherName: professor.name, messages: [],
+    });
     assert.equal((await api(server.baseUrl, `/api/admin/courses/${draft.body.data.id}`, {
       method: "DELETE", token: adminLogin.body.data.token,
     })).status, 204);
     assert.equal(await repositories.courses.findById(draft.body.data.id), null);
+    assert.equal(await ConversationModel.countDocuments({ courseId: draft.body.data.id }), 0);
     await CourseModel.init();
     await assert.rejects(
       CourseModel.create({ ...(await repositories.courses.findById(courseId)), legacyId: courseId + 100 }),
@@ -377,6 +383,26 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     );
     assert.equal(teacherView.status, 200);
     assert.equal(teacherView.body.data.find((message) => message.text === "Respuesta simultánea")?.from, "me");
+    // The database filter must arbitrate concurrent writers at the daily boundary.
+    await ConversationModel.updateOne({ studentEmail: "buyer@example.test", courseId }, {
+      $push: { messages: { $each: Array.from({ length: 97 }, (_, index) => ({
+        id: `msg_daily_atlas_${index}`, authorEmail: "buyer@example.test",
+        authorRole: "alumno", text: `Previous message ${index}`,
+        time: "Tú · 12:00", createdAt: new Date().toISOString(),
+      })) } },
+    });
+    const boundary = await Promise.all([
+      api(server.baseUrl, studentChatPath, {
+        method: "POST", token: buyerLogin.body.data.token,
+        body: JSON.stringify({ text: "Daily boundary student" }),
+      }),
+      api(server.baseUrl, teacherChatPath, {
+        method: "POST", token: teacherLogin.body.data.token,
+        body: JSON.stringify({ text: "Daily boundary teacher" }),
+      }),
+    ]);
+    assert.deepEqual(boundary.map((result) => result.status).sort(), [201, 429]);
+    assert.equal((await ConversationModel.findOne({ studentEmail: "buyer@example.test", courseId }).lean())?.messages.length, 100);
     const foreignProfessor = await repositories.users.create({
       name: "Foreign Professor", email: "foreign-professor@example.test", role: "profesor",
       initials: "FP", passwordHash: await hashPassword(adminPassword),

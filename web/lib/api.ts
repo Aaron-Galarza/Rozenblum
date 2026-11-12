@@ -1,6 +1,8 @@
 import type { SessionDTO, UserDTO } from "@rozenblum/shared";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+export const CHAT_SOCKET_URL = new URL("/api/chat/socket", API_URL).toString()
+  .replace(/^http:/, "ws:").replace(/^https:/, "wss:");
 const SESSION_KEY = "rozenblum.session";
 export const SESSION_CHANGED = "rozenblum:session-changed";
 let sessionRevision = 0;

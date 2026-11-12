@@ -2,6 +2,7 @@ import { createApp } from "./app.js";
 import { connectDatabase, disconnectDatabase } from "./config/database.js";
 import { env } from "./config/env.js";
 import { logger } from "./lib/logger.js";
+import { attachChatWebSocket } from "./lib/chat-websocket.js";
 import { markShuttingDown } from "./lib/lifecycle.js";
 
 async function main() {
@@ -15,6 +16,7 @@ async function main() {
       corsOrigins: env.corsOrigins,
     });
   });
+  const closeChat = attachChatWebSocket(server);
 
   let closing = false;
 
@@ -22,6 +24,7 @@ async function main() {
     if (closing) return;
     closing = true;
     markShuttingDown();
+    closeChat();
     logger.info("shutdown_started", { signal });
 
     // Never hang forever on lingering keep-alive connections.

@@ -2,9 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessageDTO } from "@rozenblum/shared";
-import { apiFetch, errorMessage } from "./api";
-
-const REFRESH_MS = 3_000;
+import { apiFetch, CHAT_SOCKET_URL, errorMessage, getSession, SESSION_CHANGED } from "./api";
 
 function sameMessages(current: ChatMessageDTO[], next: ChatMessageDTO[]) {
   return current.length === next.length && current.every((message, index) =>
@@ -12,7 +10,7 @@ function sameMessages(current: ChatMessageDTO[], next: ChatMessageDTO[]) {
     message.from === next[index]?.from && message.time === next[index]?.time);
 }
 
-/** Poll only the visible conversation, and ignore reads started before a send. */
+/** Receive change signals over WebSocket; reads and writes keep using the HTTP API. */
 export function useLiveChat(path: string | null) {
   const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,8 +33,10 @@ export function useLiveChat(path: string | null) {
 
     let active = true;
     let reading = false;
+    let refreshPending = false;
     const refresh = async () => {
-      if (!active || reading || sendingNow.current || document.hidden) return;
+      if (!active || document.hidden) return;
+      if (reading || sendingNow.current) { refreshPending = true; return; }
       reading = true;
       const readVersion = version.current;
       try {
@@ -52,20 +52,70 @@ export function useLiveChat(path: string | null) {
       } finally {
         reading = false;
         if (active && activePath.current === path) setLoading(false);
+        if (refreshPending && !sendingNow.current) {
+          refreshPending = false;
+          void refresh();
+        }
       }
     };
     refreshNow.current = () => { void refresh(); };
     void refresh();
-    const interval = window.setInterval(() => { void refresh(); }, REFRESH_MS);
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    let retryCount = 0;
+    const connect = () => {
+      if (!active) return;
+      const token = getSession()?.token;
+      if (!token) return;
+      try {
+        socket = new WebSocket(CHAT_SOCKET_URL);
+      } catch {
+        scheduleReconnect();
+        return;
+      }
+      const connectedSocket = socket;
+      connectedSocket.onopen = () => connectedSocket.send(JSON.stringify({ type: "subscribe", token, path }));
+      connectedSocket.onmessage = (event) => {
+        try {
+          const notice = JSON.parse(String(event.data)) as { type?: string };
+          if (notice.type === "ready") retryCount = 0;
+          if (notice.type === "ready" || notice.type === "refresh") void refresh();
+        } catch { /* Ignore malformed notifications. */ }
+      };
+      connectedSocket.onclose = () => {
+        if (socket !== connectedSocket) return;
+        socket = null;
+        scheduleReconnect();
+      };
+      connectedSocket.onerror = () => connectedSocket.close();
+    };
+    const scheduleReconnect = () => {
+      if (!active || reconnectTimer !== null) return;
+      const delay = Math.min(1_000 * 2 ** Math.min(retryCount++, 5), 30_000);
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, delay);
+    };
+    const onSessionChange = () => {
+      if (socket) { socket.onclose = null; socket.close(); socket = null; }
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      connect();
+    };
+    connect();
     const onVisibility = () => { if (!document.hidden) void refresh(); };
     document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener(SESSION_CHANGED, onSessionChange);
     return () => {
       active = false;
       activePath.current = null;
       version.current += 1;
       refreshNow.current = () => {};
-      window.clearInterval(interval);
+      socket?.close();
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener(SESSION_CHANGED, onSessionChange);
     };
   }, [path]);
 
@@ -93,6 +143,7 @@ export function useLiveChat(path: string | null) {
       if (activePath.current === path && version.current === sendVersion) {
         sendingNow.current = false;
         setSending(false);
+        refreshNow.current();
       }
     }
   }, [path]);

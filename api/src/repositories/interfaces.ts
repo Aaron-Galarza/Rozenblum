@@ -175,7 +175,7 @@ export interface ConversationRepository {
   ): Promise<StoredConversation | null>;
   create(input: StoredConversation): Promise<StoredConversation>;
   /** Appends atomically without loading the entire embedded history. */
-  addMessage(id: string, message: StoredMessage): Promise<boolean>;
+  addMessage(id: string, message: StoredMessage): Promise<"added" | "limit" | "missing">;
   /** Reads one page of the embedded history, newest pages first. */
   listMessages(
     id: string,
@@ -183,6 +183,8 @@ export interface ConversationRepository {
   ): Promise<{ messages: StoredMessage[]; total: number } | null>;
   /** Moves every thread of a course to its new professor. */
   reassignTeacher(courseId: number, teacherEmail: string, teacherName: string): Promise<number>;
+  /** Removes threads when their course is deleted. */
+  deleteByCourse(courseId: number): Promise<number>;
 }
 
 export interface ContactRepository {
