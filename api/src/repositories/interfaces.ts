@@ -177,7 +177,8 @@ export interface ConversationRepository {
     courseId: number,
   ): Promise<StoredConversation | null>;
   create(input: StoredConversation): Promise<StoredConversation>;
-  addMessage(id: string, message: StoredMessage): Promise<StoredConversation | null>;
+  /** Appends atomically without loading the entire embedded history. */
+  addMessage(id: string, message: StoredMessage): Promise<boolean>;
   /** Reads one page of the embedded history, newest pages first. */
   listMessages(
     id: string,

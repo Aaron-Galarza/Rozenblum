@@ -16,6 +16,7 @@ import { conversationToMessages, courseIndex, hasEnrollmentAccess } from "./mapp
 
 /** One page of history plus its real length, so routes can expose both. */
 export type MessagePage = { messages: ChatMessageDTO[]; total: number };
+const LATEST_MESSAGE_PAGE: Pagination = { limit: 500, offset: 0 };
 
 async function ensureConversation(
   enrollment: StoredEnrollment,
@@ -108,8 +109,10 @@ export async function sendStudentMessage(
     time: `Tú · ${formatTime()}`,
     createdAt: nowIso(),
   };
-  const updated = await repos.conversations.addMessage(conversation.id, message);
-  return conversationToMessages(updated ?? conversation, user.email);
+  if (!await repos.conversations.addMessage(conversation.id, message)) {
+    throw notFound("Conversación no encontrada.");
+  }
+  return (await messagePage(conversation, user.email, LATEST_MESSAGE_PAGE)).messages;
 }
 
 export async function listTeacherConversations(user: StoredUser): Promise<ConversationDTO[]> {
@@ -207,8 +210,10 @@ export async function sendTeacherMessage(
     time: `Tú · ${formatTime()}`,
     createdAt: nowIso(),
   };
-  const updated = await repos.conversations.addMessage(conversation.id, message);
-  return conversationToMessages(updated ?? conversation, user.email);
+  if (!await repos.conversations.addMessage(conversation.id, message)) {
+    throw notFound("Conversación no encontrada.");
+  }
+  return (await messagePage(conversation, user.email, LATEST_MESSAGE_PAGE)).messages;
 }
 
 export async function getConversationForTeacher(

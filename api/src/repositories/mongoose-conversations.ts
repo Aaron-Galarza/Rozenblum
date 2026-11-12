@@ -29,14 +29,11 @@ export function createMongooseConversationsRepositories() {
       return clean<StoredConversation>(doc.toObject());
     },
     async addMessage(id, message: StoredMessage) {
-      const doc = await ConversationModel.findOneAndUpdate(
+      const result = await ConversationModel.updateOne(
         { id },
         { $push: { messages: message } },
-        { returnDocument: "after" },
-      )
-        .lean()
-        .exec();
-      return doc ? clean<StoredConversation>(doc) : null;
+      ).exec();
+      return result.matchedCount === 1;
     },
     async listMessages(id, page) {
       const limit = page?.limit ?? 500;

@@ -29,9 +29,9 @@ export function createMockConversationsRepositories(db: Memory) {
     },
     async addMessage(id, message: StoredMessage) {
       const conversation = db.conversations.find((c) => c.id === id);
-      if (!conversation) return null;
+      if (!conversation) return false;
       conversation.messages.push(clone(message));
-      return clone(conversation);
+      return true;
     },
     async listMessages(id, page) {
       const conversation = db.conversations.find((c) => c.id === id);

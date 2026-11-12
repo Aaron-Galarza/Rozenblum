@@ -1081,6 +1081,41 @@ test("student and teacher can exchange messages on an active enrollment", async 
   assert.equal(reply.status, 201);
 });
 
+test("sending a message returns only the latest page while older history remains available", async () => {
+  const studentToken = await login("alumno", studentEmail);
+  const course = await repositories.courses.create({
+    title: "Long Chat Course", description: "A course with a paginated conversation.",
+    priceCents: 100_000, duration: "Online", level: "Inicial", status: "draft",
+    professor: "Test profesor", professorEmail: teacherEmail, img: "",
+  });
+  const enrollment = await repositories.enrollments.create({
+    studentEmail, studentName: "Test alumno", courseId: course.legacyId, status: "Activo",
+  });
+  const conversation = await repositories.conversations.create({
+    id: "cnv_long_history", courseId: course.legacyId, studentEmail,
+    studentName: "Test alumno", teacherEmail, teacherName: "Test profesor", messages: [],
+  });
+  for (let index = 0; index < 500; index += 1) {
+    await repositories.conversations.addMessage(conversation.id, {
+      id: `msg_long_${index}`, authorEmail: studentEmail, authorRole: "alumno",
+      text: `Old message ${index}`, time: "Tú · 12:00", createdAt: new Date().toISOString(),
+    });
+  }
+  const path = `/api/student/enrollments/${enrollment.id}/messages`;
+  const sent = await api<{ data: { text: string }[] }>(server.baseUrl, path, {
+    method: "POST", token: studentToken, body: JSON.stringify({ text: "Newest message" }),
+  });
+  assert.equal(sent.status, 201);
+  assert.equal(sent.body.data.length, 500);
+  assert.equal(sent.body.data.at(-1)?.text, "Newest message");
+  assert.equal(sent.body.data.some((item) => item.text === "Old message 0"), false);
+  const older = await api<{ data: { text: string }[] }>(server.baseUrl,
+    `${path}?limit=1&offset=500`, { token: studentToken });
+  assert.equal(older.status, 200);
+  assert.equal(older.headers.get("x-total-count"), "501");
+  assert.equal(older.body.data[0]?.text, "Old message 0");
+});
+
 test("teacher chat stays in the selected course and can start before the student writes", async () => {
   const studentToken = await login("alumno", studentEmail);
   const teacherToken = await login("profesor", teacherEmail);
