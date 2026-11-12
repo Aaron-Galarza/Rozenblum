@@ -23,6 +23,8 @@ export default function CourseDetail({ course, professor, onBack, onBuy }: Cours
     if (!professor?.img) apiFetch<HomeContentDTO>("/api/content/home").then(setHomeContent).catch(() => setHomeContent(null));
   }, [professor?.img]);
   const teacherPhoto = professor?.img ?? homeContent?.team.find((member) => member.name === course.professor)?.img;
+  const registrationClosed = Boolean(course.enrollmentClosesAt &&
+    Date.parse(course.enrollmentClosesAt) <= Date.now());
 
   const toggleMod = (id: number) =>
     setExpandedMods((prev) => prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]);
@@ -150,11 +152,16 @@ export default function CourseDetail({ course, professor, onBack, onBuy }: Cours
 
             <button
               onClick={onBuy}
-              className="w-full py-4 text-sm font-bold tracking-widest mb-4 transition-all duration-200 hover:brightness-110 active:scale-95 rounded"
+              disabled={registrationClosed}
+              className="w-full py-4 text-sm font-bold tracking-widest mb-4 transition-all duration-200 hover:brightness-110 active:scale-95 rounded disabled:cursor-not-allowed disabled:opacity-55"
               style={{ backgroundColor: "#B58A43", color: "#FAF8F5", letterSpacing: "0.12em" }}
             >
-              INSCRIBIRSE AL CURSO
+              {registrationClosed ? "INSCRIPCIONES CERRADAS" : "INSCRIBIRSE AL CURSO"}
             </button>
+
+            {registrationClosed && <p className="mb-4 text-center text-xs" style={{ color: "#72132C" }}>
+              Las inscripciones cierran siete días antes de que finalice el curso.
+            </p>}
 
             <p className="text-center text-xs" style={{ color: "rgba(23,59,108,0.55)" }}>
               ¿Ya tienes cuenta en nuestra aula?{" "}

@@ -24,6 +24,7 @@ export function courseFromDTO(course: CourseDTO): Course {
     img: course.img,
     professor: course.professor,
     temario: course.temario,
+    enrollmentClosesAt: course.enrollmentClosesAt,
   };
 }
 

@@ -62,7 +62,13 @@ export default function ConfirmacionPage({
   }, [reference, email, paymentId]);
 
   const isMercadoPago = order?.paymentProvider === "mercadopago";
-  const isPaid = order?.estado === "Pagado";
+  const courseClosed = order?.fulfillmentIssue === "course_closed";
+  const needsReview = order?.estado === "Pagado" && courseClosed;
+  const refunded = order?.estado === "Reembolsado";
+  const closedWithoutPayment = courseClosed && !needsReview && !refunded;
+  const registrationClosed = Boolean(order?.paymentExpiresAt &&
+    Date.parse(order.paymentExpiresAt) <= Date.now());
+  const isPaid = order?.estado === "Pagado" && !needsReview;
   const paymentUrl = safeHttpUrl(order?.paymentUrl);
 
   return (
@@ -93,11 +99,11 @@ export default function ConfirmacionPage({
             className="text-5xl font-light mb-4"
             style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}
           >
-            {isPaid ? "¡Pago confirmado!" : order?.estado === "Rechazado" ? "Pago rechazado" : order ? "Pago en verificación" : "Estado de la inscripción"}
+            {needsReview ? "Pago recibido fuera de plazo" : refunded ? "Pago devuelto" : closedWithoutPayment ? "Curso finalizado" : registrationClosed && !isPaid ? "Inscripciones cerradas" : isPaid ? "¡Pago confirmado!" : order?.estado === "Rechazado" ? "Pago rechazado" : order ? "Pago en verificación" : "Estado de la inscripción"}
           </h1>
 
           <p className="text-base leading-relaxed mb-8" style={{ color: "rgba(23,59,108,0.65)" }}>
-            {isPaid ? "Tu acceso al aula ya está habilitado." : order ? "Tu solicitud fue recibida correctamente." : error ? "No pudimos verificar el estado de tu orden." : "Estamos consultando tu orden."}
+            {needsReview ? "El curso ya cerró y no se habilitó el aula. Conservá tu número de orden y contactá al Estudio para resolver el cobro." : refunded ? "Mercado Pago registró la devolución. El acceso al aula no está habilitado." : closedWithoutPayment ? "El curso finalizó y este enlace de pago ya no está disponible." : registrationClosed && !isPaid ? "El plazo para completar esta inscripción terminó." : isPaid ? "Tu acceso al aula ya está habilitado." : order ? "Tu solicitud fue recibida correctamente." : error ? "No pudimos verificar el estado de tu orden." : "Estamos consultando tu orden."}
           </p>
 
           {/* Status box */}
@@ -108,9 +114,9 @@ export default function ConfirmacionPage({
             <div className="flex items-start gap-3 mb-4">
               <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1" style={{ backgroundColor: "#f59e0b" }} />
               <div>
-                <p className="text-sm font-bold mb-1" style={{ color: "#173B6C" }}>{isPaid ? "Acceso habilitado" : "Estado de la inscripción"}</p>
+                <p className="text-sm font-bold mb-1" style={{ color: "#173B6C" }}>{needsReview ? "Cobro para revisar" : refunded ? "Devolución registrada" : closedWithoutPayment || registrationClosed && !isPaid ? "Inscripción cerrada" : isPaid ? "Acceso habilitado" : "Estado de la inscripción"}</p>
                 <p className="text-sm leading-relaxed" style={{ color: "rgba(23,59,108,0.75)" }}>
-                  {order ? <>Tu orden está <strong>{order.estado}</strong>. {isMercadoPago ? "Mercado Pago informa el resultado automáticamente; esta página se actualiza sola." : "Esta orden antigua requiere atención del Estudio."}</> : error ? "No se pudo consultar la orden." : "Estamos consultando el estado de tu orden."}
+                  {order ? <>Tu orden está <strong>{order.estado}</strong>. {needsReview ? "El curso cerró antes de que se acreditara; el acceso no fue activado." : refunded ? "La devolución quedó registrada." : closedWithoutPayment ? "No se confirmó un pago antes de finalizar el curso." : registrationClosed && !isPaid ? "El enlace de pago ya venció." : isMercadoPago ? "Mercado Pago informa el resultado automáticamente; esta página se actualiza sola." : "Esta orden antigua requiere atención del Estudio."}</> : error ? "No se pudo consultar la orden." : "Estamos consultando el estado de tu orden."}
                 </p>
               </div>
             </div>
@@ -141,7 +147,7 @@ export default function ConfirmacionPage({
             {order && error && <p role="alert" className="text-xs mt-3" style={{ color: "#72132C" }}>No se pudo actualizar el estado: {error}</p>}
 
             <div className="h-px my-4" style={{ backgroundColor: "rgba(23,59,108,0.08)" }} />
-            <div className="space-y-2">
+            {!courseClosed && <div className="space-y-2">
               {[
                 "Conservá el número de orden para identificar tu solicitud",
                 "Ingresá con tu correo y DNI cuando el pago esté confirmado",
@@ -151,7 +157,7 @@ export default function ConfirmacionPage({
                   {step}
                 </div>
               ))}
-            </div>
+            </div>}
           </div>
 
           {/* Next steps */}
@@ -160,7 +166,8 @@ export default function ConfirmacionPage({
               CONTINUAR PAGO EN MERCADO PAGO
             </a>
           )}
-          {isMercadoPago && !isPaid && order && !paymentUrl && (
+          {isMercadoPago && !courseClosed && !registrationClosed && order &&
+            (order.estado === "Pendiente" || order.estado === "Rechazado") && !paymentUrl && (
             <p role="alert" className="mb-5 text-sm" style={{ color: "#72132C" }}>No pudimos recuperar el enlace de pago. Consultá tu número de orden con el Estudio.</p>
           )}
 

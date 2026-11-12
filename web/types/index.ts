@@ -17,6 +17,7 @@ export type Course = {
   img: string;
   professor: string;
   temario: CourseModule[];
+  enrollmentClosesAt?: string;
 };
 
 export type DetailTab = "descripcion" | "temario" | "docente";

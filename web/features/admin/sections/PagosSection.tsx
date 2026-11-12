@@ -147,6 +147,10 @@ export default function PagosSection({ orders, onStatusChange }: PagosSectionPro
                         style={{ backgroundColor: "#FFFFFF", color: "#173B6C" }}>{status}</option>
                     ))}
                   </select>
+                  {o.fulfillmentIssue === "course_closed" && o.estado === "Pagado" &&
+                    <span className="mt-1 block text-[10px] font-semibold" style={{ color: "#72132C" }}>
+                      Curso cerrado · sin acceso · revisar cobro
+                    </span>}
                 </td>
               </tr>
             ))}
