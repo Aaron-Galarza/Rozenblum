@@ -1087,6 +1087,23 @@ test("student and teacher can exchange messages on an active enrollment", async 
     method: "POST", token: teacherToken, body: JSON.stringify({ text: "Test answer" }),
   });
   assert.equal(reply.status, 201);
+  type Message = { text: string; from: string; authorRole: string; authorName: string; createdAt: string; time: string };
+  const studentView = await api<{ data: Message[] }>(server.baseUrl,
+    `/api/student/enrollments/${enrollmentId}/messages`, { token: studentToken });
+  const teacherView = await api<{ data: Message[] }>(server.baseUrl,
+    `/api/teacher/courses/${courseId}/students/${enrollmentId}/messages`, { token: teacherToken });
+  for (const [view, ownStudent] of [[studentView.body.data, true], [teacherView.body.data, false]] as const) {
+    const question = view.find((message) => message.text === "Test question");
+    const answer = view.find((message) => message.text === "Test answer");
+    assert.equal(question?.authorRole, "alumno");
+    assert.equal(question?.authorName, "Test alumno");
+    assert.equal(question?.from, ownStudent ? "me" : "prof");
+    assert.equal(answer?.authorRole, "profesor");
+    assert.equal(answer?.authorName, "Test profesor");
+    assert.equal(answer?.from, ownStudent ? "prof" : "me");
+    assert.match(question?.createdAt ?? "", /^\d{4}-\d{2}-\d{2}T/);
+    assert.match(answer?.time ?? "", /^\d{2}\/\d{2}/);
+  }
 });
 
 test("chat sockets notify both participants and reject unauthorized subscriptions", async () => {

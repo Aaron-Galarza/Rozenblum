@@ -20,7 +20,6 @@ import type {
   PublicCourseRecord,
   StoredUser,
 } from "../types.js";
-import { formatTime } from "../lib/utils.js";
 import { courseEnrollmentClosesAt } from "../lib/course-expiry.js";
 
 export function userToDTO(user: StoredUser): UserDTO {
@@ -287,10 +286,9 @@ function messageAuthorName(
   message: StoredMessage,
   conversation: StoredConversation,
 ): string {
-  if (message.authorRole === "profesor") {
-    const last = conversation.teacherName.trim().split(/\s+/).pop() ?? conversation.teacherName;
-    return `Prof. ${last}`;
-  }
+  if (message.authorRole === "admin") return "Administración";
+  if (message.authorRole === "profesor" || !message.authorRole && message.from === "prof")
+    return conversation.teacherName;
   return conversation.studentName;
 }
 
@@ -306,20 +304,29 @@ export function conversationToMessages(
   if (!conversation) return [];
   const viewer = viewerEmail?.toLowerCase();
   return conversation.messages.map((message) => {
+    const authorRole = message.authorRole ?? (message.from === "me" ? "alumno" : "profesor");
+    const authorName = messageAuthorName(message, conversation);
+    const createdAt = message.createdAt;
+    const time = Number.isFinite(Date.parse(createdAt))
+      ? new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires",
+        day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+      }).format(new Date(createdAt)) : message.time;
     if (!message.authorEmail || !viewer) {
       return {
         id: message.id,
         from: message.from ?? "prof",
+        authorRole, authorName, createdAt,
         text: message.text,
-        time: message.time,
+        time,
       };
     }
     const own = message.authorEmail.toLowerCase() === viewer;
     return {
       id: message.id,
       from: own ? "me" : "prof",
+      authorRole, authorName, createdAt,
       text: message.text,
-      time: `${own ? "Tú" : messageAuthorName(message, conversation)} · ${formatTime(message.createdAt)}`,
+      time,
     };
   });
 }

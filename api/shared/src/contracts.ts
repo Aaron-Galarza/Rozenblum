@@ -372,6 +372,9 @@ export type CheckoutResultDTO = {
 export type ChatMessageDTO = {
   id: string;
   from: "me" | "prof";
+  authorRole: Role;
+  authorName: string;
+  createdAt: string;
   text: string;
   time: string;
 };

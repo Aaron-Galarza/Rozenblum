@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
+import { once } from "node:events";
 import { test } from "node:test";
 import mongoose from "mongoose";
+import WebSocket from "ws";
 import { BRAND_HERO_URL } from "@rozenblum/shared";
 import { env } from "../config/env.js";
 import { hashPassword } from "../lib/password.js";
@@ -385,9 +387,36 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     );
     assert.equal(teacherView.status, 200);
     assert.equal(teacherView.body.data.find((message) => message.text === "Respuesta simultánea")?.from, "me");
+    const socketUrl = server.baseUrl.replace(/^http:/, "ws:") + "/api/chat/socket";
+    const subscribe = async (token: string, path: string) => {
+      const socket = new WebSocket(socketUrl, { origin: "http://localhost:3000" });
+      await once(socket, "open", { signal: AbortSignal.timeout(5_000) });
+      const ready = once(socket, "message", { signal: AbortSignal.timeout(5_000) });
+      socket.send(JSON.stringify({ type: "subscribe", token, path }));
+      assert.equal(JSON.parse(String((await ready)[0])).type, "ready");
+      return socket;
+    };
+    const studentSocket = await subscribe(buyerLogin.body.data.token, studentChatPath);
+    const teacherSocket = await subscribe(teacherLogin.body.data.token, teacherChatPath);
+    try {
+      const teacherNotice = once(teacherSocket, "message", { signal: AbortSignal.timeout(5_000) });
+      const liveMessage = await api(server.baseUrl, studentChatPath, {
+        method: "POST", token: buyerLogin.body.data.token,
+        body: JSON.stringify({ text: "Aviso Atlas en vivo" }),
+      });
+      assert.equal(liveMessage.status, 201);
+      assert.equal(JSON.parse(String((await teacherNotice)[0])).type, "refresh");
+      const refreshed = await api<{ data: { text: string; authorRole: string; authorName: string }[] }>(
+        server.baseUrl, teacherChatPath, { token: teacherLogin.body.data.token });
+      assert.ok(refreshed.body.data.some((message) => message.text === "Aviso Atlas en vivo" &&
+        message.authorRole === "alumno" && message.authorName === "Atlas Buyer"));
+    } finally {
+      studentSocket.close();
+      teacherSocket.close();
+    }
     // The database filter must arbitrate concurrent writers at the daily boundary.
     await ConversationModel.updateOne({ studentEmail: "buyer@example.test", courseId }, {
-      $push: { messages: { $each: Array.from({ length: 97 }, (_, index) => ({
+      $push: { messages: { $each: Array.from({ length: 96 }, (_, index) => ({
         id: `msg_daily_atlas_${index}`, authorEmail: "buyer@example.test",
         authorRole: "alumno", text: `Previous message ${index}`,
         time: "Tú · 12:00", createdAt: new Date().toISOString(),
