@@ -80,6 +80,7 @@ export function useLiveChat(path: string | null) {
           const notice = JSON.parse(String(event.data)) as { type?: string };
           if (notice.type === "ready") retryCount = 0;
           if (notice.type === "ready" || notice.type === "refresh") void refresh();
+          if (notice.type === "course_removed") window.location.reload();
         } catch { /* Ignore malformed notifications. */ }
       };
       connectedSocket.onclose = () => {

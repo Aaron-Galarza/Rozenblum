@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { AdminCursoDTO, AdminProfesorDTO, CourseDTO } from "@rozenblum/shared";
+import type { AdminCursoDTO, AdminProfesorDTO, ArchivedCourseDTO, CourseDTO } from "@rozenblum/shared";
 import { useAdminAction } from "../../../lib/use-admin-action";
 import Modal from "../../../components/ui/Modal";
 import Toast from "../../../components/ui/Toast";
@@ -17,6 +17,7 @@ type CursosSectionProps = {
   onUpdate: (curso: AdminCursoDTO, patch: CursoFormInput) => Promise<void>;
   onToggleStatus: (curso: AdminCursoDTO) => Promise<void>;
   onDelete: (curso: AdminCursoDTO) => Promise<void>;
+  onLoadArchives: (offset: number) => Promise<{ items: ArchivedCourseDTO[]; total: number }>;
 };
 
 function newIdempotencyKey(): string {
@@ -27,13 +28,32 @@ function newIdempotencyKey(): string {
 }
 type ModalState = { type: "ver" | "crear" | "editar"; item?: AdminCursoDTO } | null;
 
-export default function CursosSection({ cursos, profesores, onCreate, onLoadCourse, onUpdate, onToggleStatus, onDelete }: CursosSectionProps) {
+export default function CursosSection({ cursos, profesores, onCreate, onLoadCourse, onUpdate, onToggleStatus, onDelete, onLoadArchives }: CursosSectionProps) {
   const [modal, setModal] = useState<ModalState>(null);
   const [form, setForm] = useState({ name: "", professorEmail: "", description: "", price: "", duration: "", level: "", expiresOn: "", img: "" });
   const { busy, toast, showToast, run } = useAdminAction();
   const [formError, setFormError] = useState("");
   /** Stable across retries of the same creation, so a lost response cannot duplicate the course. */
   const createKey = useRef("");
+  const [showArchives, setShowArchives] = useState(false);
+  const [archives, setArchives] = useState<ArchivedCourseDTO[]>([]);
+  const [archiveTotal, setArchiveTotal] = useState(0);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveError, setArchiveError] = useState("");
+
+  const loadArchives = async (offset: number) => {
+    setArchiveBusy(true);
+    setArchiveError("");
+    try {
+      const page = await onLoadArchives(offset);
+      setArchives((previous) => offset === 0 ? page.items : [...previous, ...page.items]);
+      setArchiveTotal(page.total);
+    } catch {
+      setArchiveError("No pudimos cargar los cursos finalizados. Intentá nuevamente.");
+    } finally {
+      setArchiveBusy(false);
+    }
+  };
 
 
   const toggleEstado = (c: AdminCursoDTO) =>
@@ -101,6 +121,42 @@ export default function CursosSection({ cursos, profesores, onCreate, onLoadCour
         <button disabled={!profesores.some((p) => p.estado === "Activo")} title={profesores.some((p) => p.estado === "Activo") ? undefined : "Primero creá un profesor activo"} onClick={() => { createKey.current = newIdempotencyKey(); setForm({ name: "", professorEmail: "", description: "", price: "", duration: "", level: "", expiresOn: "", img: "" }); setFormError(""); setModal({ type: "crear" }); }} className="min-h-11 self-start px-5 py-2.5 text-xs font-bold tracking-widest transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
           + CREAR NUEVO CURSO
         </button>
+      </div>
+
+      <div className="mt-6">
+        <button type="button" onClick={() => {
+          setShowArchives((previous) => !previous);
+          if (!showArchives && archives.length === 0) void loadArchives(0);
+        }} className="text-xs font-semibold underline underline-offset-2" style={{ color: "#173B6C" }}>
+          {showArchives ? "Ocultar historial" : "Ver cursos finalizados"}
+        </button>
+        {showArchives && (
+          <div className="mt-4 overflow-x-auto rounded-lg" style={{ border: "1px solid rgba(23,59,108,0.1)" }}>
+            {archiveError && <p role="alert" className="p-4 text-xs" style={{ color: "#72132C" }}>{archiveError}</p>}
+            <table className="w-full min-w-[700px] text-xs">
+              <thead style={{ backgroundColor: "#173B6C", color: "#FAF8F5" }}><tr>
+                {["Curso", "Profesor", "Venció", "Alumnos", "Finalizaron", "Avance", "Mensajes"].map((label) =>
+                  <th key={label} className="px-4 py-3 text-left font-medium">{label}</th>)}
+              </tr></thead>
+              <tbody>
+                {archives.map((archive) => <tr key={archive.id} className="border-t" style={{ color: "#173B6C" }}>
+                  <td className="px-4 py-3 font-medium">{archive.title}</td>
+                  <td className="px-4 py-3">{archive.professor}</td>
+                  <td className="px-4 py-3">{archive.expiresOn.split("-").reverse().join("/")}</td>
+                  <td className="px-4 py-3">{archive.enrollments}</td>
+                  <td className="px-4 py-3">{archive.completed}</td>
+                  <td className="px-4 py-3">{archive.completion}%</td>
+                  <td className="px-4 py-3">{archive.messages}</td>
+                </tr>)}
+                {!archiveBusy && archives.length === 0 && <tr><td colSpan={7} className="p-5 text-center">No hay cursos finalizados.</td></tr>}
+              </tbody>
+            </table>
+            {archives.length < archiveTotal && <button disabled={archiveBusy} onClick={() => void loadArchives(archives.length)}
+              className="w-full p-3 text-xs font-semibold disabled:opacity-50" style={{ color: "#173B6C" }}>
+              {archiveBusy ? "Cargando..." : "Cargar más"}
+            </button>}
+          </div>
+        )}
       </div>
       {!profesores.some((p) => p.estado === "Activo") && <p className="mb-5 text-xs" style={{ color: "#72132C" }}>Creá un profesor activo antes de crear un curso.</p>}
       <div className="overflow-x-auto rounded-lg shadow-sm" style={{ border: "1px solid rgba(23,59,108,0.08)" }}>

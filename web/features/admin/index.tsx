@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { AdminOverviewDTO, CourseDTO, CourseDetailDTO, OrderStatus } from "@rozenblum/shared";
+import type { AdminOverviewDTO, ArchivedCourseDTO, CourseDTO, CourseDetailDTO, OrderStatus } from "@rozenblum/shared";
 import type { AdminSection } from "../../types";
 import { NAV_ITEMS } from "./nav";
 import { IconAdminNav } from "../../components/icons";
 import BrandLogo from "../../components/ui/BrandLogo";
 import SimpleFooter from "../../components/layout/SimpleFooter";
-import { ApiClientError, apiFetch, clearSession, errorMessage } from "../../lib/api";
+import { ApiClientError, apiFetch, apiFetchWithMeta, clearSession, errorMessage } from "../../lib/api";
 import { useSession } from "../../lib/use-session";
 import { ErrorPanel, LoadingScreen } from "../../components/ui/AsyncState";
 import DashboardSection from "./sections/DashboardSection";
@@ -226,6 +226,11 @@ export default function AdminView() {
                       headers: { "if-match": String(curso.revision ?? 0) },
                     });
                     await load();
+                  }}
+                  onLoadArchives={async (offset) => {
+                    const { data, meta } = await apiFetchWithMeta<ArchivedCourseDTO[]>(
+                      `/api/admin/courses/archived?limit=50&offset=${offset}`, { auth: true });
+                    return { items: data, total: Number(meta.headers.get("x-total-count") ?? data.length) };
                   }}
                 />
               )}
