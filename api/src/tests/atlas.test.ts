@@ -473,6 +473,10 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
       `/api/teacher/courses/${courseId}/students`, { token: teacherLogin.body.data.token });
     assert.equal(teacherStudents.status, 200);
     assert.ok(teacherStudents.body.data.length > 1000);
+    const teacherEnrollments = await api<{ data: unknown[] }>(server.baseUrl,
+      `/api/teacher/courses/${courseId}/enrollments`, { token: teacherLogin.body.data.token });
+    assert.equal(teacherEnrollments.status, 200);
+    assert.equal(teacherEnrollments.body.data.length, teacherStudents.body.data.length);
     await OrderModel.create({
       id: "ord_month_boundary", externalReference: "RB-MONTH-BOUNDARY",
       alumno: "Month Boundary", email: "month-boundary@example.test",

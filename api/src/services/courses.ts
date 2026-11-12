@@ -589,11 +589,8 @@ export async function reorderLessons(
 export async function listCourseEnrollments(courseId: number, user: StoredUser) {
   const repos = getRepositories();
   const course = await loadManagedCourse(courseId, user);
-
-  const enrollments = await repos.enrollments.listAll();
-  return enrollments
-    .filter((enrollment) => enrollment.courseId === courseId)
-    .map((enrollment) => enrollmentToDTO(enrollment, course));
+  const enrollments = await repos.enrollments.listByCourseIds([courseId]);
+  return enrollments.map((enrollment) => enrollmentToDTO(enrollment, course));
 }
 
 export async function createEmptyCourseForAdmin(
