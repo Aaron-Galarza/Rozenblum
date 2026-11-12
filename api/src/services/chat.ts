@@ -68,6 +68,21 @@ async function messagePage(
   };
 }
 
+async function appendMessage(
+  conversation: StoredConversation,
+  user: StoredUser,
+  text: string,
+): Promise<ChatMessageDTO[]> {
+  const message: StoredMessage = {
+    id: newId("msg"), authorEmail: user.email.toLowerCase(), authorRole: user.role,
+    text, time: `Tú · ${formatTime()}`, createdAt: nowIso(),
+  };
+  if (!await getRepositories().conversations.addMessage(conversation.id, message)) {
+    throw notFound("Conversación no encontrada.");
+  }
+  return (await messagePage(conversation, user.email, LATEST_MESSAGE_PAGE)).messages;
+}
+
 export async function listStudentMessages(
   user: StoredUser,
   enrollmentId: string,
@@ -101,18 +116,7 @@ export async function sendStudentMessage(
   });
 
   const conversation = await ensureConversation(enrollment, course);
-  const message: StoredMessage = {
-    id: newId("msg"),
-    authorEmail: enrollment.studentEmail.toLowerCase(),
-    authorRole: "alumno",
-    text,
-    time: `Tú · ${formatTime()}`,
-    createdAt: nowIso(),
-  };
-  if (!await repos.conversations.addMessage(conversation.id, message)) {
-    throw notFound("Conversación no encontrada.");
-  }
-  return (await messagePage(conversation, user.email, LATEST_MESSAGE_PAGE)).messages;
+  return appendMessage(conversation, user, text);
 }
 
 export async function listTeacherConversations(user: StoredUser): Promise<ConversationDTO[]> {
@@ -199,21 +203,8 @@ export async function sendTeacherMessage(
   conversationId: string,
   text: string,
 ): Promise<ChatMessageDTO[]> {
-  const repos = getRepositories();
   const conversation = await loadTeacherConversation(user, conversationId);
-
-  const message: StoredMessage = {
-    id: newId("msg"),
-    authorEmail: user.email.toLowerCase(),
-    authorRole: user.role,
-    text,
-    time: `Tú · ${formatTime()}`,
-    createdAt: nowIso(),
-  };
-  if (!await repos.conversations.addMessage(conversation.id, message)) {
-    throw notFound("Conversación no encontrada.");
-  }
-  return (await messagePage(conversation, user.email, LATEST_MESSAGE_PAGE)).messages;
+  return appendMessage(conversation, user, text);
 }
 
 export async function getConversationForTeacher(

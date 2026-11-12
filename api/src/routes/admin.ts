@@ -83,23 +83,17 @@ adminRouter.get(
   }),
 );
 
-adminRouter.get("/orders/export", asyncRoute(async (_req, res) => {
+const exportCsv = (kind: "orders" | "enrollments") => asyncRoute(async (_req, res) => {
   try {
-    await streamAdminExport(res, "orders");
+    await streamAdminExport(res, kind);
   } catch (error) {
     if (res.headersSent) { res.destroy(error as Error); return; }
     throw error;
   }
-}));
+});
 
-adminRouter.get("/enrollments/export", asyncRoute(async (_req, res) => {
-  try {
-    await streamAdminExport(res, "enrollments");
-  } catch (error) {
-    if (res.headersSent) { res.destroy(error as Error); return; }
-    throw error;
-  }
-}));
+adminRouter.get("/orders/export", exportCsv("orders"));
+adminRouter.get("/enrollments/export", exportCsv("enrollments"));
 
 adminRouter.get(
   "/contacts",
