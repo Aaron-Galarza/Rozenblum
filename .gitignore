@@ -44,7 +44,7 @@ Thumbs.db
 # Reference-only material (design source / internal docs, not shipped to production)
 /src/
 /docs/
-apps/web/public/brand/reference-pillars.png
+web/public/brand/reference-pillars.png
 /Checklist.md
 /AUDITORIA_TECNICA_ROZENBLUM.md
 /Auditoría técnica json.md

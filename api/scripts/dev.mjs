@@ -9,13 +9,13 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const apiDir = join(root, "apps", "api");
-const webDir = join(root, "apps", "web");
-const sharedDir = join(root, "packages", "shared");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const apiDir = join(root, "api");
+const webDir = join(root, "web");
+const sharedDir = join(apiDir, "shared");
 const mode = process.argv[2];
 if (!["api", "web", "all"].includes(mode)) {
-  console.error("Uso: node scripts/dev.mjs api|web|all");
+  console.error("Uso: node api/scripts/dev.mjs api|web|all");
   process.exit(1);
 }
 
@@ -28,6 +28,13 @@ const localEnv = existsSync(join(apiDir, ".env")) ? readFileSync(join(apiDir, ".
 function localEnvValue(name) {
   return process.env[name] || new RegExp(`^${name}=(.+)$`, "m").exec(localEnv)?.[1]?.trim() || "";
 }
+function localPort(name, fallback) {
+  const value = Number(localEnvValue(name) || fallback);
+  if (!Number.isInteger(value) || value < 1 || value > 65_535) throw new Error(`${name} debe ser un puerto válido.`);
+  return value;
+}
+const webPort = localPort("WEB_PORT", 3000);
+const gatewayPort = localPort("GATEWAY_PORT", 4001);
 function paymentCredentialsReady() {
   return ["MERCADOPAGO_ACCESS_TOKEN", "MERCADOPAGO_WEBHOOK_SECRET"].every((name) => Boolean(localEnvValue(name)));
 }
@@ -104,7 +111,7 @@ async function buildShared() {
 
 function localGateway(port) {
   const proxy = createServer((incoming, outgoing) => {
-    const targetPort = incoming.url?.startsWith("/api/") || incoming.url?.startsWith("/health") ? port : 3000;
+    const targetPort = incoming.url?.startsWith("/api/") || incoming.url?.startsWith("/health") ? port : webPort;
     const started = Date.now();
     const upstream = httpRequest({ hostname: "127.0.0.1", port: targetPort,
       method: incoming.method, path: incoming.url, headers: { ...incoming.headers, host: `localhost:${targetPort}` } },
@@ -117,7 +124,7 @@ function localGateway(port) {
     incoming.pipe(upstream);
   });
   proxy.on("upgrade", (incoming, socket, head) => {
-    const targetPort = incoming.url?.startsWith("/api/") ? port : 3000;
+    const targetPort = incoming.url?.startsWith("/api/") ? port : webPort;
     const upstream = connect(targetPort, "127.0.0.1", () => {
       const headers = Object.entries({ ...incoming.headers, host: `localhost:${targetPort}` })
         .map(([name, value]) => `${name}: ${value}`).join("\r\n");
@@ -151,33 +158,34 @@ try {
   await buildShared();
   if (mode === "web") {
     const next = packageBin(webDir, "next/dist/bin/next");
-    start("web", process.execPath, [next, "dev", "-p", "3000"], { cwd: webDir });
-    log("Web local: http://localhost:3000");
+    start("web", process.execPath, [next, "dev", "-p", String(webPort)], { cwd: webDir });
+    log(`Web local: http://localhost:${webPort}`);
   }
   if (mode === "api" || mode === "all") {
-    const port = Number(localEnvValue("PORT") || 4000);
+    const port = localPort("PORT", 4000);
     gateway = localGateway(port);
-    await new Promise((done, reject) => gateway.listen(4001, "127.0.0.1", done).once("error", reject));
-    const publicUrl = await tunnel(4001);
+    await new Promise((done, reject) => gateway.listen(gatewayPort, "127.0.0.1", done).once("error", reject));
+    const publicUrl = await tunnel(gatewayPort);
     log(`URL pública temporal: ${publicUrl}`);
     log("Webhook: " + publicUrl + "/api/payments/mercadopago/webhook");
     log("El retorno del comprador usa la misma URL pública.");
     if (mode === "all") {
       const next = packageBin(webDir, "next/dist/bin/next");
-      start("web", process.execPath, [next, "dev", "-p", "3000"], {
+      start("web", process.execPath, [next, "dev", "-p", String(webPort)], {
         cwd: webDir, env: { ...process.env, NEXT_PUBLIC_API_URL: publicUrl },
       });
-      log("Web local: http://localhost:3000");
+      log(`Web local: http://localhost:${webPort}`);
     }
     const tsx = packageBin(apiDir, "tsx/cli");
     const paymentsReady = paymentCredentialsReady();
-    if (!paymentsReady) log("Mercado Pago desactivado: activá token y firma en apps/api/.env para probar pagos reales.");
+    if (!paymentsReady) log("Mercado Pago desactivado: activá token y firma en api/.env para probar pagos reales.");
     start("API", process.execPath, [tsx, "watch", "src/server.ts"], {
       cwd: apiDir,
       env: { ...process.env,
         ...(paymentsReady ? { WEB_PUBLIC_URL: publicUrl,
           MERCADOPAGO_NOTIFICATION_URL: `${publicUrl}/api/payments/mercadopago/webhook` } : {}),
-        CORS_ORIGIN: [localEnvValue("CORS_ORIGIN") || "http://localhost:3000", publicUrl].join(",") },
+        CORS_ORIGIN: [...new Set([localEnvValue("CORS_ORIGIN") || "http://localhost:3000",
+          `http://localhost:${webPort}`, publicUrl])].join(",") },
     });
     log(`API local: http://localhost:${port}`);
   }

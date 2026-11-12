@@ -17,7 +17,7 @@ export default tseslint.config(
       "**/coverage/**",
       "**/*.d.ts",
       // Root `src/` is the legacy Vite prototype kept for reference; the live
-      // app lives in `apps/web` and is the only frontend built by CI.
+      // app lives in `web` and is the only frontend built by CI.
       "src/**",
     ],
   },
@@ -53,7 +53,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["scripts/**/*.mjs"],
+    files: ["api/scripts/**/*.mjs"],
     rules: { "no-undef": "off" },
   },
 );

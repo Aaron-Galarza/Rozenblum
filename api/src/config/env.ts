@@ -51,7 +51,7 @@ if (raw.NODE_ENV === "production" && !cloudinaryFields.every(Boolean)) {
 }
 
 if (raw.NODE_ENV !== "test" && (!raw.MONGODB_URI || !raw.AUTH_SECRET)) {
-  throw new Error("La API requiere MONGODB_URI y AUTH_SECRET en apps/api/.env.");
+  throw new Error("La API requiere MONGODB_URI y AUTH_SECRET en api/.env.");
 }
 if (raw.NODE_ENV !== "test" &&
   (raw.AUTH_SECRET?.startsWith("replace-") || raw.MONGODB_URI?.includes("USER:PASSWORD@CLUSTER"))) {

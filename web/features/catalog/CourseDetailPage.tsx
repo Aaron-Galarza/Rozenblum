@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { CourseDetailDTO } from "@rozenblum/shared";
@@ -20,7 +20,7 @@ export default function CourseDetailPage({ slug }: { slug: string }) {
   const [error, setError] = useState("");
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -32,11 +32,11 @@ export default function CourseDetailPage({ slug }: { slug: string }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [slug]);
 
   useEffect(() => {
     void load();
-  }, [slug]);
+  }, [load]);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#FAF8F5", fontFamily: "'Roboto', sans-serif" }}>

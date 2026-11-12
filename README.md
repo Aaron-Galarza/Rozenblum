@@ -1,139 +1,25 @@
 # Rozenblum
 
-Plataforma full-stack del Estudio Jurídico Rozenblum: sitio público, aula virtual para alumnos, panel docente y panel de administración.
+Plataforma de cursos del Estudio Jurídico Rozenblum.
 
-- **Frontend:** Next.js 16 (App Router) + React 19 + Tailwind 4
-- **Backend:** Express 5 + Mongoose 9 (MongoDB Atlas)
-- **Monorepo:** pnpm workspaces (`apps/web`, `apps/api`, `packages/shared`)
+- `api/`: API Express, integración con Atlas, Cloudinary y Mercado Pago; `api/shared/` contiene los contratos usados también por la web.
+- `web/`: aplicación Next.js.
 
-## Requisitos
+## Desarrollo
 
-- Node.js 20.19+
-- pnpm 9.15+ (`corepack enable` si hace falta)
-- MongoDB Atlas con datos y usuarios configurados
+Requiere Node.js 22 y pnpm 9.15.9. Copiá `api/.env.example` a `api/.env` y `web/.env.local.example` a `web/.env.local`; completá los valores privados solo en tu equipo o en el proveedor de hosting.
 
-## Puesta en marcha
-
-```bash
-pnpm install
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.local.example apps/web/.env.local
+```sh
+pnpm install --frozen-lockfile
 pnpm run dev
 ```
 
-- Web: http://localhost:3000
-- API: http://localhost:4000
-- Health: http://localhost:4000/health
+`pnpm run dev` inicia ambos servicios y el túnel local para Mercado Pago. `pnpm --dir api run dev` y `pnpm --dir web run dev` permiten iniciarlos por separado. Para verificar cambios: `pnpm run typecheck`, `pnpm test`, `pnpm run build` y `pnpm audit`.
 
-En Windows x64, el primer arranque descarga `cloudflared` desde la publicación oficial de Cloudflare a la carpeta temporal del usuario. En otros sistemas, instalalo antes de arrancar. El túnel gratuito entrega una URL HTTPS temporal; el script la muestra y la usa para el retorno de Mercado Pago y el webhook. No se guarda en `.env` porque cambia en cada ejecución.
+## Despliegue
 
-También podés arrancar cada parte por separado: `cd apps/api && pnpm run dev` inicia API, puente local y túnel; `cd apps/web && pnpm run dev` inicia únicamente la web. Desde la raíz, `pnpm run dev` inicia ambos. Ctrl+C detiene los procesos iniciados por ese comando. Los logs detallados de peticiones y pagos aparecen en desarrollo; nunca incluyen contraseñas, tokens ni cuerpos de formularios.
+Render: servicio web Node desde la raíz del repositorio. Build: `pnpm install --frozen-lockfile && pnpm run build:shared && pnpm --dir api run build`. Start: `pnpm --dir api run start`. Configurá las variables de `api/.env.example` en Render, con `NODE_ENV=production`, `CORS_ORIGIN` igual al origen HTTPS de Vercel y las URL públicas de Mercado Pago.
 
-Completá `MONGODB_URI`, `AUTH_SECRET` y las tres variables `CLOUDINARY_*` en `apps/api/.env`. La API usa Atlas y detiene el arranque si la conexión falla. El repositorio no incluye datos de ejemplo ni contraseñas.
+Vercel: proyecto Next.js con Root Directory `web`. Build Command: `pnpm --dir ../api/shared run build && pnpm run build`. Configurá `NEXT_PUBLIC_API_URL` con la URL HTTPS de Render, sin barra final.
 
-## Scripts
-
-| Script | Descripción |
-| --- | --- |
-| `pnpm run dev` | Levanta API, web y túnel en desarrollo |
-| `pnpm run dev:api` / `pnpm run dev:web` | Levanta una parte desde la raíz |
-| `pnpm run build` | Build de producción (shared + api + web) |
-| `pnpm run typecheck` | Chequeo de tipos en todos los paquetes |
-| `pnpm run lint` | ESLint (flat config) sobre API, web y shared |
-| `pnpm run test` | Tests de integración de la API (repositorios mock, sin Atlas) |
-| `pnpm --dir apps/api run test:atlas` | Prueba autenticación, CRUD académico, checkout concurrente y transacciones con Mongoose real en una base aleatoria aislada; la elimina al finalizar |
-| `pnpm --dir apps/api run bootstrap:admin -- correo@ejemplo.com` | Crea el primer administrador de forma idempotente; requiere `BOOTSTRAP_ADMIN_PASSWORD` en el entorno |
-
-## Modelo de identidad
-
-- El checkout registra una **solicitud**, no crea la cuenta. Recibe nombre, correo y DNI; guarda en la orden únicamente un hash `scrypt` con sal del DNI. El DNI legible no se conserva en usuarios ni órdenes ni se devuelve por la API.
-- El checkout crea una preferencia de Mercado Pago y entrega la URL de pago. El webhook firmado consulta el pago al proveedor; solo un importe y moneda coincidentes con la orden activan la inscripción y crean la cuenta de alumno. El alumno inicia sesión con su correo y el DNI que informó.
-- **Ningún alumno se crea a mano.** Antes de aprobar el pago solo existen la orden y la inscripción pendiente.
-- El correo no requiere validación. La contraseña se almacena con `scrypt` asíncrono y sal aleatoria por credencial (`scrypt$<sal>$<hash>`).
-- **Cambio de contraseña:** cualquier usuario autenticado puede cambiar la suya con `POST /api/auth/password` indicando la clave actual. El cambio incrementa `sessionVersion`, revoca todos los tokens anteriores y devuelve una sesión nueva para no forzar otro login.
-- **Recuperación de contraseña:** el flujo con token de un solo uso y proveedor de correo sigue pendiente de definición (ver checklist, bloque 1).
-- Si un alumno ya cambió su DNI por una contraseña propia, puede comprar otro curso iniciando sesión: el checkout acepta el token como prueba de identidad además del DNI.
-- Los **profesores** son la única alta manual permitida desde el panel admin, porque todavía no tienen un checkout propio. Esta excepción está documentada en el checklist del bloque.
-- Cada token incluye `ver` (versión de sesión). Suspender, reactivar o cambiar la contraseña de una cuenta incrementa `sessionVersion` y revoca los tokens anteriores.
-
-## Cursos y profesores
-
-Para crear un curso, el administrador debe seleccionar primero una cuenta de profesor activa. La API recibe su correo, verifica la cuenta y guarda su nombre y correo en el curso. Los cursos nuevos empiezan como borrador; para publicarlos hace falta mantener un profesor activo, al menos una lección y una imagen. Si el profesor deja de estar disponible, el checkout rechaza la solicitud antes de crear registros parciales.
-
-Publicar un curso publica todas sus lecciones. Módulos, lecciones y cursos se pueden borrar mientras el curso siga siendo un borrador nunca publicado y no tenga órdenes ni inscripciones. Después del primer lanzamiento se permite editar, pero no borrar, incluso si el curso vuelve a borrador. Los IDs de lección no se reutilizan; módulos y lecciones nuevos guardan autor y fecha de creación y edición. Las ediciones académicas usan una revisión atómica del curso: si otra edición se guardó primero, la API responde `409` y el cliente debe recargar y reintentar para no sobrescribirla.
-
-## Imágenes
-
-Las imágenes se almacenan en Cloudinary; MongoDB guarda solo sus URL. La API necesita `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` y `CLOUDINARY_API_SECRET` en `apps/api/.env`; estas variables nunca se exponen al navegador. El panel permite elegir imágenes existentes o subir PNG, JPEG, WebP o AVIF de hasta 8 MB para cursos, profesores y lecciones. El logo y la portada institucional usan imágenes fijas de `Rozenblum/brand`.
-
-## Pagos
-
-### Probar Mercado Pago localmente
-
-1. En `apps/api/.env`, reemplazá las líneas vacías `MERCADOPAGO_ACCESS_TOKEN=` y `MERCADOPAGO_WEBHOOK_SECRET=` por los valores de prueba que ya quedaron en las líneas comentadas; quitá esas copias comentadas para que haya **una sola línea por variable**. Usá las credenciales de la misma aplicación de Mercado Pago. No compartas estos valores ni los pongas en la web. Dejá `MERCADOPAGO_NOTIFICATION_URL` y `WEB_PUBLIC_URL` vacías: el comando de desarrollo las completa en memoria con la URL temporal.
-2. En la raíz, ejecutá `pnpm run dev`. Esperá a ver `Web local`, `API local` y `URL pública temporal`. Si preferís dos consolas, iniciá primero `pnpm run dev` en `apps/api` y después en `apps/web`.
-3. En la configuración **de prueba** de Webhooks de tu aplicación de Mercado Pago, seleccioná el evento de pagos y poné la dirección `Webhook:` que imprime la consola. Al reiniciar el túnel cambia la dirección y tendrás que actualizarla. La firma secreta de esa configuración debe corresponder a la que activaste en `.env`.
-4. Abrí la web local, elegí un curso publicado y solicitá el pago con Mercado Pago. Pagá con tu cuenta compradora de prueba; la cuenta vendedora corresponde a las credenciales de la API. Al regresar, comprobá el estado de la orden. La API solo activa el aula cuando consulta y verifica el pago recibido en el webhook.
-5. En la consola verás solicitudes HTTP y cambios de estado sin datos sensibles. En el panel admin podés consultar el historial de la orden. Terminá con Ctrl+C y verificá que la web y la API ya no respondan.
-
-El túnel temporal hace pública la web y la API mientras está encendido. No compartas su dirección fuera de la prueba. Para una compra desde otro dispositivo, iniciá todo desde la raíz y abrí la `URL pública temporal` impresa; con dos consolas independientes, usá la web local en el mismo equipo.
-
-Para habilitar Checkout Pro fuera del comando de desarrollo, configurá `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`, `MERCADOPAGO_NOTIFICATION_URL` (URL pública completa de `POST /api/payments/mercadopago/webhook`) y `WEB_PUBLIC_URL` en el entorno de la API. En producción, ambas URL deben usar HTTPS. La firma secreta se obtiene de la configuración de Webhooks de la aplicación de Mercado Pago; el token y la firma quedan solo en la API. Si falta la configuración, el checkout público queda deshabilitado; en producción la API no inicia.
-
-`POST /api/checkout` acepta `{ courseSlug, nombre, email, dni }` y siempre requiere Mercado Pago. Rechaza campos de precio enviados por el cliente: la orden y la preferencia usan el precio en centavos del curso. La respuesta incluye `payment: { provider, preferenceId, url }` para redirigir al comprador. La orden, inscripción pendiente y conversación se guardan en una transacción de Atlas; un fallo revierte los tres registros. Una preferencia creada antes de un fallo de base puede quedar sin uso, pero no se entrega al comprador.
-
-El webhook valida la firma y su antigüedad, consulta el pago con el SDK oficial y comprueba referencia, ARS e importe exacto. Registra un `PaymentEvent` único por notificación y aplica cambios de estado junto con la cuenta y la inscripción dentro de una transacción. Los avisos duplicados o tardíos no reactivan una orden reembolsada. Una disputa bloquea el aula y pasa la orden a `En disputa`; si Mercado Pago confirma nuevamente el pago, el aula se reactiva. Un reembolso confirmado revoca el acceso de forma definitiva. `PATCH /api/admin/orders/:id` solo admite órdenes manuales y exige `{ estado, motivo }` (motivo de 5 a 500 caracteres); rechaza cambios inválidos como Pagado → Pendiente. `GET /api/admin/orders/:id/events` devuelve la auditoría de actor, motivo, fecha y estado anterior, solo al administrador. Las órdenes de Mercado Pago no se pueden aprobar manualmente.
-
-Al volver del checkout, `/confirmacion` consulta la orden y pide a la API que verifique el pago directamente en Mercado Pago. Si el retorno trae `payment_id` o `collection_id`, consulta ese pago; en caso contrario busca por referencia externa. La API comprueba referencia, importe y moneda antes de cambiar la inscripción. Así el estado puede actualizarse aunque el webhook se retrase; repetir la consulta no vuelve a activar la cuenta. Las preferencias antiguas sin correo en la URL de retorno pueden verificarse mediante el identificador de pago.
-
-La prueba de integración usa un proveedor simulado y la de Atlas verifica transacciones y compras simultáneas. Para cerrar la aceptación de sandbox hay que configurar credenciales de prueba, un webhook público y ejecutar un pago, un reembolso y un contracargo de ensayo.
-
-`GET /api/media/:category` lista la galería y `POST /api/media/:category` recibe los bytes de la imagen. Ambas rutas requieren sesión de profesor o administrador; solo el administrador gestiona `professors`. `GET /api/courses/latest` devuelve el curso publicado creado más recientemente, con su temario público y sin cuerpos de lecciones. La portada consulta este endpoint para el destacado.
-
-## API pública y contacto
-
-Las respuestas correctas usan `{ "data": ... }`; los errores incluyen `code`, `message` y `requestId` dentro de `error`.
-
-| Método y ruta | Respuesta y casos relevantes |
-| --- | --- |
-| `GET /api/courses` | `200` con los cursos publicados; `[]` si no hay. No incluye borradores, correo de acceso del profesor ni cuerpos de lecciones. |
-| `GET /api/courses/latest` | `200` con detalle público del curso publicado más reciente; `404` si no hay publicados. |
-| `GET /api/courses/:slug` | `200` con datos, profesor y esquema de módulos/lecciones, sin contenido de lecciones; `404` para slug inexistente o borrador. |
-| `GET /api/content/home` | `200` con contenido institucional de `site_content`, fotos actuales de profesores vinculados y sin IDs internos; si falta el documento, devuelve la marca predefinida y listas vacías. |
-| `POST /api/contact` | Body `{ name, email, message }`; `201` con ID y acuse de recepción, `400` si no valida, `429` tras 10 solicitudes en 10 minutos por IP. Guarda el mensaje en Atlas para consulta administrativa; no envía correo ni garantiza un plazo de respuesta. |
-| `GET /api/admin/contacts?limit=...&offset=...` | Sólo admin: `200` con mensajes ordenados por fecha, `401` sin sesión, `403` con otro rol. `limit` y `offset` son opcionales. No hay estados de atención ni envío de correos en este MVP. |
-
-`site_content` conserva los textos institucionales y las áreas de práctica. El logo y la imagen principal están predefinidos en Cloudinary. La dirección, el teléfono, el horario y la matrícula aún aparecen como texto fijo en el frontend y requieren revisión en su bloque correspondiente.
-
-### Autenticación de la API
-
-| Método y ruta | Acceso | Resultado |
-| --- | --- | --- |
-| `POST /api/auth/login` | Público; body `{ email, password }` | `200` con `{ data: { token, user } }`; la API toma el rol de la cuenta en Atlas y las credenciales incorrectas devuelven `401` |
-| `GET /api/auth/session` | Token `Authorization: Bearer <token>` | `200` con el usuario actual; `401` si el token falta, expiró o fue revocado; `403` si la cuenta está suspendida |
-| `POST /api/auth/password` | Token `Authorization: Bearer <token>`; body `{ currentPassword, newPassword }` | `200` con una sesión nueva; `400` si la clave actual no coincide o la nueva es inválida; `401` sin sesión válida |
-| `POST /api/auth/logout` | Público | `204`; el cliente borra su token local. Este endpoint no revoca el token en el servidor |
-
-El token vence a las ocho horas. Las rutas de alumno, profesor y administrador exigen el rol correspondiente; un rol válido sin permiso devuelve `403`. El login y el cambio de contraseña están limitados por IP a 20 solicitudes cada 15 minutos; al superar el límite devuelve `429`. El checkout está limitado a 15 solicitudes cada 10 minutos.
-
-### Chat del aula
-
-Cada conversación pertenece a una inscripción y un curso. El alumno usa `GET/POST /api/student/enrollments/:id/messages`; el profesor usa `GET/POST /api/teacher/courses/:courseId/students/:enrollmentId/messages`. El profesor puede iniciar el chat de una inscripción activa. La web consulta únicamente la conversación abierta cada 3 segundos mientras la pestaña está visible y la actualiza al volver a ella. No requiere WebSockets ni un servicio adicional; los mensajes pueden tardar unos segundos en aparecer según la red.
-
-## Primer administrador
-
-No existe un endpoint público para crear administradores. En una base nueva:
-
-```powershell
-$env:BOOTSTRAP_ADMIN_PASSWORD = Read-Host "Clave inicial del administrador" -MaskInput
-npm --workspace @rozenblum/api run bootstrap:admin -- admin@estudio.com
-Remove-Item Env:BOOTSTRAP_ADMIN_PASSWORD
-```
-
-El script es idempotente: si ya existe ese administrador no modifica su cuenta; si existe otro administrador, se detiene. Requiere `MONGODB_URI` y `AUTH_SECRET` válidos. La clave no se pasa por línea de comandos para evitar que quede en el historial o la lista de procesos.
-
-## Entorno
-
-Las variables se documentan en `apps/api/.env.example` y `apps/web/.env.local.example`. Las credenciales viven únicamente en el backend; el navegador nunca se conecta a Atlas.
-
-En producción, `CORS_ORIGIN` debe ser un origen `https` explícito (la API rechaza `localhost`) y `TRUST_PROXY` define cuántos proxies se confían para calcular la IP real del rate limit.
+Los archivos `.env` y las carpetas de dependencias y compilación están ignorados por Git.
