@@ -11,6 +11,7 @@ import { moduleStatuses } from "../services/mappers.js";
 import { detectImageFormat, isManagedImageUrl, mediaFolder } from "../services/media.js";
 import { setPaymentGatewayForTests, type PaymentSnapshot } from "../services/mercadopago.js";
 import { applyOrderTransition } from "../services/order-transitions.js";
+import { checkout as checkoutService } from "../services/checkout.js";
 import { api, startTestServer, type TestServer } from "./helpers.js";
 
 const password = "test-password-12345";
@@ -1617,6 +1618,11 @@ test("reassigning a course professor moves its conversations", async () => {
   assert.equal(moved?.teacherEmail, newProfessor.email);
   assert.equal(moved?.teacherName, newProfessor.name);
 
+  await repositories.enrollments.create({
+    studentEmail: conversation.studentEmail, studentName: conversation.studentName,
+    courseId: course.legacyId, status: "Activo",
+  });
+
   const newToken = (
     await loginService({ email: newProfessor.email, password })
   ).token;
@@ -1703,6 +1709,44 @@ test("checkout rolls back an order when enrollment persistence fails", async () 
   } finally {
     repositories.enrollments.create = originalCreate;
   }
+});
+
+test("an interrupted checkout resumes its order without duplicates or exposing another buyer's link", async () => {
+  const course = await repositories.courses.create({
+    title: "Interrupted Checkout Course", description: "Retry test", priceCents: 90_000,
+    duration: "Online", level: "Inicial", img: "https://example.test/retry.jpg",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+  });
+  const input = { courseSlug: course.slug, nombre: "Interrupted Buyer",
+    email: "interrupted@example.test", dni: "32123456" };
+  const first = await checkoutService(input);
+  const resumed = await checkoutService(input);
+  assert.equal(resumed.order.id, first.order.id);
+  assert.equal(resumed.enrollment?.id, first.enrollment?.id);
+  assert.equal(resumed.payment.preferenceId, first.payment.preferenceId);
+  assert.equal((await repositories.orders.list()).filter((order) => order.email === input.email).length, 1);
+  await assert.rejects(checkoutService({ ...input, dni: "32999999" }));
+  const adminToken = await login("admin", adminEmail);
+  const teacherToken = await login("profesor", teacherEmail);
+  const adminOrders = () => api<{ data: { id: string }[] }>(server.baseUrl,
+    "/api/admin/orders", { headers: { Authorization: `Bearer ${adminToken}` } });
+  assert.equal((await adminOrders()).body.data.some((item) => item.id === first.order.id), false);
+  assert.equal((await repositories.conversations.findByStudentAndCourse(input.email, course.legacyId)), null);
+  const teacherStudents = await api<{ data: { email: string }[] }>(server.baseUrl,
+    `/api/teacher/courses/${course.legacyId}/students`,
+    { headers: { Authorization: `Bearer ${teacherToken}` } });
+  assert.equal(teacherStudents.body.data.some((item) => item.email === input.email), false);
+  await applyOrderTransition({ reference: first.order.externalReference!, status: "Rechazado",
+    source: "mercadopago", providerEventId: "retry-rejected", providerPaymentId: "1234567001",
+    paymentStatus: "rejected", reason: "Mercado Pago: rejected" });
+  assert.equal((await repositories.enrollments.findByStudentAndCourse(input.email, course.legacyId))?.status,
+    "Pendiente");
+  assert.equal((await adminOrders()).body.data.some((item) => item.id === first.order.id), false);
+  assert.equal((await checkoutService(input)).order.id, first.order.id);
+  await applyOrderTransition({ reference: first.order.externalReference!, status: "Pagado",
+    source: "mercadopago", providerEventId: "retry-paid", providerPaymentId: "1234567002",
+    paymentStatus: "approved", reason: "Mercado Pago: approved" });
+  assert.equal((await adminOrders()).body.data.filter((item) => item.id === first.order.id).length, 1);
 });
 
 test("returning from Mercado Pago verifies the payment and activates the order without a webhook", async () => {

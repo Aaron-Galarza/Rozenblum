@@ -1,5 +1,6 @@
 import type { ChatMessageDTO, ConversationDTO } from "@rozenblum/shared";
 import { forbidden, notFound } from "../lib/http.js";
+import type { Pagination } from "../lib/pagination.js";
 import { formatTime, newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
 import type {
@@ -11,7 +12,10 @@ import type {
 } from "../types.js";
 import { loadManagedCourse } from "./courses.js";
 import { assertEnrollmentAccess, loadEnrollment } from "./classroom.js";
-import { conversationToMessages, courseIndex } from "./mappers.js";
+import { conversationToMessages, courseIndex, hasEnrollmentAccess } from "./mappers.js";
+
+/** One page of history plus its real length, so routes can expose both. */
+export type MessagePage = { messages: ChatMessageDTO[]; total: number };
 
 async function ensureConversation(
   enrollment: StoredEnrollment,
@@ -49,10 +53,25 @@ async function ensureConversation(
   }
 }
 
+async function messagePage(
+  conversation: StoredConversation | null,
+  viewerEmail: string,
+  page?: Pagination,
+): Promise<MessagePage> {
+  if (!conversation) return { messages: [], total: 0 };
+  const stored = await getRepositories().conversations.listMessages(conversation.id, page);
+  const messages = stored?.messages ?? [];
+  return {
+    messages: conversationToMessages({ ...conversation, messages }, viewerEmail),
+    total: stored?.total ?? conversation.messages.length,
+  };
+}
+
 export async function listStudentMessages(
   user: StoredUser,
   enrollmentId: string,
-): Promise<ChatMessageDTO[]> {
+  page?: Pagination,
+): Promise<MessagePage> {
   const repos = getRepositories();
   const enrollment = await loadEnrollment(enrollmentId, user);
   assertEnrollmentAccess(enrollment, {
@@ -63,7 +82,7 @@ export async function listStudentMessages(
     enrollment.studentEmail,
     enrollment.courseId,
   );
-  return conversationToMessages(conversation);
+  return messagePage(conversation, user.email, page);
 }
 
 export async function sendStudentMessage(
@@ -83,18 +102,14 @@ export async function sendStudentMessage(
   const conversation = await ensureConversation(enrollment, course);
   const message: StoredMessage = {
     id: newId("msg"),
-    from: "me",
+    authorEmail: enrollment.studentEmail.toLowerCase(),
+    authorRole: "alumno",
     text,
     time: `Tú · ${formatTime()}`,
     createdAt: nowIso(),
   };
   const updated = await repos.conversations.addMessage(conversation.id, message);
-  return conversationToMessages(updated ?? conversation);
-}
-
-function teacherTime(name: string) {
-  const last = name.trim().split(/\s+/).pop() ?? name;
-  return `Prof. ${last} · ${formatTime()}`;
+  return conversationToMessages(updated ?? conversation, user.email);
 }
 
 export async function listTeacherConversations(user: StoredUser): Promise<ConversationDTO[]> {
@@ -102,14 +117,19 @@ export async function listTeacherConversations(user: StoredUser): Promise<Conver
   const conversations = await repos.conversations.listByTeacher(user.email);
   const courses = await repos.courses.list();
   const byId = courseIndex(courses);
+  const enrollments = await Promise.all(conversations.map((conversation) =>
+    repos.enrollments.findByStudentAndCourse(conversation.studentEmail, conversation.courseId)));
+  const accessible = new Set(enrollments.filter((item) => item && hasEnrollmentAccess(item))
+    .map((item) => `${item!.courseId}:${item!.studentEmail.toLowerCase()}`));
 
-  return conversations.map((conversation) => ({
+  return conversations.filter((conversation) => accessible.has(
+    `${conversation.courseId}:${conversation.studentEmail.toLowerCase()}`)).map((conversation) => ({
     id: conversation.id,
     courseId: conversation.courseId,
     courseTitle: byId.get(conversation.courseId)?.title ?? "Curso",
     peerName: conversation.studentName,
     peerEmail: conversation.studentEmail,
-    messages: conversationToMessages(conversation),
+    messages: conversationToMessages(conversation, user.email),
   }));
 }
 
@@ -129,12 +149,13 @@ export async function listTeacherStudentMessages(
   user: StoredUser,
   courseId: number,
   enrollmentId: string,
-): Promise<ChatMessageDTO[]> {
+  page?: Pagination,
+): Promise<MessagePage> {
   const { enrollment } = await loadTeacherStudentEnrollment(user, courseId, enrollmentId);
   const conversation = await getRepositories().conversations.findByStudentAndCourse(
     enrollment.studentEmail, courseId,
   );
-  return conversationToMessages(conversation);
+  return messagePage(conversation, user.email, page);
 }
 
 export async function sendTeacherStudentMessage(
@@ -160,6 +181,13 @@ async function loadTeacherConversation(
   ) {
     throw forbidden("No participás en esta conversación.");
   }
+  const enrollment = await getRepositories().enrollments.findByStudentAndCourse(
+    conversation.studentEmail, conversation.courseId);
+  if (!enrollment) throw notFound("Inscripción no encontrada.");
+  assertEnrollmentAccess(enrollment, {
+    expired: "El acceso del alumno a este curso venció.",
+    denied: "La mensajería se habilita cuando se aprueba el acceso del alumno.",
+  });
   return conversation;
 }
 
@@ -173,28 +201,34 @@ export async function sendTeacherMessage(
 
   const message: StoredMessage = {
     id: newId("msg"),
-    from: "prof",
+    authorEmail: user.email.toLowerCase(),
+    authorRole: user.role,
     text,
-    time: teacherTime(user.name),
+    time: `Tú · ${formatTime()}`,
     createdAt: nowIso(),
   };
   const updated = await repos.conversations.addMessage(conversation.id, message);
-  return conversationToMessages(updated ?? conversation);
+  return conversationToMessages(updated ?? conversation, user.email);
 }
 
 export async function getConversationForTeacher(
   user: StoredUser,
   conversationId: string,
-): Promise<ConversationDTO> {
+  page?: Pagination,
+): Promise<{ conversation: ConversationDTO; total: number }> {
   const repos = getRepositories();
   const conversation = await loadTeacherConversation(user, conversationId);
   const course = await repos.courses.findById(conversation.courseId);
+  const history = await messagePage(conversation, user.email, page);
   return {
-    id: conversation.id,
-    courseId: conversation.courseId,
-    courseTitle: course?.title ?? "Curso",
-    peerName: conversation.studentName,
-    peerEmail: conversation.studentEmail,
-    messages: conversationToMessages(conversation),
+    conversation: {
+      id: conversation.id,
+      courseId: conversation.courseId,
+      courseTitle: course?.title ?? "Curso",
+      peerName: conversation.studentName,
+      peerEmail: conversation.studentEmail,
+      messages: history.messages,
+    },
+    total: history.total,
   };
 }

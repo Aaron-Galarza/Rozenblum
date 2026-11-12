@@ -38,6 +38,31 @@ export function createMongooseConversationsRepositories() {
         .exec();
       return doc ? clean<StoredConversation>(doc) : null;
     },
+    async listMessages(id, page) {
+      const limit = page?.limit ?? 500;
+      const offset = page?.offset ?? 0;
+      const [doc] = await ConversationModel.aggregate<{
+        total: number;
+        messages: StoredMessage[];
+      }>([
+        { $match: { id } },
+        {
+          $project: {
+            _id: 0,
+            total: { $size: "$messages" },
+            messages: {
+              // Offset counts from the newest message, so page 0 is the tail.
+              $slice: [
+                "$messages",
+                { $max: [{ $subtract: [{ $size: "$messages" }, offset + limit] }, 0] },
+                limit,
+              ],
+            },
+          },
+        },
+      ]).exec();
+      return doc ? { messages: doc.messages, total: doc.total } : null;
+    },
     async reassignTeacher(courseId, teacherEmail, teacherName) {
       const result = await ConversationModel.updateMany(
         { courseId },

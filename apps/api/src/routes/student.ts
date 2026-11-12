@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { messagePayloadSchema, progressSchema } from "@rozenblum/shared";
 import { requireAuth, requireRole } from "../middleware/auth.js";
-import { sendData } from "../lib/http.js";
+import { sendData, sendPaginated } from "../lib/http.js";
+import { parseMessagePagination } from "../lib/pagination.js";
 import {
   getStudentEnrollment,
   listStudentEnrollments,
@@ -45,7 +46,13 @@ studentRouter.patch(
 studentRouter.get(
   "/enrollments/:id/messages",
   asyncRoute(async (req, res) => {
-    sendData(res, await listStudentMessages(req.authUser!, req.params.id));
+    const page = parseMessagePagination(req);
+    const { messages, total } = await listStudentMessages(
+      req.authUser!,
+      req.params.id,
+      page,
+    );
+    sendPaginated(res, messages, total, page);
   }),
 );
 

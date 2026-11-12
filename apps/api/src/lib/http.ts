@@ -29,6 +29,22 @@ export function sendData<T>(res: Response, data: T, status = 200) {
   res.status(status).json({ data });
 }
 
+/**
+ * Sends a list page and the real collection count. The body stays an array so
+ * existing clients keep working; totals travel in standard pagination headers.
+ */
+export function sendPaginated<T>(
+  res: Response,
+  items: T[],
+  total: number,
+  page: { limit: number; offset: number },
+) {
+  res.setHeader("X-Total-Count", String(total));
+  res.setHeader("X-Page-Limit", String(page.limit));
+  res.setHeader("X-Page-Offset", String(page.offset));
+  sendData(res, items);
+}
+
 /** Error envelope shared by every failure path, always carrying the request id. */
 function errorPayload(
   res: Response,

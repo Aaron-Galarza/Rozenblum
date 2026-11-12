@@ -1,5 +1,5 @@
 import type { HomeContentDTO } from "@rozenblum/shared";
-import type { StoredUser, StoredCourse, StoredEnrollment, StoredOrder, StoredPaymentEvent, StoredConversation, StoredContact } from "../types.js";
+import type { StoredUser, StoredCourse, StoredEnrollment, StoredOrder, StoredPaymentEvent, StoredConversation, StoredContact, StoredAdminEvent } from "../types.js";
 
 export const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -11,6 +11,7 @@ export type Memory = {
   paymentEvents: StoredPaymentEvent[];
   conversations: StoredConversation[];
   contacts: StoredContact[];
+  adminEvents: StoredAdminEvent[];
   homeContent: HomeContentDTO | null;
 };
 
@@ -23,6 +24,7 @@ export function createMemory(initial: Partial<Memory>): Memory {
     paymentEvents: [],
     conversations: [],
     contacts: [],
+    adminEvents: [],
     homeContent: null,
     ...clone(initial),
   };

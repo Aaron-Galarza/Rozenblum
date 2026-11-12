@@ -265,6 +265,17 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
       },
     );
     assert.equal(checkout.status, 201);
+    const resumed = await api<{ data: { order: { id: string } } }>(server.baseUrl, "/api/checkout", {
+      method: "POST", body: JSON.stringify({
+        courseSlug: course.slug, nombre: "Atlas Buyer", email: "buyer@example.test", dni: buyerDni,
+      }),
+    });
+    assert.equal(resumed.status, 201);
+    assert.equal(resumed.body.data.order.id, checkout.body.data.order.id);
+    assert.equal((await repositories.orders.listVisibleForAdmin()).some(
+      (order) => order.id === checkout.body.data.order.id), false);
+    assert.equal(await repositories.conversations.findByStudentAndCourse(
+      "buyer@example.test", course.legacyId), null);
     await EnrollmentModel.init();
     const simultaneous = await Promise.all([0, 1].map(() => api(server!.baseUrl, "/api/checkout", {
       method: "POST", body: JSON.stringify({
@@ -296,6 +307,8 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
       paymentStatus: "approved", reason: "Mercado Pago confirmó el cobro en ensayo",
     });
     assert.ok(paid);
+    assert.equal((await repositories.orders.listVisibleForAdmin()).filter(
+      (order) => order.id === checkout.body.data.order.id).length, 1);
     const paymentEvents = await PaymentEventModel.find({ orderId: checkout.body.data.order.id }).lean().exec();
     assert.equal(paymentEvents.length, 1);
     assert.equal(paymentEvents[0]?.reason, "Mercado Pago confirmó el cobro en ensayo");

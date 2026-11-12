@@ -1,7 +1,12 @@
 import type { Role } from "@rozenblum/shared";
 import { newId, nowIso } from "../lib/utils.js";
 import type { StoredEnrollment, StoredUser } from "../types.js";
-import type { UserRepository, EnrollmentRepository } from "./interfaces.js";
+import type {
+  EnrollmentMetrics,
+  EnrollmentRepository,
+  UserCounts,
+  UserRepository,
+} from "./interfaces.js";
 import { clone, type Memory } from "./mock-memory.js";
 
 export function createMockAccountsRepositories(db: Memory) {
@@ -19,8 +24,17 @@ export function createMockAccountsRepositories(db: Memory) {
         .map(({ id, img }) => ({ id, img }));
     },
     async list(role: Role | undefined, page) {
-      const users = role ? db.users.filter((u) => u.role === role) : [...db.users];
+      const users = db.users.filter(
+        (user) => !user.deletedAt && (!role || user.role === role),
+      );
       return page ? users.slice(page.offset, page.offset + page.limit) : users;
+    },
+    async countByRole() {
+      const counts: UserCounts = { alumno: 0, profesor: 0, admin: 0 };
+      for (const user of db.users) {
+        if (!user.deletedAt) counts[user.role] += 1;
+      }
+      return counts;
     },
     async create(input) {
       const user: StoredUser = {
@@ -57,6 +71,58 @@ export function createMockAccountsRepositories(db: Memory) {
     async listAll(page) {
       const items = db.enrollments.map(clone);
       return page ? items.slice(page.offset, page.offset + page.limit) : items;
+    },
+    async countAll() {
+      return db.enrollments.length;
+    },
+    async listVisibleForAdmin(page) {
+      const items = db.enrollments.filter((item) => item.status !== "Pendiente").map(clone);
+      return page ? items.slice(page.offset, page.offset + page.limit) : items;
+    },
+    async countVisibleForAdmin() {
+      return db.enrollments.filter((item) => item.status !== "Pendiente").length;
+    },
+    async listByStudents(emails) {
+      const wanted = new Set(emails.map((email) => email.toLowerCase()));
+      return db.enrollments
+        .filter((enrollment) => wanted.has(enrollment.studentEmail.toLowerCase()))
+        .map(clone);
+    },
+    async metrics() {
+      const sevenDaysAgo = Date.now() - 7 * 86_400_000;
+      const visibleEnrollments = db.enrollments.filter((item) => item.status !== "Pendiente");
+      const byCourse = new Map<number, { students: number; completed: number }>();
+      const monthly = new Map<string, number>();
+
+      for (const enrollment of visibleEnrollments) {
+        const month = enrollment.startedAt.slice(0, 7);
+        monthly.set(month, (monthly.get(month) ?? 0) + 1);
+        const current = byCourse.get(enrollment.courseId) ?? { students: 0, completed: 0 };
+        current.students += 1;
+        current.completed += enrollment.completedLessonIds.length;
+        byCourse.set(enrollment.courseId, current);
+      }
+
+      const metrics: EnrollmentMetrics = {
+        total: visibleEnrollments.length,
+        activeStudents: new Set(
+          db.enrollments
+            .filter((enrollment) => enrollment.status === "Activo")
+            .map((enrollment) => enrollment.studentEmail.toLowerCase()),
+        ).size,
+        startedLast7Days: visibleEnrollments.filter(
+          (enrollment) => new Date(enrollment.startedAt).getTime() >= sevenDaysAgo,
+        ).length,
+        monthly: [...monthly.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([month, value]) => ({ month, value })),
+        byCourse: [...byCourse.entries()].map(([courseId, value]) => ({
+          courseId,
+          students: value.students,
+          averageCompletedLessons: value.students === 0 ? 0 : value.completed / value.students,
+        })),
+      };
+      return metrics;
     },
     async existsByCourse(courseId) {
       return db.enrollments.some((item) => item.courseId === courseId);

@@ -21,6 +21,11 @@ export type StoredUser = {
   /** Bumped on password/status changes to revoke previously issued tokens. */
   sessionVersion: number;
   createdAt: string;
+  /**
+   * Set when an administrator removes a student. The account stops working but
+   * its enrollments and conversations stay as historical evidence (M-08).
+   */
+  deletedAt?: string;
 };
 
 export type StoredLesson = {
@@ -139,8 +144,16 @@ export type StoredPaymentEvent = {
 
 export type StoredMessage = {
   id: string;
-  from: "me" | "prof";
+  /**
+   * Legacy perspective flag. Messages written before authorship was stored use
+   * it as a fallback; new messages always carry `authorEmail`/`authorRole` and
+   * their perspective is derived per reader.
+   */
+  from?: "me" | "prof";
+  authorEmail?: string;
+  authorRole?: Role;
   text: string;
+  /** Legacy display string, kept for messages written before authorship. */
   time: string;
   createdAt: string;
 };
@@ -160,6 +173,23 @@ export type StoredContact = {
   name: string;
   email: string;
   message: string;
+  createdAt: string;
+};
+
+export type AdminEventAction = "create" | "update" | "delete";
+export type AdminEventEntity = "user" | "course";
+
+/** Immutable record of an administrative mutation (who, when, why, before/after). */
+export type StoredAdminEvent = {
+  id: string;
+  actorId: string;
+  actorEmail: string;
+  action: AdminEventAction;
+  entity: AdminEventEntity;
+  entityId: string;
+  previousState?: Record<string, unknown>;
+  nextState?: Record<string, unknown>;
+  reason: string;
   createdAt: string;
 };
 

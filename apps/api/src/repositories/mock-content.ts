@@ -9,6 +9,9 @@ export function createMockContentRepositories(db: Memory) {
         .map(clone);
       return page ? items.slice(page.offset, page.offset + page.limit) : items;
     },
+    async count() {
+      return db.contacts.length;
+    },
     async create(input) {
       db.contacts.push(clone(input));
       return clone(input);

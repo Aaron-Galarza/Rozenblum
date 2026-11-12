@@ -7,7 +7,8 @@ import {
 } from "@rozenblum/shared";
 import { z } from "zod";
 import { requireAuth, requireRole } from "../middleware/auth.js";
-import { sendData } from "../lib/http.js";
+import { sendData, sendPaginated } from "../lib/http.js";
+import { parseMessagePagination } from "../lib/pagination.js";
 import { getTeacherDashboard, getTeacherStudents } from "../services/dashboard.js";
 import {
   addLesson,
@@ -113,7 +114,14 @@ teacherRouter.get(
   "/courses/:courseId/students/:enrollmentId/messages",
   asyncRoute(async (req, res) => {
     const courseId = numericParam(req.params.courseId, "Curso");
-    sendData(res, await listTeacherStudentMessages(req.authUser!, courseId, req.params.enrollmentId));
+    const page = parseMessagePagination(req);
+    const { messages, total } = await listTeacherStudentMessages(
+      req.authUser!,
+      courseId,
+      req.params.enrollmentId,
+      page,
+    );
+    sendPaginated(res, messages, total, page);
   }),
 );
 
@@ -265,7 +273,14 @@ teacherRouter.get(
 teacherRouter.get(
   "/conversations/:id",
   asyncRoute(async (req, res) => {
-    sendData(res, await getConversationForTeacher(req.authUser!, req.params.id));
+    const page = parseMessagePagination(req);
+    const { conversation, total } = await getConversationForTeacher(
+      req.authUser!,
+      req.params.id,
+      page,
+    );
+    res.setHeader("X-Total-Count", String(total));
+    sendData(res, conversation);
   }),
 );
 

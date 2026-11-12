@@ -7,7 +7,7 @@ import {
   orderStatusSchema,
 } from "@rozenblum/shared";
 import { requireAuth, requireRole } from "../middleware/auth.js";
-import { sendData, notFound } from "../lib/http.js";
+import { sendData, sendPaginated, notFound } from "../lib/http.js";
 import { parsePagination } from "../lib/pagination.js";
 import {
   createAdminUser,
@@ -17,44 +17,88 @@ import {
   updateAdminOrder,
   updateAdminUser,
 } from "../services/admin.js";
-import { getAdminOverview, listAdminEnrollments } from "../services/dashboard.js";
+import { listAdminEvents } from "../services/audit.js";
+import {
+  getAdminOverview,
+  listAdminEnrollments,
+  listAdminOrders,
+} from "../services/dashboard.js";
 import {
   createEmptyCourseForAdmin,
   deleteCourse,
   getCourseByRequestId,
   updateCourse,
 } from "../services/courses.js";
-import { listContacts } from "../services/contact.js";
+import { countContacts, listContacts } from "../services/contact.js";
 import {
   asyncRoute,
   numericParam,
   parseBody,
   requestIdempotencyKey,
   requestRevision,
+  type ApiRequest,
 } from "./helpers.js";
 
 export const adminRouter = Router();
+
+/** Optional human explanation attached to a destructive administrative action. */
+function requestReason(req: ApiRequest): string | undefined {
+  const raw = req.query.reason;
+  if (typeof raw !== "string") return undefined;
+  const reason = raw.trim();
+  return reason.length >= 5 && reason.length <= 500 ? reason : undefined;
+}
 
 adminRouter.use(requireAuth, requireRole("admin"));
 
 adminRouter.get(
   "/overview",
-  asyncRoute(async (_req, res) => {
-    sendData(res, await getAdminOverview());
+  asyncRoute(async (req, res) => {
+    const { overview, totals } = await getAdminOverview(parsePagination(req));
+    res.setHeader("X-Total-Students", String(totals.alumnos));
+    res.setHeader("X-Total-Professors", String(totals.profesores));
+    res.setHeader("X-Total-Courses", String(totals.cursos));
+    res.setHeader("X-Total-Orders", String(totals.orders));
+    res.setHeader("X-Total-Enrollments", String(totals.inscripciones));
+    sendData(res, overview);
   }),
 );
 
 adminRouter.get(
   "/enrollments",
   asyncRoute(async (req, res) => {
-    sendData(res, await listAdminEnrollments(parsePagination(req)));
+    const page = parsePagination(req);
+    const { items, total } = await listAdminEnrollments(page);
+    sendPaginated(res, items, total, page);
+  }),
+);
+
+adminRouter.get(
+  "/orders",
+  asyncRoute(async (req, res) => {
+    const page = parsePagination(req);
+    const { items, total } = await listAdminOrders(page);
+    sendPaginated(res, items, total, page);
   }),
 );
 
 adminRouter.get(
   "/contacts",
   asyncRoute(async (req, res) => {
-    sendData(res, await listContacts(parsePagination(req)));
+    const page = parsePagination(req);
+    sendPaginated(res, await listContacts(page), await countContacts(), page);
+  }),
+);
+
+adminRouter.get(
+  "/audit",
+  asyncRoute(async (req, res) => {
+    const page = parsePagination(req);
+    const entity = req.query.entity === "user" || req.query.entity === "course"
+      ? req.query.entity
+      : undefined;
+    const { events, total } = await listAdminEvents(page, entity);
+    sendPaginated(res, events, total, page);
   }),
 );
 
@@ -65,7 +109,9 @@ adminRouter.get(
     if (role !== "alumno" && role !== "profesor") {
       throw notFound("Especificá role=alumno o role=profesor.");
     }
-    sendData(res, await listAdminUsers(role, parsePagination(req)));
+    const page = parsePagination(req);
+    const { users, total } = await listAdminUsers(role, page);
+    sendPaginated(res, users, total, page);
   }),
 );
 
@@ -73,7 +119,7 @@ adminRouter.post(
   "/users",
   asyncRoute(async (req, res) => {
     const input = parseBody(adminUserSchema, req.body);
-    sendData(res, await createAdminUser(input), 201);
+    sendData(res, await createAdminUser(input, req.authUser!, requestReason(req)), 201);
   }),
 );
 
@@ -81,14 +127,17 @@ adminRouter.patch(
   "/users/:id",
   asyncRoute(async (req, res) => {
     const patch = parseBody(adminUserPatchSchema, req.body);
-    sendData(res, await updateAdminUser(req.params.id, patch));
+    sendData(
+      res,
+      await updateAdminUser(req.params.id, patch, req.authUser!, requestReason(req)),
+    );
   }),
 );
 
 adminRouter.delete(
   "/users/:id",
   asyncRoute(async (req, res) => {
-    await deleteAdminUser(req.params.id);
+    await deleteAdminUser(req.params.id, req.authUser!, requestReason(req));
     res.status(204).end();
   }),
 );
@@ -97,7 +146,11 @@ adminRouter.post(
   "/courses",
   asyncRoute(async (req, res) => {
     const input = parseBody(coursePayloadSchema, req.body);
-    const course = await createEmptyCourseForAdmin(input, requestIdempotencyKey(req));
+    const course = await createEmptyCourseForAdmin(
+      input,
+      requestIdempotencyKey(req),
+      req.authUser!,
+    );
     res.setHeader("ETag", `"${course.revision ?? 0}"`);
     sendData(res, course, 201);
   }),
@@ -128,7 +181,7 @@ adminRouter.delete(
   "/courses/:courseId",
   asyncRoute(async (req, res) => {
     const courseId = numericParam(req.params.courseId, "Curso");
-    await deleteCourse(courseId, { expectedRevision: requestRevision(req) });
+    await deleteCourse(courseId, req.authUser!, { expectedRevision: requestRevision(req) });
     res.status(204).end();
   }),
 );

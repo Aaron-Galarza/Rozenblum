@@ -17,3 +17,7 @@ export async function submitContact(input: ContactInput): Promise<StoredContact>
 export async function listContacts(page?: Pagination): Promise<StoredContact[]> {
   return getRepositories().contacts.list(page);
 }
+
+export async function countContacts(): Promise<number> {
+  return getRepositories().contacts.count();
+}

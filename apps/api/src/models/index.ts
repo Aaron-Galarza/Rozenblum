@@ -1,6 +1,7 @@
 import mongoose, { Schema } from "mongoose";
 import type { HomeContentDTO } from "@rozenblum/shared";
 import type {
+  StoredAdminEvent,
   StoredContact,
   StoredConversation,
   StoredCourse,
@@ -76,6 +77,7 @@ const userSchema = new Schema<StoredUser>(
     sessionVersion: { type: Number, required: true, default: 0 },
     img: { type: String, default: undefined },
     createdAt: { type: String, required: true },
+    deletedAt: { type: String, default: undefined },
   },
   { versionKey: false, collection: "users" },
 );
@@ -182,7 +184,10 @@ paymentEventSchema.index({ source: 1, providerEventId: 1 }, {
 const messageSchema = new Schema(
   {
     id: { type: String, required: true },
-    from: { type: String, required: true, enum: ["me", "prof"] },
+    /** Legacy perspective flag; new messages use the authorship fields below. */
+    from: { type: String, enum: ["me", "prof"], default: undefined },
+    authorEmail: { type: String, default: undefined, lowercase: true },
+    authorRole: { type: String, enum: ["alumno", "profesor", "admin"], default: undefined },
     text: { type: String, required: true },
     time: { type: String, required: true },
     createdAt: { type: String, required: true },
@@ -218,6 +223,25 @@ const contactSchema = new Schema<StoredContact>(
 
 contactSchema.index({ createdAt: -1, id: -1 });
 
+const adminEventSchema = new Schema<StoredAdminEvent>(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    actorId: { type: String, required: true, index: true },
+    actorEmail: { type: String, required: true },
+    action: { type: String, required: true, enum: ["create", "update", "delete"] },
+    entity: { type: String, required: true, enum: ["user", "course"] },
+    entityId: { type: String, required: true, index: true },
+    previousState: { type: Schema.Types.Mixed, default: undefined },
+    nextState: { type: Schema.Types.Mixed, default: undefined },
+    reason: { type: String, required: true },
+    createdAt: { type: String, required: true },
+  },
+  { versionKey: false, collection: "admin_events" },
+);
+
+adminEventSchema.index({ createdAt: -1, id: -1 });
+adminEventSchema.index({ entity: 1, entityId: 1, createdAt: -1 });
+
 export const UserModel =
   (mongoose.models.User as mongoose.Model<StoredUser>) ??
   mongoose.model<StoredUser>("User", userSchema);
@@ -245,6 +269,10 @@ export const ConversationModel =
 export const ContactModel =
   (mongoose.models.Contact as mongoose.Model<StoredContact>) ??
   mongoose.model<StoredContact>("Contact", contactSchema);
+
+export const AdminEventModel =
+  (mongoose.models.AdminEvent as mongoose.Model<StoredAdminEvent>) ??
+  mongoose.model<StoredAdminEvent>("AdminEvent", adminEventSchema);
 
 const homeContentSchema = new Schema<HomeContentDTO>(
   {

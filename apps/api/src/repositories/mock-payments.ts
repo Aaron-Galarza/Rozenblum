@@ -1,11 +1,52 @@
 import type { OrderStatus } from "@rozenblum/shared";
-import type { OrderRepository, PaymentEventRepository } from "./interfaces.js";
+import type { OrderMetrics, OrderRepository, PaymentEventRepository } from "./interfaces.js";
 import { clone, type Memory } from "./mock-memory.js";
+
+/** Mirrors the Mongoose filter: MP revenue needs a bound payment id. */
+function isConfirmedPaid(order: { estado: OrderStatus; paymentProvider?: string; paymentId?: string }) {
+  return order.estado === "Pagado" &&
+    (order.paymentProvider !== "mercadopago" || Boolean(order.paymentId));
+}
+function isVisibleForAdmin(order: { estado: OrderStatus; paymentProvider?: string; paymentId?: string }) {
+  return order.paymentProvider !== "mercadopago" ||
+    (["Pagado", "En disputa", "Reembolsado"].includes(order.estado) && Boolean(order.paymentId));
+}
 
 export function createMockPaymentsRepositories(db: Memory) {
   const orders: OrderRepository = {
-    async list() {
-      return [...db.orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(clone);
+    async list(page) {
+      const items = [...db.orders]
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map(clone);
+      return page ? items.slice(page.offset, page.offset + page.limit) : items;
+    },
+    async countAll() {
+      return db.orders.length;
+    },
+    async listVisibleForAdmin(page) {
+      const items = db.orders.filter(isVisibleForAdmin)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(clone);
+      return page ? items.slice(page.offset, page.offset + page.limit) : items;
+    },
+    async countVisibleForAdmin() {
+      return db.orders.filter(isVisibleForAdmin).length;
+    },
+    async metrics() {
+      const paid = db.orders.filter(isConfirmedPaid);
+      const monthly = new Map<string, number>();
+      for (const order of paid) {
+        const month = order.createdAt.slice(0, 7);
+        monthly.set(month, (monthly.get(month) ?? 0) + order.montoCents);
+      }
+      const metrics: OrderMetrics = {
+        total: db.orders.filter(isVisibleForAdmin).length,
+        paidCount: paid.length,
+        paidCents: paid.reduce((sum, order) => sum + order.montoCents, 0),
+        paidMonthly: [...monthly.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([month, cents]) => ({ month, cents })),
+      };
+      return metrics;
     },
     async existsByCourse(courseId) {
       return db.orders.some((item) => item.courseId === courseId);
@@ -14,6 +55,11 @@ export function createMockPaymentsRepositories(db: Memory) {
       const order = db.orders.find(
         (o) => o.externalReference === reference || o.id === reference,
       );
+      return order ? clone(order) : null;
+    },
+    async findLatestByStudentAndCourse(email, courseId) {
+      const order = db.orders.filter((item) => item.email === email.toLowerCase() && item.courseId === courseId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
       return order ? clone(order) : null;
     },
     async create(input) {

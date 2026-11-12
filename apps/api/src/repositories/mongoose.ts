@@ -5,6 +5,7 @@ import { createMongooseCoursesRepositories } from "./mongoose-courses.js";
 import { createMongoosePaymentsRepositories } from "./mongoose-payments.js";
 import { createMongooseConversationsRepositories } from "./mongoose-conversations.js";
 import { createMongooseContentRepositories } from "./mongoose-content.js";
+import { createMongooseAdminEventRepository } from "./mongoose-admin-events.js";
 
 export function createMongooseRepositories(): Repositories {
   mongoose.set("transactionAsyncLocalStorage", true);
@@ -13,6 +14,7 @@ export function createMongooseRepositories(): Repositories {
   const { orders, paymentEvents } = createMongoosePaymentsRepositories();
   const { conversations } = createMongooseConversationsRepositories();
   const { contacts, home } = createMongooseContentRepositories();
+  const { adminEvents } = createMongooseAdminEventRepository();
 
   return {
     mode: "atlas",
@@ -24,6 +26,7 @@ export function createMongooseRepositories(): Repositories {
     paymentEvents,
     conversations,
     contacts,
+    adminEvents,
     home,
   };
 }

@@ -15,6 +15,9 @@ export function createMongooseContentRepositories() {
         .exec();
       return docs.map((doc) => clean<StoredContact>(doc));
     },
+    async count() {
+      return ContactModel.countDocuments({}).exec();
+    },
     async create(input) {
       const doc = await ContactModel.create(input);
       return clean<StoredContact>(doc.toObject());

@@ -15,10 +15,12 @@ import type {
   StoredConversation,
   StoredCourse,
   StoredEnrollment,
+  StoredMessage,
   StoredOrder,
   PublicCourseRecord,
   StoredUser,
 } from "../types.js";
+import { formatTime } from "../lib/utils.js";
 
 export function userToDTO(user: StoredUser): UserDTO {
   return {
@@ -274,14 +276,45 @@ export function orderToDTO(order: StoredOrder): OrderDTO {
   };
 }
 
-export function conversationToMessages(conversation: StoredConversation | null): ChatMessageDTO[] {
+function messageAuthorName(
+  message: StoredMessage,
+  conversation: StoredConversation,
+): string {
+  if (message.authorRole === "profesor") {
+    const last = conversation.teacherName.trim().split(/\s+/).pop() ?? conversation.teacherName;
+    return `Prof. ${last}`;
+  }
+  return conversation.studentName;
+}
+
+/**
+ * Derives each message's perspective for the reader. Storing "me"/"prof" in the
+ * document made the same message look like its author's own on both sides.
+ * Legacy messages without authorship fall back to the stored perspective.
+ */
+export function conversationToMessages(
+  conversation: StoredConversation | null,
+  viewerEmail?: string,
+): ChatMessageDTO[] {
   if (!conversation) return [];
-  return conversation.messages.map((message) => ({
-    id: message.id,
-    from: message.from,
-    text: message.text,
-    time: message.time,
-  }));
+  const viewer = viewerEmail?.toLowerCase();
+  return conversation.messages.map((message) => {
+    if (!message.authorEmail || !viewer) {
+      return {
+        id: message.id,
+        from: message.from ?? "prof",
+        text: message.text,
+        time: message.time,
+      };
+    }
+    const own = message.authorEmail.toLowerCase() === viewer;
+    return {
+      id: message.id,
+      from: own ? "me" : "prof",
+      text: message.text,
+      time: `${own ? "Tú" : messageAuthorName(message, conversation)} · ${formatTime(message.createdAt)}`,
+    };
+  });
 }
 
 export function adminAlumno(

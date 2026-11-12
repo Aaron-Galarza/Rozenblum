@@ -97,7 +97,7 @@ export async function applyOrderTransition(input: Transition): Promise<StoredPay
             await activateEnrollment(order);
           } else {
             const enrollment = await repos.enrollments.findByStudentAndCourse(order.email, order.courseId);
-            if (enrollment) {
+            if (enrollment && !(order.estado === "Pendiente" && input.status === "Rechazado")) {
               await repos.enrollments.updateStatus(enrollment.id,
                 input.status === "Pendiente" ? "Pendiente" : "Revocado");
             }

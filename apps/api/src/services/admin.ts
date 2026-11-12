@@ -1,25 +1,32 @@
 import { conflict, notFound, badRequest } from "../lib/http.js";
 import { hashPassword } from "../lib/password.js";
-import { initialsFromName } from "../lib/utils.js";
+import { initialsFromName, nowIso } from "../lib/utils.js";
 import type { Pagination } from "../lib/pagination.js";
 import { getRepositories } from "../repositories/index.js";
 import { userToDTO } from "./mappers.js";
 import type { UserDTO } from "@rozenblum/shared";
 import { assertManagedImageUrl } from "./media.js";
 import { applyOrderTransition } from "./order-transitions.js";
+import { recordAdminEvent, safeUserState } from "./audit.js";
 import type { StoredUser } from "../types.js";
 
-export async function createAdminUser(input: {
-  /**
-   * Students are created only when an approved checkout is paid. Professors
-   * are the sole manual exception because they have no checkout flow yet.
-   */
-  role: "profesor";
-  name: string;
-  email: string;
-  password: string;
-  img?: string;
-}): Promise<UserDTO> {
+const DEFAULT_REASON = "Cambio realizado desde el panel administrativo.";
+
+export async function createAdminUser(
+  input: {
+    /**
+     * Students are created only when an approved checkout is paid. Professors
+     * are the sole manual exception because they have no checkout flow yet.
+     */
+    role: "profesor";
+    name: string;
+    email: string;
+    password: string;
+    img?: string;
+  },
+  actor: StoredUser,
+  reason = DEFAULT_REASON,
+): Promise<UserDTO> {
   const repos = getRepositories();
   if (input.img) assertManagedImageUrl(input.img, "professors");
   const existing = await repos.users.findByEmail(input.email);
@@ -34,12 +41,22 @@ export async function createAdminUser(input: {
     img: input.img,
     sessionVersion: 0,
   });
+  await recordAdminEvent({
+    actor,
+    action: "create",
+    entity: "user",
+    entityId: user.id,
+    reason,
+    nextState: safeUserState(user),
+  });
   return userToDTO(user);
 }
 
 export async function updateAdminUser(
   id: string,
   patch: { name?: string; email?: string; status?: "Activo" | "Suspendido"; password?: string; img?: string },
+  actor: StoredUser,
+  reason = DEFAULT_REASON,
 ): Promise<UserDTO> {
   const repos = getRepositories();
   if (patch.img) assertManagedImageUrl(patch.img, "professors");
@@ -61,10 +78,23 @@ export async function updateAdminUser(
     initials: patch.name ? initialsFromName(patch.name) : undefined,
   }, { revokeSessions: mustRevoke });
   if (!updated) throw notFound("Usuario no encontrado.");
+  await recordAdminEvent({
+    actor,
+    action: "update",
+    entity: "user",
+    entityId: user.id,
+    reason,
+    previousState: safeUserState(user),
+    nextState: safeUserState(updated),
+  });
   return userToDTO(updated);
 }
 
-export async function deleteAdminUser(id: string): Promise<void> {
+export async function deleteAdminUser(
+  id: string,
+  actor: StoredUser,
+  reason = DEFAULT_REASON,
+): Promise<void> {
   const repos = getRepositories();
   const user = await repos.users.findById(id);
   if (!user) throw notFound("Usuario no encontrado.");
@@ -76,12 +106,35 @@ export async function deleteAdminUser(id: string): Promise<void> {
   }
 
   if (user.role === "alumno") {
-    await repos.enrollments.deleteByStudent(user.email);
-    // Conversations contain the student's messages; do not leave them behind
-    // where a later account with the same email could read them.
-    await repos.conversations.deleteByStudent(user.email);
+    // M-08: removing a student must not destroy financial or academic history.
+    // The account is closed (login and tokens stop working) while enrollments,
+    // orders and conversations stay available for reporting and disputes.
+    const closed = await repos.users.update(user.id, {
+      status: "Suspendido",
+      deletedAt: nowIso(),
+    }, { revokeSessions: true });
+    if (!closed) throw notFound("Usuario no encontrado.");
+    await recordAdminEvent({
+      actor,
+      action: "delete",
+      entity: "user",
+      entityId: user.id,
+      reason,
+      previousState: safeUserState(user),
+      nextState: safeUserState(closed),
+    });
+    return;
   }
+
   await repos.users.delete(id);
+  await recordAdminEvent({
+    actor,
+    action: "delete",
+    entity: "user",
+    entityId: user.id,
+    reason,
+    previousState: safeUserState(user),
+  });
 }
 
 export async function updateAdminOrder(
@@ -104,7 +157,11 @@ export async function getAdminOrderEvents(id: string) {
 export async function listAdminUsers(
   role: "alumno" | "profesor",
   page?: Pagination,
-): Promise<UserDTO[]> {
-  const users = await getRepositories().users.list(role, page);
-  return users.map(userToDTO);
+): Promise<{ users: UserDTO[]; total: number }> {
+  const repos = getRepositories();
+  const [users, counts] = await Promise.all([
+    repos.users.list(role, page),
+    repos.users.countByRole(),
+  ]);
+  return { users: users.map(userToDTO), total: counts[role] };
 }

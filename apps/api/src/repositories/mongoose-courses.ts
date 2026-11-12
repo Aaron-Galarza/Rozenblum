@@ -10,6 +10,16 @@ export function createMongooseCoursesRepositories() {
       const docs = await CourseModel.find({}).sort({ legacyId: 1 }).lean().exec();
       return docs.map((doc) => clean<StoredCourse>(doc));
     },
+    async countByStatus() {
+      const rows = await CourseModel.aggregate<{ _id: "published" | "draft"; count: number }>([
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]).exec();
+      const counts = { published: 0, draft: 0 };
+      for (const row of rows) {
+        if (row._id === "published" || row._id === "draft") counts[row._id] = row.count;
+      }
+      return counts;
+    },
     async listPublished() {
       const docs = await CourseModel.find({ status: "published" })
         .select("legacyId slug title description price priceCents duration level img professor accessDays status temario modules.id")

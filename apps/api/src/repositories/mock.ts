@@ -5,6 +5,7 @@ import { createMockCoursesRepositories } from "./mock-courses.js";
 import { createMockPaymentsRepositories } from "./mock-payments.js";
 import { createMockConversationsRepositories } from "./mock-conversations.js";
 import { createMockContentRepositories } from "./mock-content.js";
+import { createMockAdminEventRepository } from "./mock-admin-events.js";
 
 export function createMockRepositories(initial: Partial<Memory> = {}): Repositories {
   const db = createMemory(initial);
@@ -32,6 +33,7 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
   const { orders, paymentEvents } = createMockPaymentsRepositories(db);
   const { conversations } = createMockConversationsRepositories(db);
   const { contacts, home } = createMockContentRepositories(db);
+  const { adminEvents } = createMockAdminEventRepository(db);
 
   return {
     mode: "test",
@@ -43,6 +45,7 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
     paymentEvents,
     conversations,
     contacts,
+    adminEvents,
     home,
   };
 }

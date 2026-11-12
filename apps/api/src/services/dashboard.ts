@@ -12,7 +12,8 @@ import type {
 import { formatArs, formatShortDate, formatTime } from "../lib/utils.js";
 import type { Pagination } from "../lib/pagination.js";
 import { getRepositories } from "../repositories/index.js";
-import type { StoredCourse, StoredEnrollment, StoredOrder, StoredUser } from "../types.js";
+import type { EnrollmentMetrics, OrderMetrics } from "../repositories/interfaces.js";
+import type { StoredCourse, StoredEnrollment, StoredMessage, StoredUser } from "../types.js";
 import {
   adminAlumno,
   adminCurso,
@@ -30,10 +31,8 @@ const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "
 const withinDays = (iso: string, days: number) =>
   Date.now() - new Date(iso).getTime() <= days * DAY;
 
-function sameMonth(iso: string, reference: Date): boolean {
-  const date = new Date(iso);
-  return date.getMonth() === reference.getMonth() && date.getFullYear() === reference.getFullYear();
-}
+const monthKey = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 
 /** Average progress across enrollments that may belong to different courses. */
 function averageProgressFor(
@@ -73,11 +72,30 @@ function avgProgress(course: StoredCourse, enrollments: StoredEnrollment[]): num
   return Math.round(sum / enrollments.length);
 }
 
+function totalLessonsOf(course: StoredCourse): number {
+  return course.modules.reduce((sum, mod) => sum + mod.lessons.length, 0);
+}
+
+/** Legacy messages used `from: "me"` for the student; new ones store authorship. */
+function isStudentMessage(message: StoredMessage): boolean {
+  return message.authorRole ? message.authorRole === "alumno" : message.from === "me";
+}
+
+/** Progress from the aggregated average, without loading every enrollment. */
+function courseAverageProgress(
+  course: StoredCourse,
+  stats: EnrollmentMetrics["byCourse"][number] | undefined,
+): number {
+  const total = totalLessonsOf(course);
+  if (!stats || total === 0) return 0;
+  return Math.round((stats.averageCompletedLessons / total) * 100);
+}
+
 export async function getTeacherDashboard(user: StoredUser): Promise<TeacherDashboardDTO> {
   const repos = getRepositories();
   const allCourses = await repos.courses.list();
   const courses = allCourses.filter((course) => canManageCourse(course, user));
-  const allEnrollments = await repos.enrollments.listAll();
+  const allEnrollments = (await repos.enrollments.listAll()).filter((item) => item.status !== "Pendiente");
   const byCourse = courseEnrollments(courses, allEnrollments);
   const courseIds = new Set(courses.map((course) => course.legacyId));
 
@@ -87,9 +105,10 @@ export async function getTeacherDashboard(user: StoredUser): Promise<TeacherDash
   const averageProgress = averageProgressFor(courses, enrollments);
 
   const conversations = await repos.conversations.listByTeacher(user.email);
-  const studentMessages = conversations.filter(
-    (conversation) => conversation.messages.at(-1)?.from === "me",
-  );
+  const studentMessages = conversations.filter((conversation) => {
+    const last = conversation.messages.at(-1);
+    return last ? isStudentMessage(last) : false;
+  });
   const unreadMessages = studentMessages.length;
 
   const teacherCourses: TeacherCourseDTO[] = courses.map((course) => {
@@ -105,7 +124,7 @@ export async function getTeacherDashboard(user: StoredUser): Promise<TeacherDash
     };
   });
 
-  const orders = await repos.orders.list();
+  const orders = await repos.orders.listVisibleForAdmin();
   const notifications: TeacherNotificationDTO[] = [];
 
   for (const order of orders.filter((item) => courseIds.has(item.courseId)).slice(0, 2)) {
@@ -144,7 +163,7 @@ export async function getTeacherStudents(
   const course = await loadManagedCourse(courseId, user);
 
   const enrollments = (await repos.enrollments.listAll()).filter(
-    (enrollment) => enrollment.courseId === courseId,
+    (enrollment) => enrollment.courseId === courseId && enrollment.status !== "Pendiente",
   );
   const conversations = await repos.conversations.listByTeacher(user.email);
   const unreadByStudent = new Map(
@@ -152,7 +171,7 @@ export async function getTeacherStudents(
       .filter((conversation) => conversation.courseId === courseId)
       .map((conversation) => [
         conversation.studentEmail,
-        conversation.messages.filter((message) => message.from === "me").length,
+        conversation.messages.filter((message) => isStudentMessage(message)).length,
       ]),
   );
 
@@ -180,22 +199,18 @@ export async function getTeacherStudents(
   });
 }
 
-function monthlySeries(
-  dates: { iso: string; value: number }[],
-): MonthlySeriesDTO[] {
+/** Fills the last six calendar months, including months with no activity. */
+function monthlySeries(entries: { month: string; value: number }[]): MonthlySeriesDTO[] {
   const now = new Date();
+  const byMonth = new Map(entries.map((entry) => [entry.month, entry.value]));
   const buckets: MonthlySeriesDTO[] = [];
 
   for (let offset = 5; offset >= 0; offset -= 1) {
     const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
-    const month = MONTHS[date.getMonth()] ?? "";
-    const total = dates
-      .filter((item) => {
-        const value = new Date(item.iso);
-        return value.getFullYear() === date.getFullYear() && value.getMonth() === date.getMonth();
-      })
-      .reduce((sum, item) => sum + item.value, 0);
-    buckets.push({ month, value: total });
+    buckets.push({
+      month: MONTHS[date.getMonth()] ?? "",
+      value: byMonth.get(monthKey(date)) ?? 0,
+    });
   }
 
   return buckets;
@@ -209,30 +224,32 @@ function percentChange(current: number, previous: number): string {
 
 function buildReportes(
   courses: StoredCourse[],
-  enrollments: StoredEnrollment[],
-  orders: StoredOrder[],
+  enrollmentMetrics: EnrollmentMetrics,
+  orderMetrics: OrderMetrics,
 ): AdminReportesDTO {
-  const paid = orders.filter((order) => order.estado === "Pagado");
-  const byCourse = courseEnrollments(courses, enrollments);
+  const byCourse = new Map(
+    enrollmentMetrics.byCourse.map((entry) => [entry.courseId, entry]),
+  );
 
   return {
     ingresosPorMes: monthlySeries(
-      paid.map((order) => ({ iso: order.createdAt, value: Math.round(order.montoCents / 100 / 1000) })),
+      orderMetrics.paidMonthly.map((entry) => ({
+        month: entry.month,
+        value: Math.round(entry.cents / 100 / 1000),
+      })),
     ),
-    alumnosPorMes: monthlySeries(
-      enrollments.map((enrollment) => ({ iso: enrollment.startedAt, value: 1 })),
-    ),
+    alumnosPorMes: monthlySeries(enrollmentMetrics.monthly),
     completionPorCurso: courses
       .map((course) => ({
         name: course.title,
-        pct: avgProgress(course, byCourse.get(course.legacyId) ?? []),
+        pct: courseAverageProgress(course, byCourse.get(course.legacyId)),
       }))
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 4),
     cursosPopulares: courses
       .map((course) => ({
         name: course.title,
-        count: (byCourse.get(course.legacyId) ?? []).length,
+        count: byCourse.get(course.legacyId)?.students ?? 0,
         color: "#B58A43",
       }))
       .sort((a, b) => b.count - a.count)
@@ -244,27 +261,69 @@ function buildReportes(
   };
 }
 
-export async function getAdminOverview(): Promise<AdminOverviewDTO> {
+/** Row counts that accompany a paginated overview, exposed as response headers. */
+export type AdminOverviewTotals = {
+  alumnos: number;
+  profesores: number;
+  cursos: number;
+  orders: number;
+  inscripciones: number;
+};
+
+function monthValue(read: (month: string) => number, date: Date): number {
+  return read(monthKey(date));
+}
+
+export async function getAdminOverview(
+  page?: Pagination,
+): Promise<{ overview: AdminOverviewDTO; totals: AdminOverviewTotals }> {
   const repos = getRepositories();
-  const [users, courses, enrollments, orders] = await Promise.all([
-    repos.users.list(),
+  const [
+    userCounts,
+    courseCounts,
+    enrollmentMetrics,
+    orderMetrics,
+    alumnoUsers,
+    profesorUsers,
+    courses,
+    orders,
+    enrollments,
+  ] = await Promise.all([
+    repos.users.countByRole(),
+    repos.courses.countByStatus(),
+    repos.enrollments.metrics(),
+    repos.orders.metrics(),
+    repos.users.list("alumno", page),
+    repos.users.list("profesor"),
     repos.courses.list(),
-    repos.enrollments.listAll(),
-    repos.orders.list(),
+    repos.orders.listVisibleForAdmin(page),
+    repos.enrollments.listVisibleForAdmin(page),
   ]);
 
-  const alumnosUsers = users.filter((user) => user.role === "alumno");
-  const profesorUsers = users.filter((user) => user.role === "profesor");
-  const byCourse = courseEnrollments(courses, enrollments);
+  const byCourse = new Map(
+    enrollmentMetrics.byCourse.map((entry) => [entry.courseId, entry]),
+  );
   const byId = courseIndex(courses);
 
-  const alumnos = alumnosUsers.map((user) => {
-    const own = enrollments.filter(
-      (enrollment) => enrollment.studentEmail.toLowerCase() === user.email.toLowerCase(),
+  const ownEnrollments = await repos.enrollments.listByStudents(
+    alumnoUsers.map((user) => user.email),
+  );
+  const ownByEmail = new Map<string, StoredEnrollment[]>();
+  for (const enrollment of ownEnrollments) {
+    const key = enrollment.studentEmail.toLowerCase();
+    const list = ownByEmail.get(key) ?? [];
+    list.push(enrollment);
+    ownByEmail.set(key, list);
+  }
+
+  const alumnos = alumnoUsers.map((user) => {
+    const own = ownByEmail.get(user.email.toLowerCase()) ?? [];
+    return adminAlumno(
+      user,
+      own.length,
+      averageProgressFor(courses, own),
+      own[0] ? formatShortDate(own[0].startedAt) : "—",
     );
-    const progress = averageProgressFor(courses, own);
-    const fecha = own[0] ? formatShortDate(own[0].startedAt) : "—";
-    return adminAlumno(user, own.length, progress, fecha);
   });
 
   const profesores = profesorUsers.map((user) => {
@@ -273,19 +332,18 @@ export async function getAdminOverview(): Promise<AdminOverviewDTO> {
         course.professorEmail?.toLowerCase() === user.email.toLowerCase() ||
         course.professor.toLowerCase().includes(user.name.toLowerCase()),
     );
-    const students = new Set(
-      ownCourses.flatMap((course) =>
-        (byCourse.get(course.legacyId) ?? []).map((enrollment) => enrollment.studentEmail),
-      ),
+    const students = ownCourses.reduce(
+      (sum, course) => sum + (byCourse.get(course.legacyId)?.students ?? 0),
+      0,
     );
-    return adminProfesor(user, ownCourses.length, students.size);
+    return adminProfesor(user, ownCourses.length, students);
   });
 
   const cursos = courses.map((course) =>
     adminCurso(
       course,
-      (byCourse.get(course.legacyId) ?? []).length,
-      avgProgress(course, byCourse.get(course.legacyId) ?? []),
+      byCourse.get(course.legacyId)?.students ?? 0,
+      courseAverageProgress(course, byCourse.get(course.legacyId)),
     ),
   );
 
@@ -304,62 +362,87 @@ export async function getAdminOverview(): Promise<AdminOverviewDTO> {
     })
     .filter((value): value is AdminInscripcionDTO => Boolean(value));
 
-  const paid = orders.filter((order) => order.estado === "Pagado");
   const now = new Date();
   const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const thisMonth = paid.filter((order) => sameMonth(order.createdAt, now));
-  const previousMonth = paid.filter((order) => sameMonth(order.createdAt, previousMonthDate));
-
-  const revenueThis = thisMonth.reduce((sum, order) => sum + order.montoCents, 0);
-  const revenuePrev = previousMonth.reduce((sum, order) => sum + order.montoCents, 0);
-
-  const inscripcionesThis = enrollments.filter((enrollment) =>
-    sameMonth(enrollment.startedAt, now),
+  const revenueByMonth = new Map(
+    orderMetrics.paidMonthly.map((entry) => [entry.month, entry.cents]),
   );
-  const inscripcionesPrev = enrollments.filter((enrollment) =>
-    sameMonth(enrollment.startedAt, previousMonthDate),
+  const enrollmentsByMonth = new Map(
+    enrollmentMetrics.monthly.map((entry) => [entry.month, entry.value]),
+  );
+  const revenueThis = monthValue((month) => revenueByMonth.get(month) ?? 0, now);
+  const revenuePrev = monthValue((month) => revenueByMonth.get(month) ?? 0, previousMonthDate);
+  const inscripcionesThis = monthValue(
+    (month) => enrollmentsByMonth.get(month) ?? 0,
+    now,
+  );
+  const inscripcionesPrev = monthValue(
+    (month) => enrollmentsByMonth.get(month) ?? 0,
+    previousMonthDate,
   );
 
-  const reportes = buildReportes(courses, enrollments, orders);
+  const reportes = buildReportes(courses, enrollmentMetrics, orderMetrics);
+  const orderDTOs = orders.map(orderToDTO);
 
   const dashboard: AdminDashboardDTO = {
-    totalIngresos: formatArs(paid.reduce((sum, order) => sum + order.montoCents, 0)),
-    alumnosActivos: new Set(
-      enrollments
-        .filter((enrollment) => enrollment.status === "Activo")
-        .map((enrollment) => enrollment.studentEmail),
-    ).size,
-    cursosPublicados: courses.filter((course) => course.status === "published").length,
-    cursosBorrador: courses.filter((course) => course.status === "draft").length,
-    nuevasInscripciones: enrollments.filter((enrollment) => withinDays(enrollment.startedAt, 7))
-      .length,
+    totalIngresos: formatArs(orderMetrics.paidCents),
+    alumnosActivos: enrollmentMetrics.activeStudents,
+    cursosPublicados: courseCounts.published,
+    cursosBorrador: courseCounts.draft,
+    nuevasInscripciones: enrollmentMetrics.startedLast7Days,
     ingresosTrend: percentChange(revenueThis, revenuePrev),
-    alumnosTrend: percentChange(inscripcionesThis.length, inscripcionesPrev.length),
+    alumnosTrend: percentChange(inscripcionesThis, inscripcionesPrev),
     reportes,
-    orders: orders.map(orderToDTO),
+    orders: orderDTOs,
     inscripciones,
   };
 
   return {
-    dashboard,
-    alumnos,
-    profesores,
-    cursos,
-    orders: orders.map(orderToDTO),
-    inscripciones,
-    reportes,
+    overview: {
+      dashboard,
+      alumnos,
+      profesores,
+      cursos,
+      orders: orderDTOs,
+      inscripciones,
+      reportes,
+    },
+    totals: {
+      alumnos: userCounts.alumno,
+      profesores: userCounts.profesor,
+      cursos: courseCounts.published + courseCounts.draft,
+      orders: orderMetrics.total,
+      inscripciones: enrollmentMetrics.total,
+    },
   };
 }
 
-export async function listAdminEnrollments(page?: Pagination) {
+export async function listAdminEnrollments(
+  page?: Pagination,
+): Promise<{ items: ReturnType<typeof enrollmentToDTO>[]; total: number }> {
   const repos = getRepositories();
-  const courses = await repos.courses.list();
+  const [courses, enrollments, total] = await Promise.all([
+    repos.courses.list(),
+    repos.enrollments.listVisibleForAdmin(page),
+    repos.enrollments.countVisibleForAdmin(),
+  ]);
   const byId = courseIndex(courses);
-  const items = (await repos.enrollments.listAll(page))
+  const items = enrollments
     .map((enrollment) => {
       const course = byId.get(enrollment.courseId);
       return course ? enrollmentToDTO(enrollment, course) : null;
     })
-    .filter((value) => value !== null);
-  return items;
+    .filter((value): value is ReturnType<typeof enrollmentToDTO> => value !== null);
+  return { items, total };
+}
+
+export async function listAdminOrders(
+  page?: Pagination,
+): Promise<{ items: ReturnType<typeof orderToDTO>[]; total: number }> {
+  const repos = getRepositories();
+  const [orders, total] = await Promise.all([
+    repos.orders.listVisibleForAdmin(page),
+    repos.orders.countVisibleForAdmin(),
+  ]);
+  return { items: orders.map(orderToDTO), total };
 }

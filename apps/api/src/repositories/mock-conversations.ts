@@ -33,6 +33,18 @@ export function createMockConversationsRepositories(db: Memory) {
       conversation.messages.push(clone(message));
       return clone(conversation);
     },
+    async listMessages(id, page) {
+      const conversation = db.conversations.find((c) => c.id === id);
+      if (!conversation) return null;
+      const total = conversation.messages.length;
+      const limit = page?.limit ?? 500;
+      const offset = page?.offset ?? 0;
+      const start = Math.max(total - offset - limit, 0);
+      return {
+        messages: conversation.messages.slice(start, start + limit).map(clone),
+        total,
+      };
+    },
     async reassignTeacher(courseId, teacherEmail, teacherName) {
       let changed = 0;
       for (const conversation of db.conversations) {

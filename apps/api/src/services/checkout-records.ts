@@ -1,11 +1,9 @@
 import { badRequest } from "../lib/http.js";
-import { newId } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
-import type { StoredEnrollment, StoredOrder, StoredUser } from "../types.js";
+import type { StoredEnrollment, StoredOrder } from "../types.js";
 
 export async function persistCheckoutRecords(
   order: StoredOrder,
-  teacher: StoredUser,
 ): Promise<{ createdOrder: StoredOrder; enrollment: StoredEnrollment }> {
   const repos = getRepositories();
   try {
@@ -21,14 +19,6 @@ export async function persistCheckoutRecords(
         status: "Pendiente",
         completedLessonIds: [],
       });
-      if (!await repos.conversations.findByStudentAndCourse(order.email, order.courseId)) {
-        await repos.conversations.create({
-          id: newId("cnv"), courseId: order.courseId,
-          studentEmail: order.email, studentName: order.alumno,
-          teacherEmail: teacher.email, teacherName: teacher.name,
-          messages: [],
-        });
-      }
       return { createdOrder, enrollment };
     });
   } catch (error) {

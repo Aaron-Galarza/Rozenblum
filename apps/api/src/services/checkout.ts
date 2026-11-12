@@ -5,7 +5,7 @@ import type {
 } from "@rozenblum/shared";
 import { ApiError, badRequest, notFound } from "../lib/http.js";
 import { logger } from "../lib/logger.js";
-import { hashPassword } from "../lib/password.js";
+import { hashPassword, verifyPassword } from "../lib/password.js";
 import { newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredOrder, StoredUser } from "../types.js";
@@ -27,13 +27,28 @@ export async function checkout(
   /** Present when the caller sent a valid session (see `optionalAuth`). */
   actor?: StoredUser,
 ): Promise<CheckoutResultDTO> {
-  const { course, teacher, account } = await resolveCheckoutParticipants(input, actor);
+  const { course, account, existingEnrollment } = await resolveCheckoutParticipants(input, actor);
   // The account is created only after Mercado Pago confirms the payment.
   const reference = `RB-${new Date().getFullYear()}-${newId("ref").slice(4).toUpperCase()}`;
   const gateway = paymentGateway();
   if (!gateway) throw new ApiError(503, "PAYMENTS_NOT_CONFIGURED", "Mercado Pago no está disponible en este momento. Intentá más tarde.");
   if (course.priceCents <= 0) {
     throw badRequest("Este curso no tiene un importe válido para Mercado Pago.");
+  }
+  if (existingEnrollment) {
+    const existingOrder = await getRepositories().orders.findLatestByStudentAndCourse(input.email, course.legacyId);
+    if (!existingOrder || existingOrder.paymentProvider !== "mercadopago" ||
+        !["Pendiente", "Rechazado"].includes(existingOrder.estado) || !existingOrder.paymentUrl ||
+        (account ? account.role !== "alumno" : !existingOrder.dniPasswordHash ||
+          !await verifyPassword(input.dni, existingOrder.dniPasswordHash))) {
+      throw badRequest("Esta inscripción necesita revisión antes de iniciar otro pago. Contactá al Estudio.");
+    }
+    return {
+      order: orderToDTO(existingOrder),
+      enrollment: enrollmentToDTO(existingEnrollment, course),
+      payment: { provider: "mercadopago", preferenceId: existingOrder.preferenceId!, url: existingOrder.paymentUrl },
+      message: "Retomá el pago de tu inscripción existente en Mercado Pago.",
+    };
   }
   const preference = await gateway.createPreference({
     reference, courseId: course.legacyId, title: course.title,
@@ -59,7 +74,7 @@ export async function checkout(
     paymentUrl: preference.url,
   };
 
-  const { createdOrder, enrollment } = await persistCheckoutRecords(order, teacher);
+  const { createdOrder, enrollment } = await persistCheckoutRecords(order);
   logger.debug("checkout_created", { reference, courseId: course.legacyId, paymentMethod: "mercadopago",
     amountCents: course.priceCents, orderId: createdOrder.id });
 

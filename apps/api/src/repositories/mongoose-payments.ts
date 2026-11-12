@@ -2,18 +2,76 @@ import type { OrderStatus } from "@rozenblum/shared";
 import { OrderModel, PaymentEventModel } from "../models/index.js";
 import { LIST_HARD_LIMIT } from "../lib/pagination.js";
 import type { StoredOrder, StoredPaymentEvent } from "../types.js";
-import type { OrderRepository, PaymentEventRepository } from "./interfaces.js";
+import type { OrderMetrics, OrderRepository, PaymentEventRepository } from "./interfaces.js";
 import { clean } from "./mongoose-common.js";
+
+/**
+ * A manual order counts as revenue once an administrator marks it paid.
+ * A Mercado Pago order only counts when the gateway bound a payment id, so a
+ * record left inconsistent by a failed notification is never reported as sold.
+ */
+const CONFIRMED_PAID_FILTER = {
+  estado: "Pagado",
+  $or: [
+    { paymentProvider: { $ne: "mercadopago" } },
+    { paymentId: { $type: "string" } },
+  ],
+};
+const ADMIN_VISIBLE_FILTER = {
+  $or: [
+    { paymentProvider: { $ne: "mercadopago" as const } },
+    { estado: { $in: ["Pagado", "En disputa", "Reembolsado"] satisfies OrderStatus[] },
+      paymentId: { $type: "string" as const } },
+  ],
+};
 
 export function createMongoosePaymentsRepositories() {
   const orders: OrderRepository = {
-    async list() {
+    async list(page) {
       const docs = await OrderModel.find({})
         .sort({ createdAt: -1 })
-        .limit(LIST_HARD_LIMIT)
+        .skip(page?.offset ?? 0)
+        .limit(page?.limit ?? LIST_HARD_LIMIT)
         .lean()
         .exec();
       return docs.map((doc) => clean<StoredOrder>(doc));
+    },
+    async countAll() {
+      return OrderModel.countDocuments({}).exec();
+    },
+    async listVisibleForAdmin(page) {
+      const docs = await OrderModel.find(ADMIN_VISIBLE_FILTER).sort({ createdAt: -1 })
+        .skip(page?.offset ?? 0).limit(page?.limit ?? LIST_HARD_LIMIT).lean().exec();
+      return docs.map((doc) => clean<StoredOrder>(doc));
+    },
+    async countVisibleForAdmin() {
+      return OrderModel.countDocuments(ADMIN_VISIBLE_FILTER).exec();
+    },
+    async metrics() {
+      const [total, totals, monthlyRows] = await Promise.all([
+        OrderModel.countDocuments(ADMIN_VISIBLE_FILTER).exec(),
+        OrderModel.aggregate<{ _id: null; count: number; cents: number }>([
+          { $match: CONFIRMED_PAID_FILTER },
+          { $group: { _id: null, count: { $sum: 1 }, cents: { $sum: "$montoCents" } } },
+        ]).exec(),
+        OrderModel.aggregate<{ _id: string; cents: number }>([
+          { $match: CONFIRMED_PAID_FILTER },
+          {
+            $group: {
+              _id: { $substrBytes: ["$createdAt", 0, 7] },
+              cents: { $sum: "$montoCents" },
+            },
+          },
+          { $sort: { _id: 1 } },
+        ]).exec(),
+      ]);
+      const metrics: OrderMetrics = {
+        total,
+        paidCount: totals[0]?.count ?? 0,
+        paidCents: totals[0]?.cents ?? 0,
+        paidMonthly: monthlyRows.map((row) => ({ month: row._id, cents: row.cents })),
+      };
+      return metrics;
     },
     async existsByCourse(courseId) {
       return Boolean(await OrderModel.exists({ courseId }));
@@ -25,6 +83,11 @@ export function createMongoosePaymentsRepositories() {
         .select("+dniPasswordHash")
         .lean()
         .exec();
+      return doc ? clean<StoredOrder>(doc) : null;
+    },
+    async findLatestByStudentAndCourse(email, courseId) {
+      const doc = await OrderModel.findOne({ email: email.toLowerCase(), courseId })
+        .sort({ createdAt: -1 }).select("+dniPasswordHash").lean().exec();
       return doc ? clean<StoredOrder>(doc) : null;
     },
     async create(input) {

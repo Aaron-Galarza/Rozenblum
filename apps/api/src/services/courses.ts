@@ -13,6 +13,7 @@ import { getRepositories } from "../repositories/index.js";
 import type { StoredCourse, StoredLesson, StoredModule, StoredUser } from "../types.js";
 import { authoringModulesToDTO, courseStructure, courseToDTO, courseToPublicDTO, enrollmentToDTO } from "./mappers.js";
 import { assertManagedImageUrl } from "./media.js";
+import { recordAdminEvent, safeCourseState } from "./audit.js";
 
 /** Optional controls shared by every authoring mutation. */
 type MutationOptions = {
@@ -198,11 +199,24 @@ export async function updateCourse(
     );
   }
 
+  if (user.role === "admin") {
+    await recordAdminEvent({
+      actor: user,
+      action: "update",
+      entity: "course",
+      entityId: String(courseId),
+      reason: "Edición administrativa del curso.",
+      previousState: safeCourseState(course),
+      nextState: safeCourseState(updated),
+    });
+  }
+
   return courseToDTO(updated);
 }
 
 export async function deleteCourse(
   courseId: number,
+  user: StoredUser,
   options: { expectedRevision?: number } = {},
 ): Promise<void> {
   const repos = getRepositories();
@@ -221,6 +235,14 @@ export async function deleteCourse(
     if (current) throw revisionConflict(current);
     throw notFound("Curso no encontrado.");
   }
+  await recordAdminEvent({
+    actor: user,
+    action: "delete",
+    entity: "course",
+    entityId: String(courseId),
+    reason: "Eliminación administrativa del curso.",
+    previousState: safeCourseState(course),
+  });
 }
 
 async function assertAcademicDeletionAllowed(course: StoredCourse): Promise<void> {
@@ -574,16 +596,20 @@ export async function listCourseEnrollments(courseId: number, user: StoredUser) 
     .map((enrollment) => enrollmentToDTO(enrollment, course));
 }
 
-export async function createEmptyCourseForAdmin(input: {
-  title: string;
-  description: string;
-  priceCents: number;
-  professorEmail: string;
-  level?: string;
-  duration?: string;
-  img?: string;
-  accessDays?: number;
-}, requestId?: string): Promise<CourseDTO> {
+export async function createEmptyCourseForAdmin(
+  input: {
+    title: string;
+    description: string;
+    priceCents: number;
+    professorEmail: string;
+    level?: string;
+    duration?: string;
+    img?: string;
+    accessDays?: number;
+  },
+  requestId: string | undefined,
+  actor: StoredUser,
+): Promise<CourseDTO> {
   if (requestId) {
     const existing = await getRepositories().courses.findByRequestId(requestId);
     if (existing) return courseToDTO(existing);
@@ -602,6 +628,14 @@ export async function createEmptyCourseForAdmin(input: {
     img: input.img ?? "",
     requestId,
     accessDays: input.accessDays,
+  });
+  await recordAdminEvent({
+    actor,
+    action: "create",
+    entity: "course",
+    entityId: String(course.legacyId),
+    reason: "Alta administrativa del curso.",
+    nextState: safeCourseState(course),
   });
   return courseToDTO(course);
 }

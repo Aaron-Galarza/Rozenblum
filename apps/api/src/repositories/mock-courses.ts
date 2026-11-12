@@ -8,6 +8,12 @@ export function createMockCoursesRepositories(db: Memory) {
     async list() {
       return db.courses.map(clone);
     },
+    async countByStatus() {
+      return {
+        published: db.courses.filter((course) => course.status === "published").length,
+        draft: db.courses.filter((course) => course.status === "draft").length,
+      };
+    },
     async listPublished() {
       return db.courses.filter((course) => course.status === "published").map((course): PublicCourseRecord => ({
         legacyId: course.legacyId,

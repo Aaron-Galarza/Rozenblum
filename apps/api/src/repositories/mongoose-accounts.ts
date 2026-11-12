@@ -3,7 +3,12 @@ import { UserModel, EnrollmentModel } from "../models/index.js";
 import { newId, nowIso } from "../lib/utils.js";
 import { LIST_HARD_LIMIT } from "../lib/pagination.js";
 import type { StoredUser, StoredEnrollment } from "../types.js";
-import type { UserRepository, EnrollmentRepository } from "./interfaces.js";
+import type {
+  EnrollmentMetrics,
+  EnrollmentRepository,
+  UserCounts,
+  UserRepository,
+} from "./interfaces.js";
 import { clean } from "./mongoose-common.js";
 
 export function createMongooseAccountsRepositories() {
@@ -24,14 +29,26 @@ export function createMongooseAccountsRepositories() {
         .exec();
       return docs.map(({ id, img }) => ({ id, img }));
     },
-    async list(role: Role | undefined, page) {
-      const docs = await UserModel.find(role ? { role } : {})
+    async list(role, page) {
+      const docs = await UserModel.find({
+        ...(role ? { role } : {}),
+        deletedAt: { $exists: false },
+      })
         .sort({ name: 1 })
         .skip(page?.offset ?? 0)
         .limit(page?.limit ?? LIST_HARD_LIMIT)
         .lean()
         .exec();
       return docs.map((doc) => clean<StoredUser>(doc));
+    },
+    async countByRole() {
+      const rows = await UserModel.aggregate<{ _id: Role; count: number }>([
+        { $match: { deletedAt: { $exists: false } } },
+        { $group: { _id: "$role", count: { $sum: 1 } } },
+      ]).exec();
+      const counts: UserCounts = { alumno: 0, profesor: 0, admin: 0 };
+      for (const row of rows) counts[row._id] = row.count;
+      return counts;
     },
     async create(input) {
       const doc = await UserModel.create({
@@ -73,6 +90,72 @@ export function createMongooseAccountsRepositories() {
         .lean()
         .exec();
       return docs.map((doc) => clean<StoredEnrollment>(doc));
+    },
+    async countAll() {
+      return EnrollmentModel.countDocuments({}).exec();
+    },
+    async listVisibleForAdmin(page) {
+      const docs = await EnrollmentModel.find({ status: { $ne: "Pendiente" } })
+        .sort({ startedAt: -1 })
+        .skip(page?.offset ?? 0)
+        .limit(page?.limit ?? LIST_HARD_LIMIT)
+        .lean()
+        .exec();
+      return docs.map((doc) => clean<StoredEnrollment>(doc));
+    },
+    async countVisibleForAdmin() {
+      return EnrollmentModel.countDocuments({ status: { $ne: "Pendiente" } }).exec();
+    },
+    async listByStudents(emails) {
+      if (emails.length === 0) return [];
+      const docs = await EnrollmentModel.find({
+        studentEmail: { $in: emails.map((email) => email.toLowerCase()) },
+      })
+        .sort({ startedAt: -1 })
+        .lean()
+        .exec();
+      return docs.map((doc) => clean<StoredEnrollment>(doc));
+    },
+    async metrics() {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+      const [total, startedLast7Days, activeEmails, monthlyRows, byCourseRows] = await Promise.all([
+        EnrollmentModel.countDocuments({ status: { $ne: "Pendiente" } }).exec(),
+        EnrollmentModel.countDocuments({ status: { $ne: "Pendiente" }, startedAt: { $gte: sevenDaysAgo } }).exec(),
+        EnrollmentModel.distinct("studentEmail", { status: "Activo" }).exec(),
+        EnrollmentModel.aggregate<{ _id: string; value: number }>([
+          { $match: { status: { $ne: "Pendiente" } } },
+          { $group: { _id: { $substrBytes: ["$startedAt", 0, 7] }, value: { $sum: 1 } } },
+          { $sort: { _id: 1 } },
+        ]).exec(),
+        EnrollmentModel.aggregate<{
+          _id: number;
+          students: number;
+          averageCompletedLessons: number;
+        }>([
+          { $match: { status: { $ne: "Pendiente" } } },
+          {
+            $group: {
+              _id: "$courseId",
+              students: { $sum: 1 },
+              averageCompletedLessons: {
+                $avg: { $size: { $ifNull: ["$completedLessonIds", []] } },
+              },
+            },
+          },
+        ]).exec(),
+      ]);
+      const metrics: EnrollmentMetrics = {
+        total,
+        activeStudents: activeEmails.length,
+        startedLast7Days,
+        monthly: monthlyRows.map((row) => ({ month: row._id, value: row.value })),
+        byCourse: byCourseRows.map((row) => ({
+          courseId: row._id,
+          students: row.students,
+          averageCompletedLessons: row.averageCompletedLessons ?? 0,
+        })),
+      };
+      return metrics;
     },
     async existsByCourse(courseId) {
       return Boolean(await EnrollmentModel.exists({ courseId }));
