@@ -473,6 +473,23 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
       `/api/teacher/courses/${courseId}/students`, { token: teacherLogin.body.data.token });
     assert.equal(teacherStudents.status, 200);
     assert.ok(teacherStudents.body.data.length > 1000);
+    await OrderModel.create({
+      id: "ord_month_boundary", externalReference: "RB-MONTH-BOUNDARY",
+      alumno: "Month Boundary", email: "month-boundary@example.test",
+      curso: course.title, courseSlug: course.slug, courseId,
+      monto: "$ 100", montoCents: 10000, fecha: "01/01/2020",
+      metodo: "Manual", estado: "Pagado", createdAt: "2020-01-31T23:00:00.000Z",
+      paymentProvider: "manual",
+    });
+    await PaymentEventModel.create({
+      id: "pev_month_boundary", orderId: "ord_month_boundary", source: "manual",
+      previousStatus: "Pendiente", nextStatus: "Pagado", actorId: "test-admin",
+      reason: "Confirmación en otro mes", createdAt: "2020-02-01T01:00:00.000Z",
+    });
+    const revenueByMonth = new Map((await repositories.orders.metrics()).paidMonthly
+      .map((row) => [row.month, row.cents]));
+    assert.equal(revenueByMonth.get("2020-02"), 10000);
+    assert.equal(revenueByMonth.get("2020-01") ?? 0, 0);
     await EnrollmentModel.init();
     const persisted = await repositories.enrollments.findById(checkout.body.data.enrollment.id);
     assert.ok(persisted);

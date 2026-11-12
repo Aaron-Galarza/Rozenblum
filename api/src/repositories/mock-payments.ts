@@ -39,8 +39,16 @@ export function createMockPaymentsRepositories(db: Memory) {
     async metrics() {
       const paid = db.orders.filter(isConfirmedPaid);
       const monthly = new Map<string, number>();
+      const firstPaymentByOrder = new Map<string, string>();
+      for (const event of db.paymentEvents) {
+        if (event.nextStatus !== "Pagado") continue;
+        const previous = firstPaymentByOrder.get(event.orderId);
+        if (!previous || event.createdAt < previous) {
+          firstPaymentByOrder.set(event.orderId, event.createdAt);
+        }
+      }
       for (const order of paid) {
-        const month = order.createdAt.slice(0, 7);
+        const month = (firstPaymentByOrder.get(order.id) ?? order.createdAt).slice(0, 7);
         monthly.set(month, (monthly.get(month) ?? 0) + order.montoCents);
       }
       const metrics: OrderMetrics = {

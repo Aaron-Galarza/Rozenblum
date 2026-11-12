@@ -180,6 +180,7 @@ const paymentEventSchema = new Schema<StoredPaymentEvent>({
 paymentEventSchema.index({ source: 1, providerEventId: 1 }, {
   unique: true, partialFilterExpression: { providerEventId: { $type: "string" } },
 });
+paymentEventSchema.index({ orderId: 1, nextStatus: 1, createdAt: 1 });
 
 const messageSchema = new Schema(
   {

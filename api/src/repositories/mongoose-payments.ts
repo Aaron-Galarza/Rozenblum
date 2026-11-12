@@ -65,9 +65,25 @@ export function createMongoosePaymentsRepositories() {
         ]).exec(),
         OrderModel.aggregate<{ _id: string; cents: number }>([
           { $match: CONFIRMED_PAID_FILTER },
+          { $lookup: {
+            from: "payment_events",
+            let: { orderId: "$id" },
+            pipeline: [
+              { $match: { $expr: { $and: [
+                { $eq: ["$orderId", "$$orderId"] }, { $eq: ["$nextStatus", "Pagado"] },
+              ] } } },
+              { $sort: { createdAt: 1 } },
+              { $limit: 1 },
+              { $project: { _id: 0, createdAt: 1 } },
+            ],
+            as: "firstPayment",
+          } },
           {
             $group: {
-              _id: { $substrBytes: ["$createdAt", 0, 7] },
+              // Legacy paid orders have no event: retain their original month.
+              _id: { $substrBytes: [
+                { $ifNull: [{ $arrayElemAt: ["$firstPayment.createdAt", 0] }, "$createdAt"] }, 0, 7,
+              ] },
               cents: { $sum: "$montoCents" },
             },
           },
