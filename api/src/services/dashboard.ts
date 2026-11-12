@@ -95,7 +95,9 @@ export async function getTeacherDashboard(user: StoredUser): Promise<TeacherDash
   const repos = getRepositories();
   const allCourses = await repos.courses.list();
   const courses = allCourses.filter((course) => canManageCourse(course, user));
-  const allEnrollments = (await repos.enrollments.listAll()).filter((item) => item.status !== "Pendiente");
+  const allEnrollments = await repos.enrollments.listByCourseIds(
+    courses.map((course) => course.legacyId),
+  );
   const byCourse = courseEnrollments(courses, allEnrollments);
   const courseIds = new Set(courses.map((course) => course.legacyId));
 
@@ -162,9 +164,7 @@ export async function getTeacherStudents(
   const repos = getRepositories();
   const course = await loadManagedCourse(courseId, user);
 
-  const enrollments = (await repos.enrollments.listAll()).filter(
-    (enrollment) => enrollment.courseId === courseId && enrollment.status !== "Pendiente",
-  );
+  const enrollments = await repos.enrollments.listByCourseIds([courseId]);
   const conversations = await repos.conversations.listByTeacher(user.email);
   const unreadByStudent = new Map(
     conversations

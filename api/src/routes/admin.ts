@@ -18,6 +18,7 @@ import {
   updateAdminUser,
 } from "../services/admin.js";
 import { listAdminEvents } from "../services/audit.js";
+import { streamAdminExport } from "../services/admin-export.js";
 import {
   getAdminOverview,
   listAdminEnrollments,
@@ -81,6 +82,24 @@ adminRouter.get(
     sendPaginated(res, items, total, page);
   }),
 );
+
+adminRouter.get("/orders/export", asyncRoute(async (_req, res) => {
+  try {
+    await streamAdminExport(res, "orders");
+  } catch (error) {
+    if (res.headersSent) { res.destroy(error as Error); return; }
+    throw error;
+  }
+}));
+
+adminRouter.get("/enrollments/export", asyncRoute(async (_req, res) => {
+  try {
+    await streamAdminExport(res, "enrollments");
+  } catch (error) {
+    if (res.headersSent) { res.destroy(error as Error); return; }
+    throw error;
+  }
+}));
 
 adminRouter.get(
   "/contacts",

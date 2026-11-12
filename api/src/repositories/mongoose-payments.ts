@@ -47,6 +47,15 @@ export function createMongoosePaymentsRepositories() {
     async countVisibleForAdmin() {
       return OrderModel.countDocuments(ADMIN_VISIBLE_FILTER).exec();
     },
+    async *iterateVisibleForAdmin() {
+      const cursor = OrderModel.find(ADMIN_VISIBLE_FILTER)
+        .sort({ createdAt: -1, id: -1 }).lean().cursor();
+      try {
+        for await (const doc of cursor) yield clean<StoredOrder>(doc);
+      } finally {
+        await cursor.close();
+      }
+    },
     async metrics() {
       const [total, totals, monthlyRows] = await Promise.all([
         OrderModel.countDocuments(ADMIN_VISIBLE_FILTER).exec(),

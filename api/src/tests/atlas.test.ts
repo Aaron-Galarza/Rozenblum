@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 import { BRAND_HERO_URL } from "@rozenblum/shared";
 import { env } from "../config/env.js";
 import { hashPassword } from "../lib/password.js";
-import { ContactModel, CourseModel, EnrollmentModel, HomeContentModel, PaymentEventModel } from "../models/index.js";
+import { ContactModel, ConversationModel, CourseModel, EnrollmentModel, HomeContentModel, OrderModel, PaymentEventModel } from "../models/index.js";
 import { setPaymentGatewayForTests } from "../services/mercadopago.js";
 import { applyOrderTransition } from "../services/order-transitions.js";
 import { createMongooseRepositories } from "../repositories/mongoose.js";
@@ -345,6 +345,134 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
       (await repositories.enrollments.findById(checkout.body.data.enrollment.id))?.completedLessonIds,
       ["1.1"],
     );
+    // Both participants may open an empty conversation at the same instant.
+    const studentChatPath = `/api/student/enrollments/${checkout.body.data.enrollment.id}/messages`;
+    const teacherChatPath = `/api/teacher/courses/${courseId}/students/${checkout.body.data.enrollment.id}/messages`;
+    await ConversationModel.init();
+    const parallelMessages = await Promise.all([
+      api(server.baseUrl, studentChatPath, {
+        method: "POST", token: buyerLogin.body.data.token,
+        body: JSON.stringify({ text: "Pregunta simultánea" }),
+      }),
+      api(server.baseUrl, teacherChatPath, {
+        method: "POST", token: teacherLogin.body.data.token,
+        body: JSON.stringify({ text: "Respuesta simultánea" }),
+      }),
+    ]);
+    assert.deepEqual(parallelMessages.map((response) => response.status), [201, 201]);
+    assert.equal(await ConversationModel.countDocuments({ studentEmail: "buyer@example.test", courseId }), 1);
+    const chatPage = await api<{ data: { from: string; text: string }[] }>(
+      server.baseUrl, `${studentChatPath}?limit=1&offset=0`, { token: buyerLogin.body.data.token },
+    );
+    assert.equal(chatPage.status, 200);
+    assert.equal(chatPage.body.data.length, 1);
+    assert.equal(chatPage.headers.get("x-total-count"), "2");
+    const olderPage = await api<{ data: { from: string; text: string }[] }>(
+      server.baseUrl, `${studentChatPath}?limit=1&offset=1`, { token: buyerLogin.body.data.token },
+    );
+    assert.equal(olderPage.body.data.length, 1);
+    assert.notEqual(olderPage.body.data[0]?.text, chatPage.body.data[0]?.text);
+    const teacherView = await api<{ data: { from: string; text: string }[] }>(
+      server.baseUrl, teacherChatPath, { token: teacherLogin.body.data.token },
+    );
+    assert.equal(teacherView.status, 200);
+    assert.equal(teacherView.body.data.find((message) => message.text === "Respuesta simultánea")?.from, "me");
+    const foreignProfessor = await repositories.users.create({
+      name: "Foreign Professor", email: "foreign-professor@example.test", role: "profesor",
+      initials: "FP", passwordHash: await hashPassword(adminPassword),
+    });
+    const foreignLogin = await api<{ data: { token: string } }>(server.baseUrl, "/api/auth/login", {
+      method: "POST", body: JSON.stringify({ email: foreignProfessor.email, password: adminPassword }),
+    });
+    assert.equal(foreignLogin.status, 200);
+    assert.equal((await api(server.baseUrl, teacherChatPath, {
+      token: foreignLogin.body.data.token,
+    })).status, 403);
+    assert.equal((await api(server.baseUrl, teacherChatPath, {
+      method: "POST", token: foreignLogin.body.data.token,
+      body: JSON.stringify({ text: "Unauthorized message" }),
+    })).status, 403);
+
+    // Database aggregation, not a truncated list, must drive dashboard totals.
+    const beforeMetrics = await repositories.orders.metrics();
+    const bulkTime = "2100-01-01T00:00:00.000Z";
+    await OrderModel.insertMany(Array.from({ length: 1001 }, (_, index) => ({
+      id: `ord_bulk_${index}`, externalReference: `RB-BULK-${index}`,
+      alumno: index === 0 ? "=2+2" : `Bulk Buyer ${index}`,
+      email: `bulk-${index}@example.test`,
+      curso: course.title, courseSlug: course.slug, courseId,
+      monto: "$ 100", montoCents: 10000, fecha: "01/01/2100",
+      metodo: "Mercado Pago", estado: "Pagado", createdAt: bulkTime,
+      paymentProvider: "mercadopago", paymentId: `bulk-payment-${index}`,
+    })), { ordered: false });
+    await OrderModel.create({
+      id: "ord_bulk_unverified", externalReference: "RB-BULK-UNVERIFIED",
+      alumno: "Unverified Buyer", email: "unverified@example.test",
+      curso: course.title, courseSlug: course.slug, courseId,
+      monto: "$ 100", montoCents: 10000, fecha: "01/01/2100",
+      metodo: "Mercado Pago", estado: "Pagado", createdAt: bulkTime,
+      paymentProvider: "mercadopago",
+    });
+    const afterMetrics = await repositories.orders.metrics();
+    assert.equal(afterMetrics.paidCount - beforeMetrics.paidCount, 1001);
+    assert.equal(afterMetrics.paidCents - beforeMetrics.paidCents, 10_010_000);
+    const overview = await api<{ data: { dashboard: { totalIngresos: string; orders: unknown[] } } }>(
+      server.baseUrl, "/api/admin/overview?limit=5", { token: adminLogin.body.data.token },
+    );
+    assert.equal(overview.status, 200);
+    assert.ok(Number(overview.headers.get("x-total-orders")) >= 1002);
+    assert.equal(overview.body.data.dashboard.orders.length, 5);
+    const lastOrders = await api<{ data: { id: string }[] }>(
+      server.baseUrl, "/api/admin/orders?limit=5&offset=1000", { token: adminLogin.body.data.token },
+    );
+    assert.equal(lastOrders.status, 200);
+    assert.equal(lastOrders.body.data.length, 2);
+    assert.ok(Number(lastOrders.headers.get("x-total-count")) >= 1002);
+    const exportUrl = `${server.baseUrl}/api/admin/orders/export`;
+    assert.equal((await fetch(exportUrl)).status, 401);
+    assert.equal((await fetch(exportUrl, {
+      headers: { authorization: `Bearer ${teacherLogin.body.data.token}` },
+    })).status, 403);
+    const exported = await fetch(exportUrl, {
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+    });
+    assert.equal(exported.status, 200);
+    assert.match(exported.headers.get("content-type") ?? "", /^text\/csv/);
+    const csv = await exported.text();
+    assert.equal(csv.split("\r\n").length - 2, 1002);
+    assert.ok(csv.includes("\"'=2+2\""));
+    assert.equal(csv.includes("RB-BULK-UNVERIFIED"), false);
+    assert.equal(csv.includes("dniPasswordHash"), false);
+    assert.equal(csv.includes(buyerDni), false);
+    const enrollmentExport = await fetch(`${server.baseUrl}/api/admin/enrollments/export`, {
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+    });
+    assert.equal(enrollmentExport.status, 200);
+    assert.ok((await enrollmentExport.text()).includes(checkout.body.data.enrollment.id));
+    const beforeEnrollments = await repositories.enrollments.metrics();
+    await EnrollmentModel.insertMany(Array.from({ length: 1001 }, (_, index) => ({
+      id: `enr_bulk_${index}`, studentEmail: `enrolled-${index}@example.test`,
+      studentName: `Bulk Student ${index}`, courseId, status: "Activo",
+      startedAt: bulkTime, completedLessonIds: [],
+    })), { ordered: false });
+    const afterEnrollments = await repositories.enrollments.metrics();
+    assert.equal(afterEnrollments.total - beforeEnrollments.total, 1001);
+    assert.equal(afterEnrollments.activeStudents - beforeEnrollments.activeStudents, 1001);
+    const enrollmentPage = await api<{ data: unknown[] }>(server.baseUrl,
+      "/api/admin/enrollments?limit=5&offset=1000", { token: adminLogin.body.data.token });
+    assert.equal(enrollmentPage.status, 200);
+    assert.ok(Number(enrollmentPage.headers.get("x-total-count")) > 1000);
+    assert.equal(enrollmentPage.body.data.length,
+      Math.min(5, Number(enrollmentPage.headers.get("x-total-count")) - 1000));
+    const teacherDashboard = await api<{ data: { courses: { id: number; students: number }[] } }>(
+      server.baseUrl, "/api/teacher/dashboard", { token: teacherLogin.body.data.token },
+    );
+    assert.equal(teacherDashboard.status, 200);
+    assert.ok((teacherDashboard.body.data.courses.find((item) => item.id === courseId)?.students ?? 0) > 1000);
+    const teacherStudents = await api<{ data: unknown[] }>(server.baseUrl,
+      `/api/teacher/courses/${courseId}/students`, { token: teacherLogin.body.data.token });
+    assert.equal(teacherStudents.status, 200);
+    assert.ok(teacherStudents.body.data.length > 1000);
     await EnrollmentModel.init();
     const persisted = await repositories.enrollments.findById(checkout.body.data.enrollment.id);
     assert.ok(persisted);
@@ -358,6 +486,22 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     assert.equal(suspended.status, 200);
     assert.equal((await api(server.baseUrl, "/api/auth/session", { token: studentToken })).status, 401);
     assert.equal((await repositories.users.findById(student.id))?.sessionVersion, 1);
+    const buyerAccount = await repositories.users.findByEmail("buyer@example.test");
+    assert.ok(buyerAccount);
+    const closed = await api(server.baseUrl, `/api/admin/users/${buyerAccount.id}?reason=Solicitud%20de%20baja%20de%20prueba`, {
+      method: "DELETE", token: adminLogin.body.data.token,
+    });
+    assert.equal(closed.status, 204);
+    assert.ok((await repositories.users.findById(buyerAccount.id))?.deletedAt);
+    assert.equal((await api(server.baseUrl, "/api/auth/session", { token: buyerLogin.body.data.token })).status, 401);
+    assert.ok(await repositories.orders.findByReference(sourceOrder.externalReference));
+    assert.ok(await repositories.enrollments.findById(checkout.body.data.enrollment.id));
+    assert.ok(await repositories.conversations.findByStudentAndCourse("buyer@example.test", courseId));
+    const audit = await api<{ data: { entityId: string; reason: string; previousState?: unknown }[] }>(
+      server.baseUrl, "/api/admin/audit?entity=user", { token: adminLogin.body.data.token },
+    );
+    assert.ok(audit.body.data.some((event) => event.entityId === buyerAccount.id &&
+      event.reason === "Solicitud de baja de prueba" && Boolean(event.previousState)));
   } finally {
     setPaymentGatewayForTests(null);
     await server?.close();

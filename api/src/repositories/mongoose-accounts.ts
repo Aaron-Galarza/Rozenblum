@@ -106,6 +106,15 @@ export function createMongooseAccountsRepositories() {
     async countVisibleForAdmin() {
       return EnrollmentModel.countDocuments({ status: { $ne: "Pendiente" } }).exec();
     },
+    async *iterateVisibleForAdmin() {
+      const cursor = EnrollmentModel.find({ status: { $ne: "Pendiente" } })
+        .sort({ startedAt: -1, id: -1 }).lean().cursor();
+      try {
+        for await (const doc of cursor) yield clean<StoredEnrollment>(doc);
+      } finally {
+        await cursor.close();
+      }
+    },
     async listByStudents(emails) {
       if (emails.length === 0) return [];
       const docs = await EnrollmentModel.find({
@@ -165,6 +174,13 @@ export function createMongooseAccountsRepositories() {
         .sort({ startedAt: -1 })
         .lean()
         .exec();
+      return docs.map((doc) => clean<StoredEnrollment>(doc));
+    },
+    async listByCourseIds(courseIds) {
+      if (courseIds.length === 0) return [];
+      const docs = await EnrollmentModel.find({
+        courseId: { $in: courseIds }, status: { $ne: "Pendiente" },
+      }).sort({ startedAt: -1, id: -1 }).lean().exec();
       return docs.map((doc) => clean<StoredEnrollment>(doc));
     },
     async findById(id) {

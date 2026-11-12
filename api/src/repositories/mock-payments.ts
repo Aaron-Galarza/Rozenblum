@@ -31,6 +31,11 @@ export function createMockPaymentsRepositories(db: Memory) {
     async countVisibleForAdmin() {
       return db.orders.filter(isVisibleForAdmin).length;
     },
+    async *iterateVisibleForAdmin() {
+      const rows = db.orders.filter(isVisibleForAdmin)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      for (const row of rows) yield clone(row);
+    },
     async metrics() {
       const paid = db.orders.filter(isConfirmedPaid);
       const monthly = new Map<string, number>();

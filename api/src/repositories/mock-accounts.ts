@@ -82,6 +82,11 @@ export function createMockAccountsRepositories(db: Memory) {
     async countVisibleForAdmin() {
       return db.enrollments.filter((item) => item.status !== "Pendiente").length;
     },
+    async *iterateVisibleForAdmin() {
+      const rows = db.enrollments.filter((item) => item.status !== "Pendiente")
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id));
+      for (const row of rows) yield clone(row);
+    },
     async listByStudents(emails) {
       const wanted = new Set(emails.map((email) => email.toLowerCase()));
       return db.enrollments
@@ -131,6 +136,11 @@ export function createMockAccountsRepositories(db: Memory) {
       return db.enrollments
         .filter((e) => e.studentEmail.toLowerCase() === email.toLowerCase())
         .map(clone);
+    },
+    async listByCourseIds(courseIds) {
+      const wanted = new Set(courseIds);
+      return db.enrollments.filter((item) =>
+        wanted.has(item.courseId) && item.status !== "Pendiente").map(clone);
     },
     async findById(id) {
       const enrollment = db.enrollments.find((e) => e.id === id);

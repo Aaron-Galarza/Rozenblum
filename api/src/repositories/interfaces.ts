@@ -116,12 +116,16 @@ export interface EnrollmentRepository {
   countAll(): Promise<number>;
   listVisibleForAdmin(page?: Pagination): Promise<StoredEnrollment[]>;
   countVisibleForAdmin(): Promise<number>;
+  /** Streams all visible records for an administrator export. */
+  iterateVisibleForAdmin(): AsyncIterable<StoredEnrollment>;
   /** Enrollments of the given students, used to describe a paginated admin page. */
   listByStudents(emails: string[]): Promise<StoredEnrollment[]>;
   /** Aggregated totals that stay accurate beyond the list page size. */
   metrics(): Promise<EnrollmentMetrics>;
   existsByCourse(courseId: number): Promise<boolean>;
   listByStudent(email: string): Promise<StoredEnrollment[]>;
+  /** All non-pending enrollments for the teacher's courses, without the generic list cap. */
+  listByCourseIds(courseIds: number[]): Promise<StoredEnrollment[]>;
   findById(id: string): Promise<StoredEnrollment | null>;
   findByStudentAndCourse(email: string, courseId: number): Promise<StoredEnrollment | null>;
   create(input: {
@@ -148,6 +152,8 @@ export interface OrderRepository {
   countAll(): Promise<number>;
   listVisibleForAdmin(page?: Pagination): Promise<StoredOrder[]>;
   countVisibleForAdmin(): Promise<number>;
+  /** Streams all visible records for an administrator export. */
+  iterateVisibleForAdmin(): AsyncIterable<StoredOrder>;
   /** Revenue and monthly totals for confirmed payments only. */
   metrics(): Promise<OrderMetrics>;
   existsByCourse(courseId: number): Promise<boolean>;
