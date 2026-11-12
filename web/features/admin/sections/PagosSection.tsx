@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { OrderDTO, OrderStatus } from "@rozenblum/shared";
-import { errorMessage } from "../../../lib/api";
+import { downloadAuthenticatedFile, errorMessage } from "../../../lib/api";
 import Toast from "../../../components/ui/Toast";
 import { useToast } from "../../../lib/use-toast";
 import Modal from "../../../components/ui/Modal";
@@ -12,11 +12,6 @@ const ORDER_STATUSES: OrderStatus[] = ["Pagado", "Pendiente", "Rechazado", "En d
 function orderDateISO(label: string): string {
   const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(label);
   return match ? `${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}` : "";
-}
-
-function csvCell(value: string): string {
-  const safe = /^[\s]*[=+\-@]/.test(value) ? `'${value}` : value;
-  return `"${safe.replaceAll('"', '""')}"`;
 }
 
 const statusBadgeStyle: Record<OrderStatus, React.CSSProperties> = {
@@ -39,6 +34,7 @@ export default function PagosSection({ orders, onStatusChange }: PagosSectionPro
   const [dateTo, setDateTo] = useState("");
   const { toast, showToast } = useToast();
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [pending, setPending] = useState<{ order: OrderDTO; estado: OrderStatus } | null>(null);
   const [motivo, setMotivo] = useState("");
 
@@ -52,18 +48,15 @@ export default function PagosSection({ orders, onStatusChange }: PagosSectionPro
     return matchMetodo && matchEstado && matchFrom && matchTo;
   });
 
-  const exportCsv = () => {
-    const rows = [
-      ["Número", "Alumno", "Curso", "Monto", "Fecha", "Método", "Estado"],
-      ...filtered.map((order) => [order.externalReference ?? order.id, order.alumno, order.curso, order.monto, order.fecha, order.metodo, order.estado]),
-    ];
-    const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "ordenes-rozenblum.csv";
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      await downloadAuthenticatedFile("/api/admin/orders/export", "ordenes-rozenblum.csv");
+    } catch (error) {
+      showToast(errorMessage(error), true);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const metodos = ["Todos", ...Array.from(new Set(orders.map((o) => o.metodo)))];
@@ -91,12 +84,14 @@ export default function PagosSection({ orders, onStatusChange }: PagosSectionPro
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <h2 className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Pagos / Órdenes</h2>
         <button
-          onClick={exportCsv}
-          className="px-5 py-2.5 text-xs font-medium border hover:opacity-70 transition-opacity flex items-center gap-2"
+          onClick={() => { void exportCsv(); }}
+          disabled={exporting}
+          className="px-5 py-2.5 text-xs font-medium border hover:opacity-70 transition-opacity flex items-center gap-2 disabled:opacity-50"
           style={{ color: "#173B6C", borderColor: "#173B6C" }}
+          title="Descarga todas las órdenes, incluso las que no están en esta página"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-          Exportar CSV
+          {exporting ? "Exportando..." : "Exportar todas las órdenes"}
         </button>
       </div>
       <div className="flex flex-wrap gap-3 mb-6">

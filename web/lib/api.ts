@@ -169,6 +169,39 @@ export async function apiFetchWithMeta<T>(
   return performFetch<T>(path, options);
 }
 
+/** Downloads an authenticated export without trying to parse its CSV as JSON. */
+export async function downloadAuthenticatedFile(path: string, filename: string): Promise<void> {
+  const session = getSession();
+  if (!session) {
+    handleMissingSession();
+    throw new ApiClientError(401, "UNAUTHORIZED", "Tu sesión expiró. Volvé a ingresar.");
+  }
+  const revision = sessionRevision;
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      headers: { authorization: `Bearer ${session.token}` },
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiClientError(0, "NETWORK_ERROR", "No pudimos conectar con el servidor.");
+  }
+  if (response.status === 401) invalidateSession(session.token, revision);
+  if (!response.ok) await responseData(response);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  try {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+}
+
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiClientError) return error.message;
   if (error instanceof Error) return error.message;
