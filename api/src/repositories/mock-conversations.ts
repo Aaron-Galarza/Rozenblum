@@ -67,6 +67,13 @@ export function createMockConversationsRepositories(db: Memory) {
       db.conversations = db.conversations.filter((conversation) => conversation.courseId !== courseId);
       return previous - db.conversations.length;
     },
+    async archiveSummary(courseId) {
+      const conversations = db.conversations.filter((item) => item.courseId === courseId);
+      return {
+        conversationCount: conversations.length,
+        messageCount: conversations.reduce((total, item) => total + item.messages.length, 0),
+      };
+    },
   };
   return { conversations };
 }

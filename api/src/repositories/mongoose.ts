@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import type { Repositories } from "./interfaces.js";
 import { createMongooseAccountsRepositories } from "./mongoose-accounts.js";
 import { createMongooseCoursesRepositories } from "./mongoose-courses.js";
+import { createMongooseCourseArchiveRepository } from "./mongoose-course-archives.js";
 import { createMongoosePaymentsRepositories } from "./mongoose-payments.js";
 import { createMongooseConversationsRepositories } from "./mongoose-conversations.js";
 import { createMongooseContentRepositories } from "./mongoose-content.js";
@@ -21,6 +22,7 @@ export function createMongooseRepositories(): Repositories {
     withTransaction: (work) => mongoose.connection.transaction(work),
     users,
     courses,
+    courseArchives: createMongooseCourseArchiveRepository(),
     enrollments,
     orders,
     paymentEvents,

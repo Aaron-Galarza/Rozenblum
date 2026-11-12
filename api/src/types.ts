@@ -82,10 +82,32 @@ export type StoredCourse = {
   nextLessonNumber?: number;
   /** Idempotency key of the creation request, when one was sent. */
   requestId?: string;
-  /** Days of access granted after payment. 0/undefined means no expiry. */
+  /** Days of access after payment; course expiry is an additional cap. */
   accessDays?: number;
   /** Last day of the course in Buenos Aires. Legacy courses may lack it. */
   expiresOn?: string;
+  /** Internal write fence shared by checkout and expiry transactions. */
+  checkoutSequence?: number;
+};
+
+/** Historical aggregate without lesson bodies or student identities. */
+export type StoredCourseArchive = {
+  courseId: number;
+  slug: string;
+  title: string;
+  professor: string;
+  professorEmail: string;
+  priceCents: number;
+  createdAt: string;
+  expiresOn: string;
+  archivedAt: string;
+  enrollmentCount: number;
+  completedCount: number;
+  averageCompletedLessons: number;
+  lessonCount: number;
+  startedByDay: { day: string; count: number }[];
+  conversationCount: number;
+  messageCount: number;
 };
 
 /** Fields needed by the catalogue, with module IDs but no lesson bodies. */

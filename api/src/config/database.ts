@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { logger } from "../lib/logger.js";
 import { env } from "./env.js";
+import { CourseArchiveModel } from "../models/index.js";
 
 /** Atlas is the only runtime data store; tests inject isolated repositories. */
 export async function connectDatabase(): Promise<void> {
@@ -21,6 +22,7 @@ export async function connectDatabase(): Promise<void> {
       maxPoolSize: 10,
       retryWrites: true,
     });
+    await CourseArchiveModel.init();
     logger.info("atlas_connected", { database: env.MONGODB_DB });
   } catch {
     throw new Error(

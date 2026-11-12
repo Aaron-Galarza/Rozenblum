@@ -84,6 +84,16 @@ export function createMongooseConversationsRepositories() {
       const result = await ConversationModel.deleteMany({ courseId }).exec();
       return result.deletedCount ?? 0;
     },
+    async archiveSummary(courseId) {
+      const [row] = await ConversationModel.aggregate<{
+        conversationCount: number; messageCount: number;
+      }>([
+        { $match: { courseId } },
+        { $group: { _id: null, conversationCount: { $sum: 1 },
+          messageCount: { $sum: { $size: "$messages" } } } },
+      ]).exec();
+      return { conversationCount: row?.conversationCount ?? 0, messageCount: row?.messageCount ?? 0 };
+    },
   };
   return { conversations };
 }

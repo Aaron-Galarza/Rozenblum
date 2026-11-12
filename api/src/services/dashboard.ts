@@ -9,11 +9,12 @@ import type {
   TeacherNotificationDTO,
   TeacherStudentDTO,
 } from "@rozenblum/shared";
+import { isCourseExpired } from "../lib/course-expiry.js";
 import { formatArs, formatShortDate, formatTime } from "../lib/utils.js";
 import type { Pagination } from "../lib/pagination.js";
 import { getRepositories } from "../repositories/index.js";
 import type { EnrollmentMetrics, OrderMetrics } from "../repositories/interfaces.js";
-import type { StoredCourse, StoredEnrollment, StoredMessage, StoredUser } from "../types.js";
+import type { StoredCourse, StoredCourseArchive, StoredEnrollment, StoredMessage, StoredUser } from "../types.js";
 import {
   adminAlumno,
   adminCurso,
@@ -94,7 +95,7 @@ function courseAverageProgress(
 export async function getTeacherDashboard(user: StoredUser): Promise<TeacherDashboardDTO> {
   const repos = getRepositories();
   const allCourses = await repos.courses.list();
-  const courses = allCourses.filter((course) => canManageCourse(course, user));
+  const courses = allCourses.filter((course) => canManageCourse(course, user) && !isCourseExpired(course));
   const allEnrollments = await repos.enrollments.listByCourseIds(
     courses.map((course) => course.legacyId),
   );
@@ -224,12 +225,26 @@ function percentChange(current: number, previous: number): string {
 
 function buildReportes(
   courses: StoredCourse[],
+  archives: StoredCourseArchive[],
   enrollmentMetrics: EnrollmentMetrics,
   orderMetrics: OrderMetrics,
 ): AdminReportesDTO {
   const byCourse = new Map(
     enrollmentMetrics.byCourse.map((entry) => [entry.courseId, entry]),
   );
+  const courseRows = [
+    ...courses.map((course) => ({
+      name: course.title,
+      pct: courseAverageProgress(course, byCourse.get(course.legacyId)),
+      count: byCourse.get(course.legacyId)?.students ?? 0,
+    })),
+    ...archives.map((archive) => ({
+      name: `${archive.title} (finalizado)`,
+      pct: archive.lessonCount > 0
+        ? Math.round(archive.averageCompletedLessons / archive.lessonCount * 100) : 0,
+      count: archive.enrollmentCount,
+    })),
+  ];
 
   return {
     ingresosPorMes: monthlySeries(
@@ -239,19 +254,12 @@ function buildReportes(
       })),
     ),
     alumnosPorMes: monthlySeries(enrollmentMetrics.monthly),
-    completionPorCurso: courses
-      .map((course) => ({
-        name: course.title,
-        pct: courseAverageProgress(course, byCourse.get(course.legacyId)),
-      }))
+    completionPorCurso: courseRows
+      .map(({ name, pct }) => ({ name, pct }))
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 4),
-    cursosPopulares: courses
-      .map((course) => ({
-        name: course.title,
-        count: byCourse.get(course.legacyId)?.students ?? 0,
-        color: "#B58A43",
-      }))
+    cursosPopulares: courseRows
+      .map(({ name, count }) => ({ name, count, color: "#B58A43" }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 4)
       .map((item, index) => ({
@@ -288,6 +296,7 @@ export async function getAdminOverview(
     courses,
     orders,
     enrollments,
+    archives,
   ] = await Promise.all([
     repos.users.countByRole(),
     repos.courses.countByStatus(),
@@ -298,7 +307,22 @@ export async function getAdminOverview(
     repos.courses.list(),
     repos.orders.listVisibleForAdmin(page),
     repos.enrollments.listVisibleForAdmin(page),
+    repos.courseArchives.list(),
   ]);
+
+  const monthlyHistory = new Map(enrollmentMetrics.monthly.map(({ month, value }) => [month, value]));
+  for (const archive of archives) {
+    for (const { day, count } of archive.startedByDay) {
+      const month = day.slice(0, 7);
+      monthlyHistory.set(month, (monthlyHistory.get(month) ?? 0) + count);
+    }
+  }
+  const historicalEnrollments: EnrollmentMetrics = {
+    ...enrollmentMetrics,
+    total: enrollmentMetrics.total + archives.reduce((sum, archive) => sum + archive.enrollmentCount, 0),
+    monthly: [...monthlyHistory].sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, value]) => ({ month, value })),
+  };
 
   const byCourse = new Map(
     enrollmentMetrics.byCourse.map((entry) => [entry.courseId, entry]),
@@ -368,7 +392,7 @@ export async function getAdminOverview(
     orderMetrics.paidMonthly.map((entry) => [entry.month, entry.cents]),
   );
   const enrollmentsByMonth = new Map(
-    enrollmentMetrics.monthly.map((entry) => [entry.month, entry.value]),
+    historicalEnrollments.monthly.map((entry) => [entry.month, entry.value]),
   );
   const revenueThis = monthValue((month) => revenueByMonth.get(month) ?? 0, now);
   const revenuePrev = monthValue((month) => revenueByMonth.get(month) ?? 0, previousMonthDate);
@@ -381,7 +405,7 @@ export async function getAdminOverview(
     previousMonthDate,
   );
 
-  const reportes = buildReportes(courses, enrollmentMetrics, orderMetrics);
+  const reportes = buildReportes(courses, archives, historicalEnrollments, orderMetrics);
   const orderDTOs = orders.map(orderToDTO);
 
   const dashboard: AdminDashboardDTO = {
@@ -412,7 +436,7 @@ export async function getAdminOverview(
       profesores: userCounts.profesor,
       cursos: courseCounts.published + courseCounts.draft,
       orders: orderMetrics.total,
-      inscripciones: enrollmentMetrics.total,
+      inscripciones: historicalEnrollments.total,
     },
   };
 }

@@ -129,6 +129,27 @@ export function createMockAccountsRepositories(db: Memory) {
     async existsByCourse(courseId) {
       return db.enrollments.some((item) => item.courseId === courseId);
     },
+    async archiveSummary(courseId) {
+      const enrolled = db.enrollments.filter((item) => item.courseId === courseId && item.status !== "Pendiente");
+      const days = new Map<string, number>();
+      for (const item of enrolled) {
+        const day = item.startedAt.slice(0, 10);
+        days.set(day, (days.get(day) ?? 0) + 1);
+      }
+      return {
+        enrollmentCount: enrolled.length,
+        completedCount: enrolled.filter((item) => item.status === "Completado").length,
+        averageCompletedLessons: enrolled.length
+          ? enrolled.reduce((total, item) => total + item.completedLessonIds.length, 0) / enrolled.length : 0,
+        startedByDay: [...days].sort(([a], [b]) => a.localeCompare(b))
+          .map(([day, count]) => ({ day, count })),
+      };
+    },
+    async deleteByCourse(courseId) {
+      const previous = db.enrollments.length;
+      db.enrollments = db.enrollments.filter((item) => item.courseId !== courseId);
+      return previous - db.enrollments.length;
+    },
     async listByStudent(email) {
       return db.enrollments
         .filter((e) => e.studentEmail.toLowerCase() === email.toLowerCase())

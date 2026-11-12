@@ -166,6 +166,33 @@ export function createMongooseAccountsRepositories() {
     async existsByCourse(courseId) {
       return Boolean(await EnrollmentModel.exists({ courseId }));
     },
+    async archiveSummary(courseId) {
+      const filter = { courseId, status: { $ne: "Pendiente" } };
+      const [summary, days] = await Promise.all([
+        EnrollmentModel.aggregate<{ enrollmentCount: number; completedCount: number; averageCompletedLessons: number }>([
+          { $match: filter },
+          { $group: { _id: null, enrollmentCount: { $sum: 1 },
+            completedCount: { $sum: { $cond: [{ $eq: ["$status", "Completado"] }, 1, 0] } },
+            averageCompletedLessons: { $avg: { $size: { $ifNull: ["$completedLessonIds", []] } } },
+          } },
+        ]).exec(),
+        EnrollmentModel.aggregate<{ _id: string; count: number }>([
+          { $match: filter },
+          { $group: { _id: { $substrBytes: ["$startedAt", 0, 10] }, count: { $sum: 1 } } },
+          { $sort: { _id: 1 } },
+        ]).exec(),
+      ]);
+      return {
+        enrollmentCount: summary[0]?.enrollmentCount ?? 0,
+        completedCount: summary[0]?.completedCount ?? 0,
+        averageCompletedLessons: summary[0]?.averageCompletedLessons ?? 0,
+        startedByDay: days.map((day) => ({ day: day._id, count: day.count })),
+      };
+    },
+    async deleteByCourse(courseId) {
+      const result = await EnrollmentModel.deleteMany({ courseId }).exec();
+      return result.deletedCount ?? 0;
+    },
     async listByStudent(email) {
       const docs = await EnrollmentModel.find({ studentEmail: email.toLowerCase() })
         .sort({ startedAt: -1 })

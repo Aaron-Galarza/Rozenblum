@@ -2,6 +2,7 @@ import type { Repositories } from "./interfaces.js";
 import { clone, createMemory, type Memory } from "./mock-memory.js";
 import { createMockAccountsRepositories } from "./mock-accounts.js";
 import { createMockCoursesRepositories } from "./mock-courses.js";
+import { createMockCourseArchiveRepository } from "./mock-course-archives.js";
 import { createMockPaymentsRepositories } from "./mock-payments.js";
 import { createMockConversationsRepositories } from "./mock-conversations.js";
 import { createMockContentRepositories } from "./mock-content.js";
@@ -40,6 +41,7 @@ export function createMockRepositories(initial: Partial<Memory> = {}): Repositor
     withTransaction,
     users,
     courses,
+    courseArchives: createMockCourseArchiveRepository(db),
     enrollments,
     orders,
     paymentEvents,

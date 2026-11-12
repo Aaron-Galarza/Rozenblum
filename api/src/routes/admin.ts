@@ -31,6 +31,7 @@ import {
   updateCourse,
 } from "../services/courses.js";
 import { countContacts, listContacts } from "../services/contact.js";
+import { listArchivedCourses } from "../services/course-archive.js";
 import {
   asyncRoute,
   numericParam,
@@ -168,6 +169,12 @@ adminRouter.post(
     sendData(res, course, 201);
   }),
 );
+
+adminRouter.get("/courses/archived", asyncRoute(async (req, res) => {
+  const page = parsePagination(req);
+  const { items, total } = await listArchivedCourses(page);
+  sendPaginated(res, items, total, page);
+}));
 
 /** Safe recovery for a course creation whose response was lost. */
 adminRouter.get(

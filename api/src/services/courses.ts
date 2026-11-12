@@ -73,6 +73,7 @@ export async function loadManagedCourse(courseId: number, user: StoredUser): Pro
   const course = await getRepositories().courses.findById(courseId);
   if (!course) throw notFound("Curso no encontrado.");
   if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
+  if (user.role !== "admin" && isCourseExpired(course)) throw forbidden("Este curso ya finalizó.");
   return course;
 }
 
@@ -136,7 +137,7 @@ export async function getCourseStructureForTeacher(
 
 export async function getTeacherCourseList(user: StoredUser): Promise<CourseDTO[]> {
   const courses = await getRepositories().courses.list();
-  return courses.filter((course) => canManageCourse(course, user)).map(courseToDTO);
+  return courses.filter((course) => canManageCourse(course, user) && !isCourseExpired(course)).map(courseToDTO);
 }
 
 /** Safe recovery for a course creation whose response was lost. */

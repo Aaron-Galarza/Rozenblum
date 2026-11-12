@@ -3,6 +3,7 @@ import { connectDatabase, disconnectDatabase } from "./config/database.js";
 import { env } from "./config/env.js";
 import { logger } from "./lib/logger.js";
 import { attachChatWebSocket } from "./lib/chat-websocket.js";
+import { startCourseExpirySweep } from "./lib/course-expiry-sweep.js";
 import { markShuttingDown } from "./lib/lifecycle.js";
 
 async function main() {
@@ -17,6 +18,7 @@ async function main() {
     });
   });
   const closeChat = attachChatWebSocket(server);
+  const closeExpirySweep = startCourseExpirySweep();
 
   let closing = false;
 
@@ -38,6 +40,7 @@ async function main() {
       void (async () => {
         if (error) logger.error("shutdown_close_error", { message: error.message });
         try {
+          await closeExpirySweep();
           await disconnectDatabase();
         } catch (dbError) {
           logger.error("shutdown_db_error", {

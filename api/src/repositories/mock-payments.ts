@@ -61,6 +61,11 @@ export function createMockPaymentsRepositories(db: Memory) {
     async existsByCourse(courseId) {
       return db.orders.some((item) => item.courseId === courseId);
     },
+    async hasUnsettledPaymentByCourse(courseId) {
+      return db.orders.some((order) => order.courseId === courseId &&
+        order.paymentProvider === "mercadopago" &&
+        (order.estado === "Pendiente" || order.estado === "Rechazado"));
+    },
     async findByReference(reference) {
       const order = db.orders.find(
         (o) => o.externalReference === reference || o.id === reference,

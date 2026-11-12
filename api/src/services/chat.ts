@@ -1,6 +1,7 @@
 import type { ChatMessageDTO, ConversationDTO } from "@rozenblum/shared";
 import { ApiError, forbidden, notFound } from "../lib/http.js";
 import { publishChatChanged } from "../lib/chat-events.js";
+import { isCourseExpired } from "../lib/course-expiry.js";
 import type { Pagination } from "../lib/pagination.js";
 import { formatTime, newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
@@ -132,8 +133,11 @@ export async function listTeacherConversations(user: StoredUser): Promise<Conver
   const accessible = new Set(enrollments.filter((item) => item && hasEnrollmentAccess(item))
     .map((item) => `${item!.courseId}:${item!.studentEmail.toLowerCase()}`));
 
-  return conversations.filter((conversation) => accessible.has(
-    `${conversation.courseId}:${conversation.studentEmail.toLowerCase()}`)).map((conversation) => ({
+  return conversations.filter((conversation) => {
+    const course = byId.get(conversation.courseId);
+    return course && !isCourseExpired(course) && accessible.has(
+      `${conversation.courseId}:${conversation.studentEmail.toLowerCase()}`);
+  }).map((conversation) => ({
     id: conversation.id,
     courseId: conversation.courseId,
     courseTitle: byId.get(conversation.courseId)?.title ?? "Curso",
@@ -194,6 +198,8 @@ async function loadTeacherConversation(
   const enrollment = await getRepositories().enrollments.findByStudentAndCourse(
     conversation.studentEmail, conversation.courseId);
   if (!enrollment) throw notFound("Inscripción no encontrada.");
+  const course = await getRepositories().courses.findById(conversation.courseId);
+  if (!course || isCourseExpired(course)) throw forbidden("Este curso ya finalizó.");
   assertEnrollmentAccess(enrollment, {
     expired: "El acceso del alumno a este curso venció.",
     denied: "La mensajería se habilita cuando se aprueba el acceso del alumno.",

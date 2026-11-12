@@ -3,7 +3,7 @@ import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 import { env } from "../config/env.js";
 import { verifyToken } from "./token.js";
-import { onChatChanged } from "./chat-events.js";
+import { onChatChanged, onCourseRemoved } from "./chat-events.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredUser } from "../types.js";
 import { assertEnrollmentAccess, loadEnrollment } from "../services/classroom.js";
@@ -119,9 +119,16 @@ export function attachChatWebSocket(server: Server): () => void {
       })().catch(() => client.close(1011, "No se pudo actualizar"));
     }
   });
+  const unsubscribeCourse = onCourseRemoved((courseId) => {
+    for (const [client, subscription] of subscriptions) {
+      if (!subscription.room.startsWith(`${courseId}:`) || client.readyState !== WebSocket.OPEN) continue;
+      client.send(JSON.stringify({ type: "course_removed" }), () => client.close(1000, "Curso finalizado"));
+    }
+  });
 
   return () => {
     unsubscribe();
+    unsubscribeCourse();
     clearInterval(heartbeat);
     server.off("upgrade", onUpgrade);
     for (const client of sockets.clients) client.terminate();

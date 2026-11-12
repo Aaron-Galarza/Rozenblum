@@ -47,12 +47,21 @@ export function createMockCoursesRepositories(db: Memory) {
       const course = db.courses.find((c) => c.legacyId === legacyId);
       return course ? clone(course) : null;
     },
+    async claimForCheckout(legacyId) {
+      const course = db.courses.find((item) => item.legacyId === legacyId);
+      if (!course || course.status !== "published" || isCourseExpired(course)) return false;
+      course.checkoutSequence = (course.checkoutSequence ?? 0) + 1;
+      return true;
+    },
     async findByRequestId(requestId) {
       const course = db.courses.find((c) => c.requestId === requestId);
       return course ? clone(course) : null;
     },
     async nextLegacyId() {
-      return db.courses.reduce((max, c) => Math.max(max, c.legacyId), 0) + 1;
+      return Math.max(
+        db.courses.reduce((max, c) => Math.max(max, c.legacyId), 0),
+        db.courseArchives.reduce((max, c) => Math.max(max, c.courseId), 0),
+      ) + 1;
     },
     async create(input) {
       if (input.requestId) {
@@ -63,7 +72,8 @@ export function createMockCoursesRepositories(db: Memory) {
       const baseSlug = slugify(input.title);
       let slug = baseSlug;
       let suffix = 2;
-      while (db.courses.some((c) => c.slug === slug)) {
+      while (db.courses.some((c) => c.slug === slug) ||
+        db.courseArchives.some((c) => c.slug === slug)) {
         slug = `${baseSlug}-${suffix++}`;
       }
       const course: StoredCourse = {
@@ -118,6 +128,18 @@ export function createMockCoursesRepositories(db: Memory) {
       if (index === -1) return false;
       db.courses.splice(index, 1);
       return true;
+    },
+    async deleteExpired(legacyId, expiresOn, expectedRevision) {
+      const index = db.courses.findIndex((course) =>
+        course.legacyId === legacyId && course.expiresOn === expiresOn &&
+        isCourseExpired(course) && (course.revision ?? 0) === expectedRevision);
+      if (index === -1) return false;
+      db.courses.splice(index, 1);
+      return true;
+    },
+    async listExpiredIds(afterId = 0, limit = 100) {
+      return db.courses.filter((course) => course.legacyId > afterId && isCourseExpired(course))
+        .sort((a, b) => a.legacyId - b.legacyId).slice(0, limit).map((course) => course.legacyId);
     },
   };
   return { courses };

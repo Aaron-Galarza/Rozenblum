@@ -5,6 +5,7 @@ import type {
   StoredContact,
   StoredConversation,
   StoredCourse,
+  StoredCourseArchive,
   StoredEnrollment,
   StoredOrder,
   StoredPaymentEvent,
@@ -106,6 +107,7 @@ const courseSchema = new Schema<StoredCourse>(
     requestId: { type: String, default: undefined },
     accessDays: { type: Number, default: undefined, min: 0 },
     expiresOn: { type: String, default: undefined },
+    checkoutSequence: { type: Number, required: true, default: 0 },
   },
   { versionKey: false, collection: "courses", minimize: false },
 );
@@ -117,6 +119,26 @@ courseSchema.index({ requestId: 1 }, {
   unique: true,
   partialFilterExpression: { requestId: { $type: "string" } },
 });
+
+const courseArchiveSchema = new Schema<StoredCourseArchive>({
+  courseId: { type: Number, required: true, unique: true },
+  slug: { type: String, required: true, unique: true },
+  title: { type: String, required: true },
+  professor: { type: String, required: true },
+  professorEmail: { type: String, required: true },
+  priceCents: { type: Number, required: true },
+  createdAt: { type: String, required: true },
+  expiresOn: { type: String, required: true },
+  archivedAt: { type: String, required: true },
+  enrollmentCount: { type: Number, required: true },
+  completedCount: { type: Number, required: true },
+  averageCompletedLessons: { type: Number, required: true },
+  lessonCount: { type: Number, required: true },
+  startedByDay: { type: [{ day: String, count: Number }], default: [] },
+  conversationCount: { type: Number, required: true },
+  messageCount: { type: Number, required: true },
+}, { versionKey: false, collection: "course_archives" });
+courseArchiveSchema.index({ archivedAt: -1, courseId: -1 });
 
 const enrollmentSchema = new Schema<StoredEnrollment>(
   {
@@ -252,6 +274,10 @@ export const UserModel =
 export const CourseModel =
   (mongoose.models.Course as mongoose.Model<StoredCourse>) ??
   mongoose.model<StoredCourse>("Course", courseSchema);
+
+export const CourseArchiveModel =
+  (mongoose.models.CourseArchive as mongoose.Model<StoredCourseArchive>) ??
+  mongoose.model<StoredCourseArchive>("CourseArchive", courseArchiveSchema);
 
 export const EnrollmentModel =
   (mongoose.models.Enrollment as mongoose.Model<StoredEnrollment>) ??

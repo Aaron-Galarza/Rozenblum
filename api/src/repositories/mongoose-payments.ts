@@ -98,6 +98,10 @@ export function createMongoosePaymentsRepositories() {
     async existsByCourse(courseId) {
       return Boolean(await OrderModel.exists({ courseId }));
     },
+    async hasUnsettledPaymentByCourse(courseId) {
+      return Boolean(await OrderModel.exists({ courseId, paymentProvider: "mercadopago",
+        estado: { $in: ["Pendiente", "Rechazado"] } }));
+    },
     async findByReference(reference) {
       const doc = await OrderModel.findOne({
         $or: [{ externalReference: reference }, { id: reference }],

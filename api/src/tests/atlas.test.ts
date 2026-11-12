@@ -5,7 +5,8 @@ import mongoose from "mongoose";
 import { BRAND_HERO_URL } from "@rozenblum/shared";
 import { env } from "../config/env.js";
 import { hashPassword } from "../lib/password.js";
-import { ContactModel, ConversationModel, CourseModel, EnrollmentModel, HomeContentModel, OrderModel, PaymentEventModel } from "../models/index.js";
+import { ContactModel, ConversationModel, CourseArchiveModel, CourseModel, EnrollmentModel, HomeContentModel, OrderModel, PaymentEventModel } from "../models/index.js";
+import { archiveExpiredCourse } from "../services/course-archive.js";
 import { setPaymentGatewayForTests } from "../services/mercadopago.js";
 import { applyOrderTransition } from "../services/order-transitions.js";
 import { createMongooseRepositories } from "../repositories/mongoose.js";
@@ -545,6 +546,27 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     assert.ok(await repositories.orders.findByReference(sourceOrder.externalReference));
     assert.ok(await repositories.enrollments.findById(checkout.body.data.enrollment.id));
     assert.ok(await repositories.conversations.findByStudentAndCourse("buyer@example.test", courseId));
+    const expiredCourse = await repositories.courses.create({
+      title: "Archived Atlas Course", description: "Archive transaction test",
+      priceCents: 10_000, duration: "Online", level: "Inicial", status: "published",
+      professor: professor.name, professorEmail: professor.email,
+      img: "https://example.test/archive.jpg", expiresOn: "2020-01-01",
+    });
+    const expiredEnrollment = await repositories.enrollments.create({
+      studentEmail: "archived@example.test", studentName: "Archived Student",
+      courseId: expiredCourse.legacyId, status: "Completado",
+    });
+    await ConversationModel.create({
+      id: "cnv_archive_atlas", courseId: expiredCourse.legacyId,
+      studentEmail: "archived@example.test", studentName: "Archived Student",
+      teacherEmail: professor.email, teacherName: professor.name, messages: [],
+    });
+    await CourseArchiveModel.init();
+    assert.equal(await archiveExpiredCourse(expiredCourse.legacyId), "archived");
+    assert.equal(await repositories.courses.findById(expiredCourse.legacyId), null);
+    assert.equal(await repositories.enrollments.findById(expiredEnrollment.id), null);
+    assert.equal(await ConversationModel.countDocuments({ courseId: expiredCourse.legacyId }), 0);
+    assert.equal((await repositories.courseArchives.findByCourseId(expiredCourse.legacyId))?.enrollmentCount, 1);
     const audit = await api<{ data: { entityId: string; reason: string; previousState?: unknown }[] }>(
       server.baseUrl, "/api/admin/audit?entity=user", { token: adminLogin.body.data.token },
     );

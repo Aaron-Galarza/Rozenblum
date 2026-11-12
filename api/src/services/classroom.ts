@@ -1,5 +1,6 @@
 import type { EnrollmentDTO } from "@rozenblum/shared";
 import { badRequest, forbidden, notFound } from "../lib/http.js";
+import { isCourseExpired } from "../lib/course-expiry.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredEnrollment, StoredUser } from "../types.js";
 import {
@@ -39,6 +40,10 @@ export async function loadEnrollment(courseIdOrEnrollmentId: string, user: Store
   if (enrollment.studentEmail.toLowerCase() !== user.email.toLowerCase()) {
     throw forbidden("Esta inscripción pertenece a otro alumno.");
   }
+  const course = await repos.courses.findById(enrollment.courseId);
+  if (!course || isCourseExpired(course)) {
+    throw forbidden("Este curso ya finalizó.");
+  }
   return enrollment;
 }
 
@@ -51,7 +56,7 @@ export async function listStudentEnrollments(user: StoredUser): Promise<Enrollme
   return enrollments
     .map((enrollment) => {
       const course = byId.get(enrollment.courseId);
-      return course ? enrollmentToDTO(enrollment, course) : null;
+      return course && !isCourseExpired(course) ? enrollmentToDTO(enrollment, course) : null;
     })
     .filter((value): value is EnrollmentDTO => Boolean(value));
 }

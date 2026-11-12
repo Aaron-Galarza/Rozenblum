@@ -1,4 +1,4 @@
-import { CourseModel } from "../models/index.js";
+import { CourseArchiveModel, CourseModel } from "../models/index.js";
 import { formatArs, nowIso, slugify } from "../lib/utils.js";
 import { todayInBuenosAires } from "../lib/course-expiry.js";
 import type { StoredCourse, StoredModule, PublicCourseRecord } from "../types.js";
@@ -46,13 +46,25 @@ export function createMongooseCoursesRepositories() {
       const doc = await CourseModel.findOne({ legacyId }).lean().exec();
       return doc ? clean<StoredCourse>(doc) : null;
     },
+    async claimForCheckout(legacyId) {
+      const result = await CourseModel.updateOne({
+        legacyId, status: "published", $or: [
+          { expiresOn: { $exists: false } },
+          { expiresOn: { $gte: todayInBuenosAires() } },
+        ],
+      }, { $inc: { checkoutSequence: 1 } }).exec();
+      return result.modifiedCount === 1;
+    },
     async findByRequestId(requestId) {
       const doc = await CourseModel.findOne({ requestId }).lean().exec();
       return doc ? clean<StoredCourse>(doc) : null;
     },
     async nextLegacyId() {
-      const doc = await CourseModel.findOne({}).sort({ legacyId: -1 }).select("legacyId").lean().exec();
-      return (doc?.legacyId ?? 0) + 1;
+      const [course, archive] = await Promise.all([
+        CourseModel.findOne({}).sort({ legacyId: -1 }).select("legacyId").lean().exec(),
+        CourseArchiveModel.findOne({}).sort({ courseId: -1 }).select("courseId").lean().exec(),
+      ]);
+      return Math.max(course?.legacyId ?? 0, archive?.courseId ?? 0) + 1;
     },
     async create(input) {
       const baseSlug = slugify(input.title);
@@ -60,7 +72,7 @@ export function createMongooseCoursesRepositories() {
         const legacyId = await this.nextLegacyId();
         let slug = baseSlug;
         let suffix = 2;
-        while (await CourseModel.exists({ slug })) {
+        while (await CourseModel.exists({ slug }) || await CourseArchiveModel.exists({ slug })) {
           slug = `${baseSlug}-${suffix++}`;
         }
         try {
@@ -139,6 +151,19 @@ export function createMongooseCoursesRepositories() {
         everPublished: { $ne: true },
       }).exec();
       return result.deletedCount === 1;
+    },
+    async deleteExpired(legacyId, expiresOn, expectedRevision) {
+      const result = await CourseModel.deleteOne({
+        legacyId, expiresOn: { $eq: expiresOn, $lt: todayInBuenosAires() },
+        ...courseRevisionFilter(expectedRevision),
+      }).exec();
+      return result.deletedCount === 1;
+    },
+    async listExpiredIds(afterId = 0, limit = 100) {
+      const docs = await CourseModel.find({
+        legacyId: { $gt: afterId }, expiresOn: { $lt: todayInBuenosAires() },
+      }).sort({ legacyId: 1 }).limit(limit).select("legacyId").lean().exec();
+      return docs.map((doc) => doc.legacyId);
     },
   };
   return { courses };

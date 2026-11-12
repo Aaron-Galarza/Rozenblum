@@ -551,6 +551,19 @@ export type AdminCursoDTO = {
   revision?: number;
 };
 
+export type ArchivedCourseDTO = {
+  id: number;
+  title: string;
+  professor: string;
+  expiresOn: string;
+  archivedAt: string;
+  enrollments: number;
+  completed: number;
+  completion: number;
+  conversations: number;
+  messages: number;
+};
+
 export type AdminInscripcionDTO = {
   id: string;
   alumno: string;

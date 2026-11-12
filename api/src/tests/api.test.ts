@@ -6,6 +6,7 @@ import WebSocket from "ws";
 import { BRAND_HERO_URL, loginSchema } from "@rozenblum/shared";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { chatDayStartIso } from "../lib/chat-limit.js";
+import { courseExpiryInstant, todayInBuenosAires } from "../lib/course-expiry.js";
 import { createMockRepositories } from "../repositories/mock.js";
 import { setRepositoriesForTests } from "../repositories/index.js";
 import { parseYouTubeId } from "../services/youtube.js";
@@ -15,6 +16,7 @@ import { detectImageFormat, isManagedImageUrl, mediaFolder } from "../services/m
 import { setPaymentGatewayForTests, type PaymentSnapshot } from "../services/mercadopago.js";
 import { applyOrderTransition } from "../services/order-transitions.js";
 import { checkout as checkoutService } from "../services/checkout.js";
+import { archiveExpiredCourse } from "../services/course-archive.js";
 import { api, startTestServer, type TestServer } from "./helpers.js";
 
 const password = "test-password-12345";
@@ -1346,6 +1348,62 @@ test("checkout waits for payment, then creates the student with the DNI password
   assert.equal((await repositories.enrollments.findById(created.body.data.enrollment.id))?.status, "Revocado");
 });
 
+test("payment cannot extend an enrollment beyond the course expiry", async () => {
+  const expiresOn = todayInBuenosAires(Date.now() + 7 * 86_400_000);
+  const course = await repositories.courses.create({
+    title: "Access Capped by Course", description: "A paid course nearing its final day.",
+    priceCents: 10_000, duration: "Online", level: "Inicial", status: "published",
+    professor: "Test profesor", professorEmail: teacherEmail,
+    img: "https://example.test/access-cap.jpg", expiresOn, accessDays: 30,
+  });
+  const order = await repositories.orders.create({
+    id: "ord_access_cap", externalReference: "REF-ACCESS-CAP",
+    alumno: "Test alumno", email: studentEmail,
+    curso: course.title, courseSlug: course.slug, courseId: course.legacyId,
+    monto: course.price, montoCents: course.priceCents, fecha: "12/11/2026",
+    metodo: "Mercado Pago", estado: "Pendiente", createdAt: new Date().toISOString(),
+    paymentProvider: "mercadopago", preferenceId: "pref_access_cap",
+    paymentUrl: "https://www.mercadopago.com.ar/checkout/test",
+  });
+  await applyOrderTransition({
+    reference: order.externalReference, status: "Pagado", source: "mercadopago",
+    providerEventId: "test-access-cap-approved", providerPaymentId: "12345002",
+    paymentStatus: "approved", reason: "Mercado Pago confirmó el cobro",
+  });
+  const enrollment = await repositories.enrollments.findByStudentAndCourse(studentEmail, course.legacyId);
+  assert.equal(enrollment?.status, "Activo");
+  assert.equal(enrollment?.expiresAt, courseExpiryInstant(expiresOn));
+});
+
+test("checkout cannot persist an order after its course expires during preference creation", async () => {
+  const course = await repositories.courses.create({
+    title: "Checkout Expiry Race", description: "Expires while Mercado Pago is responding.",
+    priceCents: 10_000, duration: "Online", level: "Inicial", status: "published",
+    professor: "Test profesor", professorEmail: teacherEmail,
+    img: "https://example.test/checkout-race.jpg", expiresOn: futureCourseExpiry,
+  });
+  setPaymentGatewayForTests({
+    ...checkoutGateway,
+    async createPreference(input) {
+      await repositories.courses.update(course.legacyId, { expiresOn: "2020-01-01" }, 0);
+      assert.equal(await archiveExpiredCourse(course.legacyId), "archived");
+      return checkoutGateway.createPreference(input);
+    },
+  });
+  try {
+    await assert.rejects(checkoutService({
+      courseSlug: course.slug, nombre: "Late checkout", email: "checkout-race@example.test",
+      dni: "30123456",
+    }), /curso solicitado no está disponible/i);
+    assert.equal(await repositories.orders.findLatestByStudentAndCourse(
+      "checkout-race@example.test", course.legacyId), null);
+    assert.equal(await repositories.enrollments.findByStudentAndCourse(
+      "checkout-race@example.test", course.legacyId), null);
+  } finally {
+    setPaymentGatewayForTests(checkoutGateway);
+  }
+});
+
 test("roles and enrollment ownership are enforced on every private flow", async () => {
   const studentToken = await login("alumno", studentEmail);
   const teacherToken = await login("profesor", teacherEmail);
@@ -1461,6 +1519,93 @@ test("expired courses disappear from the catalogue and refuse new checkout", asy
     }),
   });
   assert.equal(checkout.status, 404);
+  const enrollment = await repositories.enrollments.create({
+    studentEmail, studentName: "Test alumno", courseId: expired.legacyId, status: "Activo",
+  });
+  const studentToken = await login("alumno", studentEmail);
+  const teacherToken = await login("profesor", teacherEmail);
+  const dashboard = await api<{ data: { courses: { id: number }[] } }>(
+    server.baseUrl, "/api/teacher/dashboard", { token: teacherToken });
+  assert.equal(dashboard.body.data.courses.some((item) => item.id === expired.legacyId), false);
+  assert.equal((await api(server.baseUrl, `/api/student/enrollments/${enrollment.id}`, {
+    token: studentToken })).status, 403);
+  assert.equal((await api(server.baseUrl,
+    `/api/teacher/courses/${expired.legacyId}/students/${enrollment.id}/messages`, {
+      token: teacherToken,
+    })).status, 403);
+});
+
+test("expiry archives course metrics and removes enrollments and chats atomically", async () => {
+  const course = await repositories.courses.create({
+    title: "Historical Course", description: "An expired course with an enrollment.",
+    priceCents: 10_000, duration: "Online", level: "Inicial", status: "published",
+    professor: "Test profesor", professorEmail: teacherEmail,
+    img: "https://example.test/historical.jpg", expiresOn: "2020-01-01",
+  });
+  const enrollment = await repositories.enrollments.create({
+    studentEmail, studentName: "Test alumno", courseId: course.legacyId,
+    status: "Completado", completedLessonIds: ["1.1"],
+  });
+  const conversation = await repositories.conversations.create({
+    id: "cnv_historical_course", courseId: course.legacyId, studentEmail,
+    studentName: "Test alumno", teacherEmail, teacherName: "Test profesor", messages: [],
+  });
+  assert.equal(await repositories.conversations.addMessage(conversation.id, {
+    id: "msg_historical_course", authorEmail: studentEmail, authorRole: "alumno",
+    text: "Old question", time: "Tú · 12:00", createdAt: "2020-01-01T12:00:00.000Z",
+  }), "added");
+  const adminToken = await login("admin", adminEmail);
+  const beforeArchive = await api(server.baseUrl, "/api/admin/overview", { token: adminToken });
+  assert.equal(await archiveExpiredCourse(course.legacyId), "archived");
+  assert.equal(await repositories.courses.findById(course.legacyId), null);
+  assert.equal(await repositories.enrollments.findById(enrollment.id), null);
+  assert.equal(await repositories.conversations.findById(conversation.id), null);
+  const archive = await repositories.courseArchives.findByCourseId(course.legacyId);
+  assert.equal(archive?.enrollmentCount, 1);
+  assert.equal(archive?.completedCount, 1);
+  assert.equal(archive?.messageCount, 1);
+  assert.equal(archive?.conversationCount, 1);
+  const afterArchive = await api(
+    server.baseUrl, "/api/admin/overview", { token: adminToken });
+  assert.equal(afterArchive.headers.get("x-total-enrollments"),
+    beforeArchive.headers.get("x-total-enrollments"));
+  const history = await api<{ data: { id: number; enrollments: number }[] }>(
+    server.baseUrl, "/api/admin/courses/archived?limit=10&offset=0", { token: adminToken });
+  assert.equal(history.status, 200);
+  assert.ok(history.body.data.some((item) => item.id === course.legacyId && item.enrollments === 1));
+  assert.equal((await api(server.baseUrl, "/api/admin/courses/archived")).status, 401);
+  assert.equal(await archiveExpiredCourse(course.legacyId), "not_due");
+  const replacement = await repositories.courses.create({
+    title: "Historical Course", description: "A new course with the same title.",
+    priceCents: 10_000, duration: "Online", level: "Inicial", status: "draft",
+    professor: "Test profesor", professorEmail: teacherEmail, img: "",
+  });
+  assert.ok(replacement.legacyId > course.legacyId);
+  assert.notEqual(replacement.slug, course.slug);
+});
+
+test("an unsettled Mercado Pago order postpones physical course removal", async () => {
+  const course = await repositories.courses.create({
+    title: "Pending Expiry Course", description: "A buyer may still finish payment.",
+    priceCents: 10_000, duration: "Online", level: "Inicial", status: "published",
+    professor: "Test profesor", professorEmail: teacherEmail,
+    img: "https://example.test/pending-expiry.jpg", expiresOn: "2020-01-01",
+  });
+  const order = await repositories.orders.create({
+    id: "ord_pending_expiry", externalReference: "REF-PENDING-EXPIRY",
+    alumno: "Test buyer", email: "pending-expiry@example.test",
+    curso: course.title, courseSlug: course.slug, courseId: course.legacyId,
+    monto: course.price, montoCents: course.priceCents, fecha: "01/01/2020",
+    metodo: "Mercado Pago", estado: "Pendiente", createdAt: "2020-01-01T12:00:00.000Z",
+    paymentProvider: "mercadopago", preferenceId: "pref_pending_expiry",
+    paymentUrl: "https://www.mercadopago.com.ar/checkout/test",
+  });
+  assert.equal(await archiveExpiredCourse(course.legacyId), "payment_pending");
+  assert.ok(await repositories.courses.findById(course.legacyId));
+  assert.equal(await repositories.courseArchives.findByCourseId(course.legacyId), null);
+  await repositories.orders.updateStatus(order.id, "Reembolsado");
+  assert.equal(await archiveExpiredCourse(course.legacyId), "archived");
+  assert.ok(await repositories.orders.findByReference(order.externalReference));
 });
 
 test("checkout rejects a course whose professor is no longer available without creating records", async () => {

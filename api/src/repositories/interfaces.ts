@@ -7,6 +7,7 @@ import type {
   StoredContact,
   StoredConversation,
   StoredCourse,
+  StoredCourseArchive,
   StoredEnrollment,
   StoredMessage,
   StoredModule,
@@ -77,6 +78,8 @@ export interface CourseRepository {
   findLatestPublished(): Promise<StoredCourse | null>;
   findBySlug(slug: string): Promise<StoredCourse | null>;
   findById(legacyId: number): Promise<StoredCourse | null>;
+  /** Writes the course inside checkout's transaction to conflict with expiry removal. */
+  claimForCheckout(legacyId: number): Promise<boolean>;
   findByRequestId(requestId: string): Promise<StoredCourse | null>;
   nextLegacyId(): Promise<number>;
   create(input: CourseInput): Promise<StoredCourse>;
@@ -110,7 +113,24 @@ export interface CourseRepository {
     nextLessonNumber?: number,
   ): Promise<StoredCourse | null>;
   delete(legacyId: number, expectedRevision: number): Promise<boolean>;
+  /** Deletes only a course whose expiry is still due at the write. */
+  deleteExpired(legacyId: number, expiresOn: string, expectedRevision: number): Promise<boolean>;
+  listExpiredIds(afterId?: number, limit?: number): Promise<number[]>;
 }
+
+export interface CourseArchiveRepository {
+  findByCourseId(courseId: number): Promise<StoredCourseArchive | null>;
+  list(page?: Pagination): Promise<StoredCourseArchive[]>;
+  count(): Promise<number>;
+  create(archive: StoredCourseArchive): Promise<void>;
+}
+
+export type EnrollmentArchiveSummary = {
+  enrollmentCount: number;
+  completedCount: number;
+  averageCompletedLessons: number;
+  startedByDay: { day: string; count: number }[];
+};
 
 export interface EnrollmentRepository {
   listAll(page?: Pagination): Promise<StoredEnrollment[]>;
@@ -123,6 +143,8 @@ export interface EnrollmentRepository {
   /** Aggregated totals that stay accurate beyond the list page size. */
   metrics(): Promise<EnrollmentMetrics>;
   existsByCourse(courseId: number): Promise<boolean>;
+  archiveSummary(courseId: number): Promise<EnrollmentArchiveSummary>;
+  deleteByCourse(courseId: number): Promise<number>;
   listByStudent(email: string): Promise<StoredEnrollment[]>;
   /** All non-pending enrollments for the teacher's courses, without the generic list cap. */
   listByCourseIds(courseIds: number[]): Promise<StoredEnrollment[]>;
@@ -155,6 +177,7 @@ export interface OrderRepository {
   /** Revenue and monthly totals for confirmed payments only. */
   metrics(): Promise<OrderMetrics>;
   existsByCourse(courseId: number): Promise<boolean>;
+  hasUnsettledPaymentByCourse(courseId: number): Promise<boolean>;
   findByReference(reference: string): Promise<StoredOrder | null>;
   findLatestByStudentAndCourse(email: string, courseId: number): Promise<StoredOrder | null>;
   create(input: StoredOrder): Promise<StoredOrder>;
@@ -186,6 +209,7 @@ export interface ConversationRepository {
   reassignTeacher(courseId: number, teacherEmail: string, teacherName: string): Promise<number>;
   /** Removes threads when their course is deleted. */
   deleteByCourse(courseId: number): Promise<number>;
+  archiveSummary(courseId: number): Promise<{ conversationCount: number; messageCount: number }>;
 }
 
 export interface ContactRepository {
@@ -209,6 +233,7 @@ export type Repositories = {
   withTransaction<T>(work: () => Promise<T>): Promise<T>;
   users: UserRepository;
   courses: CourseRepository;
+  courseArchives: CourseArchiveRepository;
   enrollments: EnrollmentRepository;
   orders: OrderRepository;
   paymentEvents: PaymentEventRepository;
