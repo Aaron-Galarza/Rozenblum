@@ -1,6 +1,6 @@
 import type { CheckoutInput } from "@rozenblum/shared";
 import { notFound, unauthorized } from "../lib/http.js";
-import { isCourseExpired } from "../lib/course-expiry.js";
+import { isCourseEnrollmentOpen } from "../lib/course-expiry.js";
 import { verifyPassword } from "../lib/password.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredCourse, StoredEnrollment, StoredUser } from "../types.js";
@@ -18,8 +18,11 @@ export async function resolveCheckoutParticipants(
 ): Promise<CheckoutParticipants> {
   const repos = getRepositories();
   const course = await repos.courses.findBySlug(input.courseSlug);
-  if (!course || course.status !== "published" || isCourseExpired(course)) {
+  if (!course || course.status !== "published") {
     throw notFound("El curso solicitado no está disponible.");
+  }
+  if (!isCourseEnrollmentOpen(course)) {
+    throw notFound("Las inscripciones a este curso ya cerraron.");
   }
   const teacher = course.professorEmail
     ? await repos.users.findByEmail(course.professorEmail)

@@ -6,7 +6,7 @@ import WebSocket from "ws";
 import { BRAND_HERO_URL, loginSchema } from "@rozenblum/shared";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { chatDayStartIso } from "../lib/chat-limit.js";
-import { courseExpiryInstant, todayInBuenosAires } from "../lib/course-expiry.js";
+import { courseEnrollmentClosesAt, courseExpiryInstant, todayInBuenosAires } from "../lib/course-expiry.js";
 import { createMockRepositories } from "../repositories/mock.js";
 import { setRepositoriesForTests } from "../repositories/index.js";
 import { parseYouTubeId } from "../services/youtube.js";
@@ -1349,7 +1349,7 @@ test("checkout waits for payment, then creates the student with the DNI password
 });
 
 test("payment cannot extend an enrollment beyond the course expiry", async () => {
-  const expiresOn = todayInBuenosAires(Date.now() + 7 * 86_400_000);
+  const expiresOn = todayInBuenosAires(Date.now() + 9 * 86_400_000);
   const course = await repositories.courses.create({
     title: "Access Capped by Course", description: "A paid course nearing its final day.",
     priceCents: 10_000, duration: "Online", level: "Inicial", status: "published",
@@ -1399,6 +1399,39 @@ test("checkout cannot persist an order after its course expires during preferenc
       "checkout-race@example.test", course.legacyId), null);
     assert.equal(await repositories.enrollments.findByStudentAndCourse(
       "checkout-race@example.test", course.legacyId), null);
+  } finally {
+    setPaymentGatewayForTests(checkoutGateway);
+  }
+});
+
+test("registration closes seven days before course expiry and limits the payment link", async () => {
+  const closedOn = todayInBuenosAires(Date.now() + 7 * 86_400_000);
+  const openOn = todayInBuenosAires(Date.now() + 9 * 86_400_000);
+  const closed = await repositories.courses.create({
+    title: "Registration Closed", description: "Published but unavailable for checkout.",
+    priceCents: 10_000, duration: "Online", level: "Inicial", status: "published",
+    professor: "Test profesor", professorEmail: teacherEmail,
+    img: "https://example.test/closed.jpg", expiresOn: closedOn,
+  });
+  const open = await repositories.courses.create({
+    title: "Registration Open", description: "Payment link expires before the course.",
+    priceCents: 10_000, duration: "Online", level: "Inicial", status: "published",
+    professor: "Test profesor", professorEmail: teacherEmail,
+    img: "https://example.test/open.jpg", expiresOn: openOn,
+  });
+  const checkoutInput = { nombre: "Buyer Example", email: "cutoff-buyer@example.test", dni: "30123456" };
+  await assert.rejects(checkoutService({ ...checkoutInput, courseSlug: closed.slug }),
+    /inscripciones a este curso ya cerraron/i);
+  assert.equal(await repositories.orders.findLatestByStudentAndCourse(checkoutInput.email, closed.legacyId), null);
+  let preferenceExpiry: string | undefined;
+  setPaymentGatewayForTests({ ...checkoutGateway, async createPreference(input) {
+    preferenceExpiry = input.expiresAt;
+    return checkoutGateway.createPreference(input);
+  } });
+  try {
+    const accepted = await checkoutService({ ...checkoutInput, courseSlug: open.slug });
+    assert.equal(accepted.order.estado, "Pendiente");
+    assert.equal(preferenceExpiry, courseEnrollmentClosesAt(openOn));
   } finally {
     setPaymentGatewayForTests(checkoutGateway);
   }
@@ -1584,7 +1617,7 @@ test("expiry archives course metrics and removes enrollments and chats atomicall
   assert.notEqual(replacement.slug, course.slug);
 });
 
-test("an unsettled Mercado Pago order postpones physical course removal", async () => {
+test("expiry removes a course despite abandoned checkout and flags a late payment", async () => {
   const course = await repositories.courses.create({
     title: "Pending Expiry Course", description: "A buyer may still finish payment.",
     priceCents: 10_000, duration: "Online", level: "Inicial", status: "published",
@@ -1599,13 +1632,26 @@ test("an unsettled Mercado Pago order postpones physical course removal", async 
     metodo: "Mercado Pago", estado: "Pendiente", createdAt: "2020-01-01T12:00:00.000Z",
     paymentProvider: "mercadopago", preferenceId: "pref_pending_expiry",
     paymentUrl: "https://www.mercadopago.com.ar/checkout/test",
+    paymentExpiresAt: "2019-12-25T03:00:00.000Z",
   });
-  assert.equal(await archiveExpiredCourse(course.legacyId), "payment_pending");
-  assert.ok(await repositories.courses.findById(course.legacyId));
-  assert.equal(await repositories.courseArchives.findByCourseId(course.legacyId), null);
-  await repositories.orders.updateStatus(order.id, "Reembolsado");
+  const receipt = await api<{ data: { paymentUrl?: string } }>(server.baseUrl,
+    `/api/orders/${order.externalReference}?email=${encodeURIComponent(order.email)}`);
+  assert.equal(receipt.body.data.paymentUrl, undefined);
   assert.equal(await archiveExpiredCourse(course.legacyId), "archived");
-  assert.ok(await repositories.orders.findByReference(order.externalReference));
+  assert.equal(await repositories.courses.findById(course.legacyId), null);
+  const closedOrder = await repositories.orders.findByReference(order.externalReference);
+  assert.equal(closedOrder?.estado, "Pendiente");
+  assert.equal(closedOrder.fulfillmentIssue, "course_closed");
+  await applyOrderTransition({
+    reference: order.externalReference, status: "Pagado", source: "mercadopago",
+    providerEventId: "test-pending-expiry-approved", providerPaymentId: "12345003",
+    paymentStatus: "approved", reason: "Mercado Pago confirmó un cobro tardío",
+  });
+  const lateOrder = await repositories.orders.findByReference(order.externalReference);
+  assert.equal(lateOrder?.estado, "Pagado");
+  assert.equal(lateOrder?.fulfillmentIssue, "course_closed");
+  assert.equal(await repositories.users.findByEmail(order.email), null);
+  assert.equal(await repositories.enrollments.findByStudentAndCourse(order.email, course.legacyId), null);
 });
 
 test("checkout rejects a course whose professor is no longer available without creating records", async () => {

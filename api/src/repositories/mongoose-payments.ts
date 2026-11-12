@@ -27,6 +27,12 @@ const ADMIN_VISIBLE_FILTER = {
 
 export function createMongoosePaymentsRepositories() {
   const orders: OrderRepository = {
+    async closePendingByCourse(courseId) {
+      const result = await OrderModel.updateMany({ courseId, paymentProvider: "mercadopago",
+        estado: { $in: ["Pendiente", "Rechazado"] } },
+      { $set: { fulfillmentIssue: "course_closed" } }).exec();
+      return result.modifiedCount ?? 0;
+    },
     async list(page) {
       const docs = await OrderModel.find({})
         .sort({ createdAt: -1 })
@@ -98,10 +104,6 @@ export function createMongoosePaymentsRepositories() {
     async existsByCourse(courseId) {
       return Boolean(await OrderModel.exists({ courseId }));
     },
-    async hasUnsettledPaymentByCourse(courseId) {
-      return Boolean(await OrderModel.exists({ courseId, paymentProvider: "mercadopago",
-        estado: { $in: ["Pendiente", "Rechazado"] } }));
-    },
     async findByReference(reference) {
       const doc = await OrderModel.findOne({
         $or: [{ externalReference: reference }, { id: reference }],
@@ -120,9 +122,10 @@ export function createMongoosePaymentsRepositories() {
       const doc = await OrderModel.create(input);
       return clean<StoredOrder>(doc.toObject());
     },
-    async updateStatus(id, estado: OrderStatus, paymentId) {
+    async updateStatus(id, estado: OrderStatus, paymentId, fulfillmentIssue) {
       const doc = await OrderModel.findOneAndUpdate({ id }, {
-        $set: { estado, ...(paymentId ? { paymentId } : {}) },
+        $set: { estado, ...(paymentId ? { paymentId } : {}),
+          ...(fulfillmentIssue ? { fulfillmentIssue } : {}) },
       }, { returnDocument: "after" })
         .select("+dniPasswordHash")
         .lean()

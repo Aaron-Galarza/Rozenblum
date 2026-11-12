@@ -110,10 +110,12 @@ export type CourseDTO = {
    * it back (If-Match) on every update. Public catalogue responses omit it.
    */
   revision?: number;
-  /** Days of access granted after payment. 0/undefined means no expiry. */
+  /** Days of access after payment; course expiry may end it sooner. */
   accessDays?: number;
   /** Last calendar day when the course remains available in Buenos Aires. */
   expiresOn?: string;
+  /** ISO instant when new registrations and payment preferences close. */
+  enrollmentClosesAt?: string;
 };
 
 export type LessonDTO = {
@@ -339,6 +341,8 @@ export type OrderDTO = {
   externalReference?: string;
   paymentProvider?: "mercadopago" | "manual";
   paymentUrl?: string;
+  paymentExpiresAt?: string;
+  fulfillmentIssue?: "course_closed";
 };
 
 export const checkoutSchema = z.object({

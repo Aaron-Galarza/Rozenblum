@@ -1,6 +1,6 @@
 import { CourseArchiveModel, CourseModel } from "../models/index.js";
 import { formatArs, nowIso, slugify } from "../lib/utils.js";
-import { todayInBuenosAires } from "../lib/course-expiry.js";
+import { earliestOpenCourseExpiry, todayInBuenosAires } from "../lib/course-expiry.js";
 import type { StoredCourse, StoredModule, PublicCourseRecord } from "../types.js";
 import type { CourseRepository } from "./interfaces.js";
 import { clean, courseRevisionFilter } from "./mongoose-common.js";
@@ -50,7 +50,7 @@ export function createMongooseCoursesRepositories() {
       const result = await CourseModel.updateOne({
         legacyId, status: "published", $or: [
           { expiresOn: { $exists: false } },
-          { expiresOn: { $gte: todayInBuenosAires() } },
+          { expiresOn: { $gt: earliestOpenCourseExpiry() } },
         ],
       }, { $inc: { checkoutSequence: 1 } }).exec();
       return result.modifiedCount === 1;

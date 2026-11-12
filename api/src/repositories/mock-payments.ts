@@ -14,6 +14,16 @@ function isVisibleForAdmin(order: { estado: OrderStatus; paymentProvider?: strin
 
 export function createMockPaymentsRepositories(db: Memory) {
   const orders: OrderRepository = {
+    async closePendingByCourse(courseId) {
+      let count = 0;
+      for (const order of db.orders) {
+        if (order.courseId !== courseId || order.paymentProvider !== "mercadopago" ||
+          (order.estado !== "Pendiente" && order.estado !== "Rechazado")) continue;
+        order.fulfillmentIssue = "course_closed";
+        count += 1;
+      }
+      return count;
+    },
     async list(page) {
       const items = [...db.orders]
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -61,11 +71,6 @@ export function createMockPaymentsRepositories(db: Memory) {
     async existsByCourse(courseId) {
       return db.orders.some((item) => item.courseId === courseId);
     },
-    async hasUnsettledPaymentByCourse(courseId) {
-      return db.orders.some((order) => order.courseId === courseId &&
-        order.paymentProvider === "mercadopago" &&
-        (order.estado === "Pendiente" || order.estado === "Rechazado"));
-    },
     async findByReference(reference) {
       const order = db.orders.find(
         (o) => o.externalReference === reference || o.id === reference,
@@ -81,11 +86,12 @@ export function createMockPaymentsRepositories(db: Memory) {
       db.orders.push(clone(input));
       return clone(input);
     },
-    async updateStatus(id, estado: OrderStatus, paymentId) {
+    async updateStatus(id, estado: OrderStatus, paymentId, fulfillmentIssue) {
       const order = db.orders.find((o) => o.id === id);
       if (!order) return null;
       order.estado = estado;
       if (paymentId) order.paymentId = paymentId;
+      if (fulfillmentIssue) order.fulfillmentIssue = fulfillmentIssue;
       return clone(order);
     },
   };

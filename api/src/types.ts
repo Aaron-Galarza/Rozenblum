@@ -150,7 +150,10 @@ export type StoredOrder = {
   paymentProvider?: "mercadopago" | "manual";
   preferenceId?: string;
   paymentUrl?: string;
+  paymentExpiresAt?: string;
   paymentId?: string;
+  /** Provider confirmed after registration closed; payment needs human review. */
+  fulfillmentIssue?: "course_closed";
 };
 
 export type StoredPaymentEvent = {

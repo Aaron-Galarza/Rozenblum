@@ -179,7 +179,9 @@ const orderSchema = new Schema<StoredOrder>(
     paymentProvider: { type: String, enum: ["mercadopago", "manual"], default: "manual" },
     preferenceId: { type: String, default: undefined, index: true },
     paymentUrl: { type: String, default: undefined },
+    paymentExpiresAt: { type: String, default: undefined },
     paymentId: { type: String, default: undefined },
+    fulfillmentIssue: { type: String, enum: ["course_closed"], default: undefined },
   },
   { versionKey: false, collection: "orders" },
 );

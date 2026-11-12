@@ -38,6 +38,7 @@ export async function reconcileReturnedPayment(reference: string, email?: string
     reference: order.externalReference!, status, source: "mercadopago",
     providerEventId: `return:${payment.id}:${payment.status}:${payment.statusDetail}`,
     providerPaymentId: payment.id, paymentStatus: payment.status,
+    approvedAt: payment.approvedAt,
     reason: `Mercado Pago: ${payment.status}${payment.statusDetail ? ` (${payment.statusDetail})` : ""}`,
   });
 }
@@ -90,6 +91,7 @@ export async function processPaymentWebhook(input: {
     providerEventId: String(input.notification.id),
     providerPaymentId: payment.id,
     paymentStatus: payment.status,
+    approvedAt: payment.approvedAt,
     reason: `Mercado Pago: ${payment.status}${payment.statusDetail ? ` (${payment.statusDetail})` : ""}`,
   });
 }

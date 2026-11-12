@@ -21,6 +21,7 @@ import type {
   StoredUser,
 } from "../types.js";
 import { formatTime } from "../lib/utils.js";
+import { courseEnrollmentClosesAt } from "../lib/course-expiry.js";
 
 export function userToDTO(user: StoredUser): UserDTO {
   return {
@@ -51,6 +52,7 @@ function baseCourseDTO(course: PublicCourseRecord): CourseDTO {
     temario: course.temario.map(({ mod, title, lessons }) => ({ mod, title, lessons: [...lessons] })),
     ...(course.accessDays !== undefined ? { accessDays: course.accessDays } : {}),
     ...(course.expiresOn ? { expiresOn: course.expiresOn } : {}),
+    ...(course.expiresOn ? { enrollmentClosesAt: courseEnrollmentClosesAt(course.expiresOn) } : {}),
   };
 }
 
@@ -272,7 +274,11 @@ export function orderToDTO(order: StoredOrder): OrderDTO {
     courseSlug: order.courseSlug,
     externalReference: order.externalReference,
     paymentProvider: order.paymentProvider,
-    paymentUrl: order.estado === "Pendiente" || order.estado === "Rechazado"
+    paymentExpiresAt: order.paymentExpiresAt,
+    fulfillmentIssue: order.fulfillmentIssue,
+    paymentUrl: !order.fulfillmentIssue &&
+      (order.estado === "Pendiente" || order.estado === "Rechazado") &&
+      (!order.paymentExpiresAt || Date.parse(order.paymentExpiresAt) > Date.now())
       ? order.paymentUrl : undefined,
   };
 }

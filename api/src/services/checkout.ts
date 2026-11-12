@@ -4,6 +4,7 @@ import type {
   OrderDTO,
 } from "@rozenblum/shared";
 import { ApiError, badRequest, notFound } from "../lib/http.js";
+import { courseEnrollmentClosesAt } from "../lib/course-expiry.js";
 import { logger } from "../lib/logger.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { newId, nowIso } from "../lib/utils.js";
@@ -53,7 +54,9 @@ export async function checkout(
   const preference = await gateway.createPreference({
     reference, courseId: course.legacyId, title: course.title,
     priceCents: course.priceCents, email: input.email.toLowerCase(),
+    ...(course.expiresOn ? { expiresAt: courseEnrollmentClosesAt(course.expiresOn) } : {}),
   });
+  const paymentExpiresAt = course.expiresOn ? courseEnrollmentClosesAt(course.expiresOn) : undefined;
   const order: StoredOrder = {
     id: newId("ord"),
     externalReference: reference,
@@ -72,6 +75,7 @@ export async function checkout(
     paymentProvider: "mercadopago",
     preferenceId: preference.id,
     paymentUrl: preference.url,
+    paymentExpiresAt,
   };
 
   const { createdOrder, enrollment } = await persistCheckoutRecords(order);

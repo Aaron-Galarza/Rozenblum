@@ -9,11 +9,13 @@ export type PaymentSnapshot = {
   statusDetail: string;
   amountCents: number;
   currency: string;
+  approvedAt?: string;
 };
 
 export interface PaymentGateway {
   createPreference(input: {
     reference: string; courseId: number; title: string; priceCents: number; email: string;
+    expiresAt?: string;
   }): Promise<{ id: string; url: string }>;
   getPayment(id: string): Promise<PaymentSnapshot>;
   findPaymentsByReference?(reference: string): Promise<string[]>;
@@ -44,6 +46,11 @@ export function paymentGateway(): PaymentGateway | null {
               currency_id: "ARS", unit_price: input.priceCents / 100 }],
             external_reference: input.reference,
             payer: { email: input.email },
+            ...(input.expiresAt ? {
+              expires: true,
+              expiration_date_from: new Date().toISOString(),
+              expiration_date_to: input.expiresAt,
+            } : {}),
             notification_url: env.MERCADOPAGO_NOTIFICATION_URL,
             back_urls: {
               success: returnUrl.toString(),
@@ -68,6 +75,7 @@ export function paymentGateway(): PaymentGateway | null {
         return {
           id: String(result.id), externalReference: result.external_reference,
           status: result.status, statusDetail: result.status_detail ?? "",
+          approvedAt: result.date_approved ?? undefined,
           amountCents: Math.round(result.transaction_amount! * 100),
           currency: result.currency_id ?? "",
         };

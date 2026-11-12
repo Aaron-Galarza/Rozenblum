@@ -169,6 +169,8 @@ export interface EnrollmentRepository {
 }
 
 export interface OrderRepository {
+  /** Marks abandoned preferences when their course is archived. */
+  closePendingByCourse(courseId: number): Promise<number>;
   list(page?: Pagination): Promise<StoredOrder[]>;
   listVisibleForAdmin(page?: Pagination): Promise<StoredOrder[]>;
   countVisibleForAdmin(): Promise<number>;
@@ -177,11 +179,11 @@ export interface OrderRepository {
   /** Revenue and monthly totals for confirmed payments only. */
   metrics(): Promise<OrderMetrics>;
   existsByCourse(courseId: number): Promise<boolean>;
-  hasUnsettledPaymentByCourse(courseId: number): Promise<boolean>;
   findByReference(reference: string): Promise<StoredOrder | null>;
   findLatestByStudentAndCourse(email: string, courseId: number): Promise<StoredOrder | null>;
   create(input: StoredOrder): Promise<StoredOrder>;
-  updateStatus(id: string, estado: OrderStatus, paymentId?: string): Promise<StoredOrder | null>;
+  updateStatus(id: string, estado: OrderStatus, paymentId?: string,
+    fulfillmentIssue?: StoredOrder["fulfillmentIssue"]): Promise<StoredOrder | null>;
 }
 
 export interface PaymentEventRepository {

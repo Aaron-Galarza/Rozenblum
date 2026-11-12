@@ -8,7 +8,7 @@ import { getRepositories } from "../repositories/index.js";
 import type { StoredCourseArchive } from "../types.js";
 import { safeCourseState } from "./audit.js";
 
-export type ArchiveResult = "archived" | "not_due" | "payment_pending" | "changed";
+export type ArchiveResult = "archived" | "not_due" | "changed";
 
 export async function listArchivedCourses(page?: Pagination): Promise<{
   items: ArchivedCourseDTO[]; total: number;
@@ -34,9 +34,6 @@ export async function archiveExpiredCourse(courseId: number): Promise<ArchiveRes
   const result = await repos.withTransaction(async () => {
     const course = await repos.courses.findById(courseId);
     if (!course?.expiresOn || !isCourseExpired(course)) return "not_due";
-    // An unsettled Mercado Pago preference may still be paid after midnight.
-    if (await repos.orders.hasUnsettledPaymentByCourse(courseId)) return "payment_pending";
-
     const enrollment = await repos.enrollments.archiveSummary(courseId);
     const chat = await repos.conversations.archiveSummary(courseId);
     const archive: StoredCourseArchive = {
@@ -51,6 +48,7 @@ export async function archiveExpiredCourse(courseId: number): Promise<ArchiveRes
       return "changed";
     }
     await repos.courseArchives.create(archive);
+    await repos.orders.closePendingByCourse(courseId);
     await repos.enrollments.deleteByCourse(courseId);
     await repos.conversations.deleteByCourse(courseId);
     await repos.adminEvents.create({
@@ -77,7 +75,6 @@ export async function archiveDueCourses(): Promise<void> {
       try {
         const result = await archiveExpiredCourse(id);
         if (result === "archived") logger.info("course_archived", { courseId: id });
-        if (result === "payment_pending") logger.warn("course_archive_waiting_payment", { courseId: id });
       } catch (error) {
         logger.error("course_archive_failed", {
           courseId: id, message: error instanceof Error ? error.message : String(error),

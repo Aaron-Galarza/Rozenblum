@@ -1,5 +1,5 @@
 import { formatArs, nowIso, slugify } from "../lib/utils.js";
-import { isCourseExpired } from "../lib/course-expiry.js";
+import { isCourseEnrollmentOpen, isCourseExpired } from "../lib/course-expiry.js";
 import type { PublicCourseRecord, StoredCourse } from "../types.js";
 import type { CourseRepository } from "./interfaces.js";
 import { clone, type Memory } from "./mock-memory.js";
@@ -49,7 +49,7 @@ export function createMockCoursesRepositories(db: Memory) {
     },
     async claimForCheckout(legacyId) {
       const course = db.courses.find((item) => item.legacyId === legacyId);
-      if (!course || course.status !== "published" || isCourseExpired(course)) return false;
+      if (!course || course.status !== "published" || !isCourseEnrollmentOpen(course)) return false;
       course.checkoutSequence = (course.checkoutSequence ?? 0) + 1;
       return true;
     },

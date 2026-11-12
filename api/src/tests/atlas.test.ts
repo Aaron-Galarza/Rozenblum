@@ -561,12 +561,23 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
       studentEmail: "archived@example.test", studentName: "Archived Student",
       teacherEmail: professor.email, teacherName: professor.name, messages: [],
     });
+    const abandonedOrder = await repositories.orders.create({
+      id: "ord_archive_atlas", externalReference: "REF-ARCHIVE-ATLAS",
+      alumno: "Archived Student", email: "archived@example.test",
+      curso: expiredCourse.title, courseSlug: expiredCourse.slug, courseId: expiredCourse.legacyId,
+      monto: expiredCourse.price, montoCents: expiredCourse.priceCents,
+      fecha: "01/01/2020", metodo: "Mercado Pago", estado: "Pendiente",
+      createdAt: "2020-01-01T12:00:00.000Z", paymentProvider: "mercadopago",
+      preferenceId: "pref_archive_atlas", paymentUrl: "https://www.mercadopago.com.ar/checkout/test",
+    });
     await CourseArchiveModel.init();
     assert.equal(await archiveExpiredCourse(expiredCourse.legacyId), "archived");
     assert.equal(await repositories.courses.findById(expiredCourse.legacyId), null);
     assert.equal(await repositories.enrollments.findById(expiredEnrollment.id), null);
     assert.equal(await ConversationModel.countDocuments({ courseId: expiredCourse.legacyId }), 0);
     assert.equal((await repositories.courseArchives.findByCourseId(expiredCourse.legacyId))?.enrollmentCount, 1);
+    assert.equal((await repositories.orders.findByReference(abandonedOrder.externalReference))?.fulfillmentIssue,
+      "course_closed");
     const audit = await api<{ data: { entityId: string; reason: string; previousState?: unknown }[] }>(
       server.baseUrl, "/api/admin/audit?entity=user", { token: adminLogin.body.data.token },
     );

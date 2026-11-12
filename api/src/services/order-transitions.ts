@@ -1,5 +1,5 @@
 import type { OrderStatus } from "@rozenblum/shared";
-import { courseExpiryInstant } from "../lib/course-expiry.js";
+import { courseExpiryInstant, isCourseEnrollmentOpen, isCourseExpired } from "../lib/course-expiry.js";
 import { badRequest, conflict, notFound } from "../lib/http.js";
 import { logger } from "../lib/logger.js";
 import { initialsFromName, newId, nowIso } from "../lib/utils.js";
@@ -12,8 +12,8 @@ type TransitionBase = {
   reason: string;
 };
 type Transition = TransitionBase & (
-  { source: "manual"; actorId: string; providerEventId?: never; providerPaymentId?: never; paymentStatus?: never }
-  | { source: "mercadopago"; providerEventId: string; providerPaymentId: string; paymentStatus: string; actorId?: never }
+  { source: "manual"; actorId: string; providerEventId?: never; providerPaymentId?: never; paymentStatus?: never; approvedAt?: never }
+  | { source: "mercadopago"; providerEventId: string; providerPaymentId: string; paymentStatus: string; approvedAt?: string; actorId?: never }
 );
 
 function allowedTransition(previous: OrderStatus, next: OrderStatus, source: Transition["source"]): boolean {
@@ -28,8 +28,12 @@ function allowedTransition(previous: OrderStatus, next: OrderStatus, source: Tra
   return true;
 }
 
-async function activateEnrollment(order: StoredOrder): Promise<void> {
+async function activateEnrollment(order: StoredOrder, approvedAt?: string): Promise<boolean> {
   const repos = getRepositories();
+  const course = await repos.courses.findById(order.courseId);
+  const approvedTime = approvedAt && Number.isFinite(Date.parse(approvedAt))
+    ? Date.parse(approvedAt) : Date.now();
+  if (!course || isCourseExpired(course) || !isCourseEnrollmentOpen(course, approvedTime)) return false;
   const account = await repos.users.findByEmail(order.email);
   if (account && account.role !== "alumno") {
     throw conflict("El correo de la orden pertenece a otra clase de cuenta.");
@@ -46,7 +50,6 @@ async function activateEnrollment(order: StoredOrder): Promise<void> {
   }
   // Payment starts the individual access window, capped by the course's
   // final calendar day. Legacy courses may not have a course expiry yet.
-  const course = await repos.courses.findById(order.courseId);
   const accessDays = course?.accessDays ?? 0;
   const individualExpiry = accessDays > 0
     ? new Date(Date.now() + accessDays * 86_400_000).toISOString()
@@ -65,6 +68,7 @@ async function activateEnrollment(order: StoredOrder): Promise<void> {
       courseId: order.courseId, status: "Activo", expiresAt,
     });
   }
+  return true;
 }
 
 export async function applyOrderTransition(input: Transition): Promise<StoredPaymentEvent | null> {
@@ -97,9 +101,10 @@ export async function applyOrderTransition(input: Transition): Promise<StoredPay
         if (input.source === "manual" && order.estado === input.status) {
           throw badRequest("La orden ya tiene ese estado.");
         }
+        let fulfillmentIssue: StoredOrder["fulfillmentIssue"];
         if (order.estado !== input.status) {
           if (input.status === "Pagado") {
-            await activateEnrollment(order);
+            if (!await activateEnrollment(order, input.approvedAt)) fulfillmentIssue = "course_closed";
           } else {
             const enrollment = await repos.enrollments.findByStudentAndCourse(order.email, order.courseId);
             if (enrollment && !(order.estado === "Pendiente" && input.status === "Rechazado")) {
@@ -108,12 +113,14 @@ export async function applyOrderTransition(input: Transition): Promise<StoredPay
             }
           }
           await repos.orders.updateStatus(order.id, input.status,
-            input.status === "Rechazado" || input.status === "Pendiente" ? undefined : input.providerPaymentId);
+            input.status === "Rechazado" || input.status === "Pendiente" ? undefined : input.providerPaymentId,
+            fulfillmentIssue);
         }
         const event: StoredPaymentEvent = {
           id: newId("pev"), orderId: order.id, source: input.source,
           previousStatus: order.estado, nextStatus: input.status,
-          reason: input.reason, createdAt: nowIso(),
+          reason: fulfillmentIssue ? `${input.reason}. Curso cerrado; acceso no activado.` : input.reason,
+          createdAt: nowIso(),
           ...(input.actorId ? { actorId: input.actorId } : {}),
           ...(input.providerEventId ? { providerEventId: input.providerEventId } : {}),
           ...(input.providerPaymentId ? { providerPaymentId: input.providerPaymentId } : {}),
