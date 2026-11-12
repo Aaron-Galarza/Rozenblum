@@ -29,7 +29,9 @@
   "engines": {
     "node": ">=20.19.0"
   },
-  "overrides": {
-    "minimatch": "^11.0.4"
+  "pnpm": {
+    "overrides": {
+      "minimatch": "^11.0.4"
+    }
   }
 }
