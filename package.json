@@ -16,7 +16,8 @@
     "pretypecheck": "pnpm run build:shared",
     "typecheck": "pnpm --dir api run typecheck && pnpm --dir web run typecheck",
     "pretest": "pnpm run build:shared",
-    "test": "pnpm --dir api run test",
+    "test": "pnpm --dir api run test && pnpm run test:web",
+    "test:web": "pnpm --dir api exec node --import tsx --test ../web/lib/editor-operations.test.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
