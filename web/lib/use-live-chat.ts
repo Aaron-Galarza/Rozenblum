@@ -5,10 +5,8 @@ import type { ChatMessageDTO } from "@rozenblum/shared";
 import { apiFetch, CHAT_SOCKET_URL, errorMessage, getSession, SESSION_CHANGED } from "./api";
 
 const SUBSCRIPTION_TIMEOUT_MS = 10_000;
-const HEARTBEAT_INTERVAL_MS = 20_000;
-const HEARTBEAT_TIMEOUT_MS = 8_000;
-const OFFLINE_REFRESH_MS = 10_000;
-const LIVE_RECONCILE_MS = 30_000;
+const HEARTBEAT_INTERVAL_MS = 5_000;
+const HEARTBEAT_TIMEOUT_MS = 3_000;
 
 function sameMessages(current: ChatMessageDTO[], next: ChatMessageDTO[]) {
   return current.length === next.length && current.every((message, index) =>
@@ -26,7 +24,7 @@ function mergeMessages(current: ChatMessageDTO[], incoming: ChatMessageDTO[]) {
   return sameMessages(current, merged) ? current : merged;
 }
 
-/** Receive change signals over WebSocket; reads and writes keep using the HTTP API. */
+/** Load history once; receive persisted messages over WebSocket without polling. */
 export function useLiveChat(path: string | null) {
   const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
   const [loading, setLoading] = useState(false);
@@ -145,7 +143,7 @@ export function useLiveChat(path: string | null) {
           }
           if (notice.type === "message" && notice.message?.id && typeof notice.message.text === "string") {
             setMessages((current) => mergeMessages(current, [notice.message!]));
-            if (process.env.NODE_ENV === "development") console.debug("[chat] mensaje recibido en vivo");
+            if (process.env.NODE_ENV === "development") console.debug("[chat] mensaje recibido en vivo", notice.message.id, new Date().toISOString());
           }
           if (notice.type === "ready" || notice.type === "refresh") void refresh();
           if (notice.type === "course_removed") window.location.reload();
@@ -160,7 +158,7 @@ export function useLiveChat(path: string | null) {
     };
     const scheduleReconnect = () => {
       if (!active || reconnectTimer !== null) return;
-      const delay = Math.min(1_000 * 2 ** Math.min(retryCount++, 5), 30_000);
+      const delay = Math.min(1_000 * 2 ** Math.min(retryCount++, 3), 5_000);
       reconnectTimer = window.setTimeout(() => {
         reconnectTimer = null;
         connect();
@@ -191,12 +189,6 @@ export function useLiveChat(path: string | null) {
       connect();
     };
     connect();
-    // Only consult HTTP while the live channel is unavailable. A blocked
-    // WebSocket still receives new messages without waiting for someone to send.
-    const offlineRefreshTimer = window.setInterval(() => { if (!live) void refresh(); }, OFFLINE_REFRESH_MS);
-    // A low-frequency read reconciles missed notifications when a proxy or
-    // multiple API instances leave a socket apparently live.
-    const reconcileTimer = window.setInterval(() => { if (live) void refresh(); }, LIVE_RECONCILE_MS);
     const onVisibility = () => { if (!document.hidden) void refresh(); };
     const onFocus = () => { void refresh(); };
     const onOnline = () => { if (!socket && reconnectTimer === null) connect(); void refresh(); };
@@ -217,8 +209,6 @@ export function useLiveChat(path: string | null) {
       clearSubscriptionTimer();
       stopHeartbeat();
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
-      window.clearInterval(offlineRefreshTimer);
-      window.clearInterval(reconcileTimer);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("online", onOnline);
@@ -250,7 +240,6 @@ export function useLiveChat(path: string | null) {
       if (activePath.current === path && version.current === sendVersion) {
         sendingNow.current = false;
         setSending(false);
-        refreshNow.current();
       }
     }
   }, [path]);

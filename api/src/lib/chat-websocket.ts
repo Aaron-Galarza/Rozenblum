@@ -44,9 +44,9 @@ async function authorizedRoom(user: StoredUser, path: string): Promise<string | 
   return null;
 }
 
-type Subscription = { token: string; path: string; room: string };
+type Subscription = { token: string; path: string; room: string; user: StoredUser };
 
-/** WebSocket only signals changes. The existing HTTP routes remain the source of truth. */
+/** Deliver persisted chat messages to authorized subscribers on the same HTTP server. */
 export function attachChatWebSocket(server: Server): () => void {
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 8_192, perMessageDeflate: false });
   const subscriptions = new Map<WebSocket, Subscription>();
@@ -103,7 +103,7 @@ export function attachChatWebSocket(server: Server): () => void {
           client.close(1008, "Acceso denegado"); return;
         }
         clearTimeout(timeout);
-        subscriptions.set(client, { token, path, room });
+        subscriptions.set(client, { token, path, room, user: user! });
         subscribing = false;
         client.send(JSON.stringify({ type: "ready" }));
         logger.debug("chat_ws_subscribed", { role: user!.role, subscribers: subscriptions.size });
@@ -121,26 +121,31 @@ export function attachChatWebSocket(server: Server): () => void {
       alive.set(client, false);
       client.ping();
     }
-  }, 30_000);
+    for (const [client, subscription] of subscriptions) {
+      void (async () => {
+        const user = await authenticatedUser(subscription.token);
+        const room = user && await authorizedRoom(user, subscription.path);
+        if (room !== subscription.room && client.readyState === WebSocket.OPEN) {
+          client.close(1008, "Acceso finalizado");
+        }
+      })().catch(() => client.close(1011, "No se pudo verificar el acceso"));
+    }
+  }, 15_000);
   heartbeat.unref();
 
   const unsubscribe = onChatChanged((conversation, message) => {
+    const started = performance.now();
     const room = `${conversation.courseId}:${conversation.studentEmail.toLowerCase()}`;
     let targeted = 0;
     for (const [client, subscription] of subscriptions) {
       if (subscription.room !== room || client.readyState !== WebSocket.OPEN) continue;
       targeted += 1;
-      void (async () => {
-        const user = await authenticatedUser(subscription.token);
-        const currentRoom = user && await authorizedRoom(user, subscription.path);
-        if (currentRoom !== room) { client.close(1008, "Acceso finalizado"); return; }
-        if (client.readyState === WebSocket.OPEN) {
-          const [item] = conversationToMessages({ ...conversation, messages: [message] }, user!.email);
-          client.send(JSON.stringify({ type: "message", message: item }));
-        }
-      })().catch(() => client.close(1011, "No se pudo actualizar"));
+      if (!verifyToken(subscription.token)) { client.close(1008, "Sesión vencida"); continue; }
+      const [item] = conversationToMessages({ ...conversation, messages: [message] }, subscription.user.email);
+      client.send(JSON.stringify({ type: "message", message: item }));
     }
-    logger.debug("chat_ws_change", { subscribers: targeted });
+    logger.debug("chat_ws_change", { messageId: message.id, subscribers: targeted,
+      durationMs: Math.round(performance.now() - started) });
   });
   const unsubscribeCourse = onCourseRemoved((courseId) => {
     for (const [client, subscription] of subscriptions) {

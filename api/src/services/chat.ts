@@ -1,6 +1,7 @@
 import type { ChatMessageDTO, ConversationDTO } from "@rozenblum/shared";
 import { ApiError, forbidden, notFound } from "../lib/http.js";
 import { publishChatChanged } from "../lib/chat-events.js";
+import { logger } from "../lib/logger.js";
 import { isCourseExpired } from "../lib/course-expiry.js";
 import type { Pagination } from "../lib/pagination.js";
 import { formatTime, newId, nowIso } from "../lib/utils.js";
@@ -79,10 +80,12 @@ async function appendMessage(
     id: newId("msg"), authorEmail: user.email.toLowerCase(), authorRole: user.role,
     text, time: `Tú · ${formatTime()}`, createdAt: nowIso(),
   };
+  const started = performance.now();
   const result = await getRepositories().conversations.addMessage(conversation.id, message);
   if (result === "missing") throw notFound("Conversación no encontrada.");
   if (result === "limit") throw new ApiError(429, "CHAT_DAILY_LIMIT",
     "Este chat alcanzó el límite de 100 mensajes de hoy. Podés volver a escribir mañana.");
+  logger.debug("chat_message_persisted", { messageId: message.id, durationMs: Math.round(performance.now() - started) });
   publishChatChanged(conversation, message);
   return (await messagePage(conversation, user.email, LATEST_MESSAGE_PAGE)).messages;
 }
