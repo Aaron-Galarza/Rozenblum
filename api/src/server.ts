@@ -74,6 +74,8 @@ async function main() {
 main().catch((error) => {
   logger.error("api_start_failed", {
     message: error instanceof Error ? error.message : String(error),
+    reason: error instanceof Error && error.message.startsWith("No se pudo conectar a MongoDB Atlas.")
+      ? "atlas_connection_failed" : "startup_failed",
   });
   process.exit(1);
 });
