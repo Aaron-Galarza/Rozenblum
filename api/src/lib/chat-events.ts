@@ -1,4 +1,6 @@
-type ChatListener = (courseId: number, studentEmail: string) => void;
+import type { StoredConversation, StoredMessage } from "../types.js";
+
+type ChatListener = (conversation: StoredConversation, message: StoredMessage) => void;
 type CourseListener = (courseId: number) => void;
 
 const listeners = new Set<ChatListener>();
@@ -9,9 +11,9 @@ export function onChatChanged(listener: ChatListener): () => void {
   return () => { listeners.delete(listener); };
 }
 
-export function publishChatChanged(courseId: number, studentEmail: string): void {
+export function publishChatChanged(conversation: StoredConversation, message: StoredMessage): void {
   for (const listener of listeners) {
-    try { listener(courseId, studentEmail.toLowerCase()); } catch { /* Persistence already succeeded. */ }
+    try { listener(conversation, message); } catch { /* Persistence already succeeded. */ }
   }
 }
 

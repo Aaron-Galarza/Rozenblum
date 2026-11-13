@@ -83,7 +83,7 @@ async function appendMessage(
   if (result === "missing") throw notFound("Conversación no encontrada.");
   if (result === "limit") throw new ApiError(429, "CHAT_DAILY_LIMIT",
     "Este chat alcanzó el límite de 100 mensajes de hoy. Podés volver a escribir mañana.");
-  publishChatChanged(conversation.courseId, conversation.studentEmail);
+  publishChatChanged(conversation, message);
   return (await messagePage(conversation, user.email, LATEST_MESSAGE_PAGE)).messages;
 }
 

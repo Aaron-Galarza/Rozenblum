@@ -9,6 +9,7 @@ import { getRepositories } from "../repositories/index.js";
 import type { StoredUser } from "../types.js";
 import { assertEnrollmentAccess, loadEnrollment } from "../services/classroom.js";
 import { loadManagedCourse } from "../services/courses.js";
+import { conversationToMessages } from "../services/mappers.js";
 
 const SOCKET_PATH = "/api/chat/socket";
 const STUDENT_PATH = /^\/api\/student\/enrollments\/(enr_[a-zA-Z0-9_-]+)\/messages$/;
@@ -123,8 +124,8 @@ export function attachChatWebSocket(server: Server): () => void {
   }, 30_000);
   heartbeat.unref();
 
-  const unsubscribe = onChatChanged((courseId, studentEmail) => {
-    const room = `${courseId}:${studentEmail}`;
+  const unsubscribe = onChatChanged((conversation, message) => {
+    const room = `${conversation.courseId}:${conversation.studentEmail.toLowerCase()}`;
     let targeted = 0;
     for (const [client, subscription] of subscriptions) {
       if (subscription.room !== room || client.readyState !== WebSocket.OPEN) continue;
@@ -133,7 +134,10 @@ export function attachChatWebSocket(server: Server): () => void {
         const user = await authenticatedUser(subscription.token);
         const currentRoom = user && await authorizedRoom(user, subscription.path);
         if (currentRoom !== room) { client.close(1008, "Acceso finalizado"); return; }
-        if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify({ type: "refresh" }));
+        if (client.readyState === WebSocket.OPEN) {
+          const [item] = conversationToMessages({ ...conversation, messages: [message] }, user!.email);
+          client.send(JSON.stringify({ type: "message", message: item }));
+        }
       })().catch(() => client.close(1011, "No se pudo actualizar"));
     }
     logger.debug("chat_ws_change", { subscribers: targeted });

@@ -1134,8 +1134,14 @@ test("chat sockets notify both participants and reject unauthorized subscription
       method: "POST", token: studentToken, body: JSON.stringify({ text: "Live notification" }),
     });
     assert.equal(sent.status, 201);
-    assert.equal(JSON.parse(String((await studentNotice)[0])).type, "refresh");
-    assert.equal(JSON.parse(String((await teacherNotice)[0])).type, "refresh");
+    const studentMessage = JSON.parse(String((await studentNotice)[0]));
+    const teacherMessage = JSON.parse(String((await teacherNotice)[0]));
+    assert.equal(studentMessage.type, "message");
+    assert.equal(teacherMessage.type, "message");
+    assert.equal(studentMessage.message.text, "Live notification");
+    assert.equal(studentMessage.message.from, "me");
+    assert.equal(teacherMessage.message.from, "prof");
+    assert.equal(studentMessage.message.id, teacherMessage.message.id);
 
     const studentReplyNotice = once(student, "message");
     const teacherReplyNotice = once(teacher, "message");
@@ -1143,8 +1149,14 @@ test("chat sockets notify both participants and reject unauthorized subscription
       method: "POST", token: teacherToken, body: JSON.stringify({ text: "Live answer" }),
     });
     assert.equal(reply.status, 201);
-    assert.equal(JSON.parse(String((await studentReplyNotice)[0])).type, "refresh");
-    assert.equal(JSON.parse(String((await teacherReplyNotice)[0])).type, "refresh");
+    const studentReply = JSON.parse(String((await studentReplyNotice)[0]));
+    const teacherReply = JSON.parse(String((await teacherReplyNotice)[0]));
+    assert.equal(studentReply.type, "message");
+    assert.equal(teacherReply.type, "message");
+    assert.equal(studentReply.message.text, "Live answer");
+    assert.equal(studentReply.message.from, "prof");
+    assert.equal(teacherReply.message.from, "me");
+    assert.equal(studentReply.message.id, teacherReply.message.id);
 
     const forbiddenSocket = new WebSocket(url, options);
     await once(forbiddenSocket, "open");

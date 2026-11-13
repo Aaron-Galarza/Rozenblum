@@ -18,6 +18,14 @@ function sameMessages(current: ChatMessageDTO[], next: ChatMessageDTO[]) {
     message.authorRole === next[index]?.authorRole);
 }
 
+function mergeMessages(current: ChatMessageDTO[], incoming: ChatMessageDTO[]) {
+  const byId = new Map(current.map((message) => [message.id, message]));
+  for (const message of incoming) byId.set(message.id, message);
+  const merged = [...byId.values()].sort((a, b) =>
+    a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)).slice(-500);
+  return sameMessages(current, merged) ? current : merged;
+}
+
 /** Receive change signals over WebSocket; reads and writes keep using the HTTP API. */
 export function useLiveChat(path: string | null) {
   const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
@@ -52,7 +60,7 @@ export function useLiveChat(path: string | null) {
       try {
         const next = await apiFetch<ChatMessageDTO[]>(path, { auth: true, cache: "no-store" });
         if (active && activePath.current === path && version.current === readVersion) {
-          setMessages((current) => sameMessages(current, next) ? current : next);
+          setMessages((current) => mergeMessages(current, next));
           setError("");
         }
       } catch (cause) {
@@ -123,7 +131,7 @@ export function useLiveChat(path: string | null) {
       connectedSocket.onmessage = (event) => {
         if (!active || socket !== connectedSocket) return;
         try {
-          const notice = JSON.parse(String(event.data)) as { type?: string };
+          const notice = JSON.parse(String(event.data)) as { type?: string; message?: ChatMessageDTO };
           if (notice.type === "ready") {
             clearSubscriptionTimer();
             live = true;
@@ -135,8 +143,9 @@ export function useLiveChat(path: string | null) {
             window.clearTimeout(pongTimer);
             pongTimer = null;
           }
-          if (process.env.NODE_ENV === "development" && notice.type === "refresh") {
-            console.debug("[chat] cambio recibido; actualizando historial");
+          if (notice.type === "message" && notice.message?.id && typeof notice.message.text === "string") {
+            setMessages((current) => mergeMessages(current, [notice.message!]));
+            if (process.env.NODE_ENV === "development") console.debug("[chat] mensaje recibido en vivo");
           }
           if (notice.type === "ready" || notice.type === "refresh") void refresh();
           if (notice.type === "course_removed") window.location.reload();
@@ -227,7 +236,7 @@ export function useLiveChat(path: string | null) {
         method: "POST", auth: true, body: { text },
       });
       if (activePath.current === path && version.current === sendVersion) {
-        setMessages(next);
+        setMessages((current) => mergeMessages(current, next));
         setError("");
         return true;
       }
