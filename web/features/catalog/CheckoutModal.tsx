@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import type { CheckoutResultDTO } from "@rozenblum/shared";
 import type { Course } from "../../types";
 import { apiFetch, errorMessage } from "../../lib/api";
@@ -18,20 +18,10 @@ export default function CheckoutModal({ course, onClose }: CheckoutModalProps) {
   const [form, setForm] = useState({ nombre: "", email: "", dni: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [paymentAvailability, setPaymentAvailability] = useState<"loading" | "available" | "unavailable">("loading");
-
-  const checkPaymentAvailability = () => {
-    setPaymentAvailability("loading");
-    void apiFetch<{ paymentsConfigured: boolean }>("/health")
-      .then((health) => setPaymentAvailability(health.paymentsConfigured ? "available" : "unavailable"))
-      .catch(() => setPaymentAvailability("unavailable"));
-  };
-
-  useEffect(checkPaymentAvailability, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.nombre || !form.email || !/^\d{7,8}$/.test(form.dni) || paymentAvailability !== "available") return;
+    if (!form.nombre || !form.email || !/^\d{7,8}$/.test(form.dni)) return;
     setLoading(true);
     setError("");
     try {
@@ -130,8 +120,6 @@ export default function CheckoutModal({ course, onClose }: CheckoutModalProps) {
             <p className="text-xs leading-relaxed" style={{ color: "rgba(23,59,108,0.7)" }}>Tu DNI será la contraseña inicial de tu cuenta. Al continuar, irás a Mercado Pago. La cuenta y el acceso al aula se habilitarán cuando se confirme el pago.</p>
           </div>
 
-          {paymentAvailability === "unavailable" && <p role="alert" className="text-sm text-[#72132C]">Mercado Pago no está disponible en este momento. <button type="button" onClick={checkPaymentAvailability} className="underline">Reintentar</button></p>}
-
           {error && (
             <p className="text-xs leading-relaxed" style={{ color: "#72132C" }} role="alert">{error}</p>
           )}
@@ -139,11 +127,11 @@ export default function CheckoutModal({ course, onClose }: CheckoutModalProps) {
           {/* Submit */}
           <button
             type="submit"
-            disabled={loading || paymentAvailability !== "available"}
+            disabled={loading}
             className="group flex min-h-14 w-full items-center justify-center gap-3 rounded-sm border px-5 py-4 text-xs font-bold tracking-widest transition-all duration-200 hover:brightness-125 active:scale-[0.99] disabled:cursor-wait disabled:opacity-70"
             style={{ backgroundColor: "#173B6C", borderColor: "#B58A43", color: "#FAF8F5", letterSpacing: "0.1em" }}
           >
-            {loading ? "REGISTRANDO..." : paymentAvailability === "loading" ? "COMPROBANDO PAGO..." : "CONTINUAR A MERCADO PAGO"}
+            {loading ? "REGISTRANDO..." : "CONTINUAR A MERCADO PAGO"}
             {!loading && <span aria-hidden="true" className="text-base transition-transform duration-200 group-hover:translate-x-1" style={{ color: "#D4A855" }}>→</span>}
           </button>
 
