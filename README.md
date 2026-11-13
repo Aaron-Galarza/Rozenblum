@@ -18,7 +18,7 @@ pnpm run dev
 
 ## Despliegue
 
-Render: servicio web Node desde la raíz del repositorio. Build: `pnpm install --frozen-lockfile && pnpm run build:shared && pnpm --dir api run build`. Start: `pnpm --dir api run start`. Configurá las variables de `api/.env.example` en Render, con `NODE_ENV=production`, `CORS_ORIGIN` igual al origen HTTPS de Vercel y las URL públicas de Mercado Pago.
+Render: servicio web Node con Root Directory `api`. Build: `pnpm install --frozen-lockfile && pnpm run build`. Start: `pnpm run start`. La API tiene su propio workspace y lockfile para incluir `shared` sin depender de archivos fuera de `api`. Configurá las variables de `api/.env.example` en Render, con `NODE_ENV=production`, `CORS_ORIGIN` igual al origen HTTPS de Vercel y las URL públicas de Mercado Pago.
 
 Vercel: proyecto Next.js con Root Directory `web`. Build Command: `pnpm --dir ../api/shared run build && pnpm run build`. Configurá `NEXT_PUBLIC_API_URL` con la URL HTTPS de Render, sin barra final.
 

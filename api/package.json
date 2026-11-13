@@ -3,8 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": { "node": ">=22 <23" },
   "scripts": {
     "dev": "node scripts/dev.mjs api",
+    "build:shared": "pnpm --dir shared run build",
+    "prebuild": "pnpm run build:shared",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
