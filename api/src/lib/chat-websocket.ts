@@ -2,6 +2,7 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 import { env } from "../config/env.js";
+import { logger } from "./logger.js";
 import { verifyToken } from "./token.js";
 import { onChatChanged, onCourseRemoved } from "./chat-events.js";
 import { getRepositories } from "../repositories/index.js";
@@ -71,14 +72,23 @@ export function attachChatWebSocket(server: Server): () => void {
     const timeout = setTimeout(() => client.close(1008, "Suscripción requerida"), 5_000);
     let subscribing = false;
     client.on("message", (raw, binary) => {
-      if (binary || subscribing || subscriptions.has(client)) {
+      if (binary || subscribing) {
         client.close(1008, "Suscripción inválida");
+        return;
+      }
+      let input: unknown;
+      try { input = JSON.parse(raw.toString()); } catch { client.close(1008, "Datos inválidos"); return; }
+      if (subscriptions.has(client)) {
+        if (input && typeof input === "object" && !Array.isArray(input) &&
+          Object.keys(input).length === 1 && (input as { type?: unknown }).type === "ping") {
+          client.send(JSON.stringify({ type: "pong" }));
+        } else {
+          client.close(1008, "Mensaje inválido");
+        }
         return;
       }
       subscribing = true;
       void (async () => {
-        let input: unknown;
-        try { input = JSON.parse(raw.toString()); } catch { client.close(1008, "Datos inválidos"); return; }
         if (!input || typeof input !== "object" ||
           (input as { type?: unknown }).type !== "subscribe" ||
           typeof (input as { token?: unknown }).token !== "string" ||
@@ -93,10 +103,16 @@ export function attachChatWebSocket(server: Server): () => void {
         }
         clearTimeout(timeout);
         subscriptions.set(client, { token, path, room });
+        subscribing = false;
         client.send(JSON.stringify({ type: "ready" }));
+        logger.debug("chat_ws_subscribed", { role: user!.role, subscribers: subscriptions.size });
       })().catch(() => client.close(1011, "No se pudo suscribir"));
     });
-    client.on("close", () => { clearTimeout(timeout); subscriptions.delete(client); });
+    client.on("close", (code) => {
+      clearTimeout(timeout);
+      subscriptions.delete(client);
+      logger.debug("chat_ws_closed", { code, subscribers: subscriptions.size });
+    });
   });
   const heartbeat = setInterval(() => {
     for (const client of sockets.clients) {
@@ -109,8 +125,10 @@ export function attachChatWebSocket(server: Server): () => void {
 
   const unsubscribe = onChatChanged((courseId, studentEmail) => {
     const room = `${courseId}:${studentEmail}`;
+    let targeted = 0;
     for (const [client, subscription] of subscriptions) {
       if (subscription.room !== room || client.readyState !== WebSocket.OPEN) continue;
+      targeted += 1;
       void (async () => {
         const user = await authenticatedUser(subscription.token);
         const currentRoom = user && await authorizedRoom(user, subscription.path);
@@ -118,6 +136,7 @@ export function attachChatWebSocket(server: Server): () => void {
         if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify({ type: "refresh" }));
       })().catch(() => client.close(1011, "No se pudo actualizar"));
     }
+    logger.debug("chat_ws_change", { subscribers: targeted });
   });
   const unsubscribeCourse = onCourseRemoved((courseId) => {
     for (const [client, subscription] of subscriptions) {

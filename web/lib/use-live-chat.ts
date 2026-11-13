@@ -4,6 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessageDTO } from "@rozenblum/shared";
 import { apiFetch, CHAT_SOCKET_URL, errorMessage, getSession, SESSION_CHANGED } from "./api";
 
+const SUBSCRIPTION_TIMEOUT_MS = 10_000;
+const HEARTBEAT_INTERVAL_MS = 20_000;
+const HEARTBEAT_TIMEOUT_MS = 8_000;
+const OFFLINE_REFRESH_MS = 10_000;
+const LIVE_RECONCILE_MS = 30_000;
+
 function sameMessages(current: ChatMessageDTO[], next: ChatMessageDTO[]) {
   return current.length === next.length && current.every((message, index) =>
     message.id === next[index]?.id && message.text === next[index]?.text &&
@@ -44,7 +50,7 @@ export function useLiveChat(path: string | null) {
       reading = true;
       const readVersion = version.current;
       try {
-        const next = await apiFetch<ChatMessageDTO[]>(path, { auth: true });
+        const next = await apiFetch<ChatMessageDTO[]>(path, { auth: true, cache: "no-store" });
         if (active && activePath.current === path && version.current === readVersion) {
           setMessages((current) => sameMessages(current, next) ? current : next);
           setError("");
@@ -66,11 +72,38 @@ export function useLiveChat(path: string | null) {
     void refresh();
     let socket: WebSocket | null = null;
     let reconnectTimer: number | null = null;
+    let subscriptionTimer: number | null = null;
+    let heartbeatTimer: number | null = null;
+    let pongTimer: number | null = null;
+    let live = false;
     let retryCount = 0;
+    const clearSubscriptionTimer = () => {
+      if (subscriptionTimer !== null) window.clearTimeout(subscriptionTimer);
+      subscriptionTimer = null;
+    };
+    const stopHeartbeat = () => {
+      if (heartbeatTimer !== null) window.clearInterval(heartbeatTimer);
+      if (pongTimer !== null) window.clearTimeout(pongTimer);
+      heartbeatTimer = null;
+      pongTimer = null;
+    };
+    const startHeartbeat = (connectedSocket: WebSocket) => {
+      stopHeartbeat();
+      heartbeatTimer = window.setInterval(() => {
+        if (!active || socket !== connectedSocket || connectedSocket.readyState !== WebSocket.OPEN) return;
+        if (pongTimer !== null) return;
+        connectedSocket.send(JSON.stringify({ type: "ping" }));
+        pongTimer = window.setTimeout(() => {
+          forceDisconnect(connectedSocket);
+        }, HEARTBEAT_TIMEOUT_MS);
+      }, HEARTBEAT_INTERVAL_MS);
+    };
     const connect = () => {
       if (!active) return;
       const token = getSession()?.token;
       if (!token) { setConnectionState("offline"); return; }
+      live = false;
+      setConnectionState("connecting");
       try {
         socket = new WebSocket(CHAT_SOCKET_URL);
       } catch {
@@ -79,22 +112,42 @@ export function useLiveChat(path: string | null) {
         return;
       }
       const connectedSocket = socket;
-      connectedSocket.onopen = () => connectedSocket.send(JSON.stringify({ type: "subscribe", token, path }));
+      // A proxy can accept the upgrade without forwarding the subscription.
+      // Do not leave the UI in "connecting" forever when no ready arrives.
+      subscriptionTimer = window.setTimeout(() => {
+        if (!live) forceDisconnect(connectedSocket);
+      }, SUBSCRIPTION_TIMEOUT_MS);
+      connectedSocket.onopen = () => {
+        if (active && socket === connectedSocket) connectedSocket.send(JSON.stringify({ type: "subscribe", token, path }));
+      };
       connectedSocket.onmessage = (event) => {
+        if (!active || socket !== connectedSocket) return;
         try {
           const notice = JSON.parse(String(event.data)) as { type?: string };
-          if (notice.type === "ready") { retryCount = 0; setConnectionState("live"); }
+          if (notice.type === "ready") {
+            clearSubscriptionTimer();
+            live = true;
+            retryCount = 0;
+            setConnectionState("live");
+            startHeartbeat(connectedSocket);
+          }
+          if (notice.type === "pong" && pongTimer !== null) {
+            window.clearTimeout(pongTimer);
+            pongTimer = null;
+          }
+          if (process.env.NODE_ENV === "development" && notice.type === "refresh") {
+            console.debug("[chat] cambio recibido; actualizando historial");
+          }
           if (notice.type === "ready" || notice.type === "refresh") void refresh();
           if (notice.type === "course_removed") window.location.reload();
         } catch { /* Ignore malformed notifications. */ }
       };
-      connectedSocket.onclose = () => {
+      connectedSocket.onclose = (event) => {
         if (socket !== connectedSocket) return;
-        socket = null;
-        setConnectionState("offline");
-        scheduleReconnect();
+        if (process.env.NODE_ENV === "development") console.debug("[chat] socket closed", event.code, event.reason);
+        forceDisconnect(connectedSocket);
       };
-      connectedSocket.onerror = () => connectedSocket.close();
+      connectedSocket.onerror = () => forceDisconnect(connectedSocket);
     };
     const scheduleReconnect = () => {
       if (!active || reconnectTimer !== null) return;
@@ -104,27 +157,62 @@ export function useLiveChat(path: string | null) {
         connect();
       }, delay);
     };
+    const forceDisconnect = (connectedSocket: WebSocket) => {
+      if (socket !== connectedSocket) return;
+      connectedSocket.onopen = connectedSocket.onmessage = connectedSocket.onclose = connectedSocket.onerror = null;
+      socket = null;
+      live = false;
+      clearSubscriptionTimer();
+      stopHeartbeat();
+      connectedSocket.close();
+      setConnectionState("offline");
+      scheduleReconnect();
+    };
     const onSessionChange = () => {
-      if (socket) { socket.onclose = null; socket.close(); socket = null; }
+      if (socket) {
+        socket.onopen = socket.onmessage = socket.onclose = socket.onerror = null;
+        socket.close();
+        socket = null;
+      }
+      clearSubscriptionTimer();
+      stopHeartbeat();
+      live = false;
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       reconnectTimer = null;
       connect();
     };
     connect();
+    // Only consult HTTP while the live channel is unavailable. A blocked
+    // WebSocket still receives new messages without waiting for someone to send.
+    const offlineRefreshTimer = window.setInterval(() => { if (!live) void refresh(); }, OFFLINE_REFRESH_MS);
+    // A low-frequency read reconciles missed notifications when a proxy or
+    // multiple API instances leave a socket apparently live.
+    const reconcileTimer = window.setInterval(() => { if (live) void refresh(); }, LIVE_RECONCILE_MS);
     const onVisibility = () => { if (!document.hidden) void refresh(); };
     const onFocus = () => { void refresh(); };
+    const onOnline = () => { if (!socket && reconnectTimer === null) connect(); void refresh(); };
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onOnline);
     window.addEventListener(SESSION_CHANGED, onSessionChange);
     return () => {
       active = false;
       activePath.current = null;
       version.current += 1;
       refreshNow.current = () => {};
-      if (socket) { socket.onclose = null; socket.close(); }
+      if (socket) {
+        socket.onopen = socket.onmessage = socket.onclose = socket.onerror = null;
+        socket.close();
+        socket = null;
+      }
+      clearSubscriptionTimer();
+      stopHeartbeat();
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      window.clearInterval(offlineRefreshTimer);
+      window.clearInterval(reconcileTimer);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onOnline);
       window.removeEventListener(SESSION_CHANGED, onSessionChange);
     };
   }, [path]);

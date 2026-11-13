@@ -1124,6 +1124,10 @@ test("chat sockets notify both participants and reject unauthorized subscription
   const student = await subscribe(studentToken, studentPath);
   const teacher = await subscribe(teacherToken, teacherPath);
   try {
+    const heartbeat = once(teacher, "message");
+    teacher.send(JSON.stringify({ type: "ping" }));
+    assert.equal(JSON.parse(String((await heartbeat)[0])).type, "pong");
+
     const studentNotice = once(student, "message");
     const teacherNotice = once(teacher, "message");
     const sent = await api(server.baseUrl, studentPath, {
@@ -1132,6 +1136,15 @@ test("chat sockets notify both participants and reject unauthorized subscription
     assert.equal(sent.status, 201);
     assert.equal(JSON.parse(String((await studentNotice)[0])).type, "refresh");
     assert.equal(JSON.parse(String((await teacherNotice)[0])).type, "refresh");
+
+    const studentReplyNotice = once(student, "message");
+    const teacherReplyNotice = once(teacher, "message");
+    const reply = await api(server.baseUrl, teacherPath, {
+      method: "POST", token: teacherToken, body: JSON.stringify({ text: "Live answer" }),
+    });
+    assert.equal(reply.status, 201);
+    assert.equal(JSON.parse(String((await studentReplyNotice)[0])).type, "refresh");
+    assert.equal(JSON.parse(String((await teacherReplyNotice)[0])).type, "refresh");
 
     const forbiddenSocket = new WebSocket(url, options);
     await once(forbiddenSocket, "open");
