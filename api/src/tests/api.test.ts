@@ -2108,7 +2108,9 @@ test("an interrupted checkout resumes its order without duplicates or exposing a
   assert.equal(resumed.enrollment?.id, first.enrollment?.id);
   assert.equal(resumed.payment.preferenceId, first.payment.preferenceId);
   assert.equal((await repositories.orders.list()).filter((order) => order.email === input.email).length, 1);
-  await assert.rejects(checkoutService({ ...input, dni: "32999999" }));
+  await assert.rejects(checkoutService({ ...input, dni: "32999999" }),
+    (error: unknown) => (error as { code?: string; message?: string }).code === "CHECKOUT_ACCOUNT_MISMATCH" &&
+      (error as { message?: string }).message?.includes("Este correo ya está asociado a otro DNI") === true);
   const adminToken = await login("admin", adminEmail);
   const teacherToken = await login("profesor", teacherEmail);
   const adminOrders = () => api<{ data: { id: string }[] }>(server.baseUrl,
@@ -2239,6 +2241,8 @@ test("a paid student buys a second course with the same DNI after an administrat
     body: JSON.stringify({ ...input(courses[1]!.slug), dni: "28999999" }),
   });
   assert.equal(mismatch.status, 403);
+  assert.equal((mismatch.body as { error: { code: string; message: string } }).error.code, "CHECKOUT_ACCOUNT_MISMATCH");
+  assert.match((mismatch.body as { error: { message: string } }).error.message, /Este correo ya está asociado a otro DNI/);
 
   const second = await checkoutService(input(courses[1]!.slug));
   assert.equal((await repositories.users.findByEmail(email))?.id, account.id);

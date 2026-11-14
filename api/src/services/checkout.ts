@@ -10,7 +10,7 @@ import { hashPassword, verifyPassword } from "../lib/password.js";
 import { newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredCourse, StoredEnrollment, StoredOrder, StoredUser } from "../types.js";
-import { resolveCheckoutParticipants } from "./checkout-eligibility.js";
+import { checkoutDniMismatch, resolveCheckoutParticipants } from "./checkout-eligibility.js";
 import { persistCheckoutRecords } from "./checkout-records.js";
 import { enrollmentToDTO, orderToDTO } from "./mappers.js";
 import { paymentGateway } from "./mercadopago.js";
@@ -30,10 +30,12 @@ async function resumeCheckout(input: CheckoutInput, course: StoredCourse,
   }
   const order = await getRepositories().orders.findLatestByStudentAndCourse(input.email, course.legacyId);
   const receipt = order && orderToDTO(order);
+  if (!account && order?.dniPasswordHash && !await verifyPassword(input.dni, order.dniPasswordHash)) {
+    throw checkoutDniMismatch();
+  }
   if (!order || order.paymentProvider !== "mercadopago" ||
       !["Pendiente", "Rechazado"].includes(order.estado) || !order.preferenceId ||
-      !receipt?.paymentUrl || (!account && (!order.dniPasswordHash ||
-        !await verifyPassword(input.dni, order.dniPasswordHash)))) {
+      !receipt?.paymentUrl || (!account && !order.dniPasswordHash)) {
     throw conflict("Esta inscripción necesita revisión antes de iniciar otro pago. Contactá al Estudio.");
   }
   return {

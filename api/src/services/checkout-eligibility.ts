@@ -12,6 +12,11 @@ export type CheckoutParticipants = {
   existingEnrollment: StoredEnrollment | null;
 };
 
+export function checkoutDniMismatch(): ApiError {
+  return new ApiError(403, "CHECKOUT_ACCOUNT_MISMATCH",
+    "Este correo ya está asociado a otro DNI. Revisá los datos o probá con otro correo.");
+}
+
 export async function resolveCheckoutParticipants(
   input: CheckoutInput,
 ): Promise<CheckoutParticipants> {
@@ -31,17 +36,16 @@ export async function resolveCheckoutParticipants(
   }
 
   const account = await repos.users.findByEmail(input.email);
-  const identityError = () => new ApiError(403, "CHECKOUT_ACCOUNT_MISMATCH",
-    "No pudimos validar la cuenta. Revisá el correo, el DNI o contactá al administrador.");
   if (account && (account.role !== "alumno" || account.status !== "Activo")) {
-    throw identityError();
+    throw new ApiError(403, "CHECKOUT_ACCOUNT_UNAVAILABLE",
+      "Este correo no está disponible para inscripciones. Contactá al Estudio.");
   }
   if (account) {
     // Older paid accounts may predate studentDniHash; their first paid order
     // retains the protected DNI hash even after an administrator resets the password.
     const hash = account.studentDniHash ?? await repos.orders.findStudentDniHash(input.email)
       ?? account.passwordHash;
-    if (!await verifyPassword(input.dni, hash)) throw identityError();
+    if (!await verifyPassword(input.dni, hash)) throw checkoutDniMismatch();
   }
 
   const existingEnrollment = await repos.enrollments.findByStudentAndCourse(input.email, course.legacyId);
