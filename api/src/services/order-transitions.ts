@@ -19,6 +19,8 @@ type Transition = TransitionBase & (
 function allowedTransition(previous: OrderStatus, next: OrderStatus, source: Transition["source"]): boolean {
   if (previous === next) return true;
   if (previous === "Reembolsado") return false;
+  if (previous === "Vencido") return source === "mercadopago" &&
+    (next === "Pagado" || next === "En disputa" || next === "Reembolsado");
   if (previous === "Pagado") return next === "Reembolsado" ||
     (source === "mercadopago" && next === "En disputa");
   if (previous === "En disputa") return source === "mercadopago" &&
@@ -28,12 +30,17 @@ function allowedTransition(previous: OrderStatus, next: OrderStatus, source: Tra
   return true;
 }
 
-async function activateEnrollment(order: StoredOrder, approvedAt?: string): Promise<boolean> {
+async function activateEnrollment(order: StoredOrder, approvedAt?: string): Promise<StoredOrder["fulfillmentIssue"]> {
   const repos = getRepositories();
   const course = await repos.courses.findById(order.courseId);
   const approvedTime = approvedAt && Number.isFinite(Date.parse(approvedAt))
     ? Date.parse(approvedAt) : Date.now();
-  if (!course || isCourseExpired(course) || !isCourseEnrollmentOpen(course, approvedTime)) return false;
+  if (!course || isCourseExpired(course) || !isCourseEnrollmentOpen(course, approvedTime)) {
+    return "course_closed";
+  }
+  if (order.paymentExpiresAt && approvedTime >= Date.parse(order.paymentExpiresAt)) {
+    return "payment_expired";
+  }
   const account = await repos.users.findByEmail(order.email);
   if (account && account.role !== "alumno") {
     throw conflict("El correo de la orden pertenece a otra clase de cuenta.");
@@ -69,7 +76,7 @@ async function activateEnrollment(order: StoredOrder, approvedAt?: string): Prom
       courseId: order.courseId, status: "Activo", expiresAt,
     });
   }
-  return true;
+  return undefined;
 }
 
 export async function applyOrderTransition(input: Transition): Promise<StoredPaymentEvent | null> {
@@ -105,7 +112,7 @@ export async function applyOrderTransition(input: Transition): Promise<StoredPay
         let fulfillmentIssue: StoredOrder["fulfillmentIssue"];
         if (order.estado !== input.status) {
           if (input.status === "Pagado") {
-            if (!await activateEnrollment(order, input.approvedAt)) fulfillmentIssue = "course_closed";
+            fulfillmentIssue = await activateEnrollment(order, input.approvedAt);
           } else {
             const enrollment = await repos.enrollments.findByStudentAndCourse(order.email, order.courseId);
             if (enrollment && !(order.estado === "Pendiente" && input.status === "Rechazado")) {
@@ -120,7 +127,9 @@ export async function applyOrderTransition(input: Transition): Promise<StoredPay
         const event: StoredPaymentEvent = {
           id: newId("pev"), orderId: order.id, source: input.source,
           previousStatus: order.estado, nextStatus: input.status,
-          reason: fulfillmentIssue ? `${input.reason}. Curso cerrado; acceso no activado.` : input.reason,
+          reason: fulfillmentIssue
+            ? `${input.reason}. ${fulfillmentIssue === "payment_expired" ? "Plazo de pago vencido" : "Curso cerrado"}; acceso no activado.`
+            : input.reason,
           createdAt: nowIso(),
           ...(input.actorId ? { actorId: input.actorId } : {}),
           ...(input.providerEventId ? { providerEventId: input.providerEventId } : {}),

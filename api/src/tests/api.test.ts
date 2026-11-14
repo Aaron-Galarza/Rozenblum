@@ -15,6 +15,7 @@ import { moduleStatuses } from "../services/mappers.js";
 import { detectImageFormat, isManagedImageUrl, mediaFolder } from "../services/media.js";
 import { setPaymentGatewayForTests, type PaymentSnapshot } from "../services/mercadopago.js";
 import { applyOrderTransition } from "../services/order-transitions.js";
+import { listStudentEnrollments } from "../services/classroom.js";
 import { checkout as checkoutService } from "../services/checkout.js";
 import { archiveExpiredCourse } from "../services/course-archive.js";
 import { api, startTestServer, type TestServer } from "./helpers.js";
@@ -1472,9 +1473,14 @@ test("registration closes seven days before course expiry and limits the payment
     return checkoutGateway.createPreference(input);
   } });
   try {
+    const startedAt = Date.now();
     const accepted = await checkoutService({ ...checkoutInput, courseSlug: open.slug });
     assert.equal(accepted.order.estado, "Pendiente");
-    assert.equal(preferenceExpiry, courseEnrollmentClosesAt(openOn));
+    assert.ok(preferenceExpiry);
+    assert.equal(preferenceExpiry, accepted.order.paymentExpiresAt);
+    assert.ok(Date.parse(preferenceExpiry) >= startedAt + 5 * 60_000);
+    assert.ok(Date.parse(preferenceExpiry) <= Date.now() + 5 * 60_000);
+    assert.ok(preferenceExpiry < courseEnrollmentClosesAt(openOn));
   } finally {
     setPaymentGatewayForTests(checkoutGateway);
   }
@@ -2153,6 +2159,79 @@ test("an interrupted checkout resumes its order without duplicates or exposing a
     source: "mercadopago", providerEventId: "retry-paid", providerPaymentId: "1234567002",
     paymentStatus: "approved", reason: "Mercado Pago: approved" });
   assert.equal((await adminOrders()).body.data.filter((item) => item.id === first.order.id).length, 1);
+});
+
+test("a five-minute deadline expires the link and prevents a late payment from creating access", async () => {
+  const course = await repositories.courses.create({
+    title: "Five Minute Checkout Course", description: "Payment deadline test", priceCents: 60_000,
+    duration: "Online", level: "Inicial", img: "https://example.test/deadline.jpg",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+  });
+  const email = "late-five-minute-buyer@example.test";
+  const input = { courseSlug: course.slug, nombre: "Late Buyer", email, dni: "32123456" };
+  const deadline = new Date(Date.now() - 60_000).toISOString();
+  const order = await repositories.orders.create({
+    id: "ord_five_minute_deadline", externalReference: "REF-FIVE-MINUTE-DEADLINE",
+    alumno: input.nombre, email, dniPasswordHash: await hashPassword(input.dni),
+    curso: course.title, courseSlug: course.slug, courseId: course.legacyId,
+    monto: course.price, montoCents: course.priceCents, fecha: "01/01/2026",
+    metodo: "Mercado Pago", estado: "Pendiente", createdAt: new Date(Date.now() - 6 * 60_000).toISOString(),
+    paymentProvider: "mercadopago", preferenceId: "pref_five_minute_deadline",
+    paymentUrl: "https://www.mercadopago.com.ar/checkout/test", paymentExpiresAt: deadline,
+  });
+  await repositories.enrollments.create({
+    studentEmail: email, studentName: input.nombre, courseId: course.legacyId, status: "Pendiente",
+  });
+  assert.equal((await api<{ data: { estado: string; paymentUrl?: string } }>(server.baseUrl,
+    `/api/orders/${order.externalReference}?email=${email}`)).body.data.estado, "Vencido");
+  assert.ok((await repositories.orders.expireDue(new Date().toISOString())) >= 1);
+  assert.equal((await repositories.orders.findByReference(order.id))?.estado, "Vencido");
+  await assert.rejects(checkoutService(input),
+    (error: unknown) => (error as { status?: number }).status === 409);
+  await applyOrderTransition({ reference: order.externalReference, status: "Pagado",
+    source: "mercadopago", providerEventId: "five-minute-late-payment",
+    providerPaymentId: "1234567803", paymentStatus: "approved",
+    approvedAt: new Date().toISOString(), reason: "Pago tardío" });
+  const lateOrder = await repositories.orders.findByReference(order.id);
+  assert.equal(lateOrder?.estado, "Pagado");
+  assert.equal(lateOrder?.fulfillmentIssue, "payment_expired");
+  assert.equal(await repositories.users.findByEmail(email), null);
+  assert.equal((await repositories.enrollments.findByStudentAndCourse(email, course.legacyId))?.status,
+    "Pendiente");
+
+  const earlyEmail = "on-time-five-minute-buyer@example.test";
+  const early = await repositories.orders.create({ ...order,
+    id: "ord_on_time_deadline", externalReference: "REF-ON-TIME-DEADLINE",
+    email: earlyEmail, estado: "Pendiente",
+  });
+  await repositories.enrollments.create({
+    studentEmail: earlyEmail, studentName: input.nombre, courseId: course.legacyId, status: "Pendiente",
+  });
+  await repositories.orders.expireDue(new Date().toISOString());
+  await applyOrderTransition({ reference: early.externalReference, status: "Pagado",
+    source: "mercadopago", providerEventId: "five-minute-on-time-payment",
+    providerPaymentId: "1234567804", paymentStatus: "approved",
+    approvedAt: new Date(Date.parse(deadline) - 1_000).toISOString(), reason: "Pago dentro del plazo" });
+  assert.equal((await repositories.orders.findByReference(early.id))?.fulfillmentIssue, undefined);
+  assert.equal((await repositories.enrollments.findByStudentAndCourse(earlyEmail, course.legacyId))?.status,
+    "Activo");
+  assert.ok(await repositories.users.findByEmail(earlyEmail));
+});
+
+test("an existing student keeps paid courses but does not see an unpaid second course", async () => {
+  const course = await repositories.courses.create({
+    title: "Unpaid Second Course", description: "Pending access test", priceCents: 60_000,
+    duration: "Online", level: "Inicial", img: "https://example.test/unpaid.jpg",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+  });
+  const pending = await repositories.enrollments.create({
+    studentEmail, studentName: "Test alumno", courseId: course.legacyId, status: "Pendiente",
+  });
+  const student = await repositories.users.findByEmail(studentEmail);
+  assert.ok(student);
+  const visible = await listStudentEnrollments(student);
+  assert.ok(visible.some((item) => item.id === enrollmentId));
+  assert.equal(visible.some((item) => item.id === pending.id), false);
 });
 
 test("a paid student buys a second course with the same DNI after changing the login password", async () => {

@@ -154,8 +154,8 @@ export type StoredOrder = {
   paymentUrl?: string;
   paymentExpiresAt?: string;
   paymentId?: string;
-  /** Provider confirmed after registration closed; payment needs human review. */
-  fulfillmentIssue?: "course_closed";
+  /** Provider confirmed after a deadline; payment needs human review. */
+  fulfillmentIssue?: "course_closed" | "payment_expired";
 };
 
 export type StoredPaymentEvent = {

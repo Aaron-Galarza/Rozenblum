@@ -172,6 +172,8 @@ export interface EnrollmentRepository {
 export interface OrderRepository {
   /** Marks abandoned preferences when their course is archived. */
   closePendingByCourse(courseId: number): Promise<number>;
+  /** Expires unpaid Mercado Pago orders whose preference deadline passed. */
+  expireDue(now: string): Promise<number>;
   list(page?: Pagination): Promise<StoredOrder[]>;
   listVisibleForAdmin(page?: Pagination): Promise<StoredOrder[]>;
   countVisibleForAdmin(): Promise<number>;

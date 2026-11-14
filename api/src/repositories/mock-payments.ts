@@ -14,6 +14,17 @@ function isVisibleForAdmin(order: { estado: OrderStatus; paymentProvider?: strin
 
 export function createMockPaymentsRepositories(db: Memory) {
   const orders: OrderRepository = {
+    async expireDue(now) {
+      let count = 0;
+      for (const order of db.orders) {
+        if (order.paymentProvider !== "mercadopago" ||
+            (order.estado !== "Pendiente" && order.estado !== "Rechazado") ||
+            !order.paymentExpiresAt || order.paymentExpiresAt > now) continue;
+        order.estado = "Vencido";
+        count += 1;
+      }
+      return count;
+    },
     async closePendingByCourse(courseId) {
       let count = 0;
       for (const order of db.orders) {

@@ -60,12 +60,13 @@ export async function checkout(
     return resumeCheckout(input, course, account, existingEnrollment);
   }
   const reference = `RB-${new Date().getFullYear()}-${newId("ref").slice(4).toUpperCase()}`;
+  const paymentExpiresAt = new Date(Math.min(Date.now() + 5 * 60_000,
+    course.expiresOn ? Date.parse(courseEnrollmentClosesAt(course.expiresOn)) : Infinity)).toISOString();
   const preference = await gateway.createPreference({
     reference, courseId: course.legacyId, title: course.title,
     priceCents: course.priceCents, email: input.email.toLowerCase(),
-    ...(course.expiresOn ? { expiresAt: courseEnrollmentClosesAt(course.expiresOn) } : {}),
+    expiresAt: paymentExpiresAt,
   });
-  const paymentExpiresAt = course.expiresOn ? courseEnrollmentClosesAt(course.expiresOn) : undefined;
   const order: StoredOrder = {
     id: newId("ord"),
     externalReference: reference,

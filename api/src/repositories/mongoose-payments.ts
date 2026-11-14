@@ -27,6 +27,14 @@ const ADMIN_VISIBLE_FILTER = {
 
 export function createMongoosePaymentsRepositories() {
   const orders: OrderRepository = {
+    async expireDue(now) {
+      const result = await OrderModel.updateMany({
+        paymentProvider: "mercadopago",
+        estado: { $in: ["Pendiente", "Rechazado"] },
+        paymentExpiresAt: { $type: "string", $lte: now },
+      }, { $set: { estado: "Vencido" } }).exec();
+      return result.modifiedCount ?? 0;
+    },
     async closePendingByCourse(courseId) {
       const result = await OrderModel.updateMany({ courseId, paymentProvider: "mercadopago",
         estado: { $in: ["Pendiente", "Rechazado"] } },

@@ -54,6 +54,7 @@ export async function listStudentEnrollments(user: StoredUser): Promise<Enrollme
   const byId = courseIndex(courses);
 
   return enrollments
+    .filter((enrollment) => enrollment.status !== "Pendiente")
     .map((enrollment) => {
       const course = byId.get(enrollment.courseId);
       return course && !isCourseExpired(course) ? enrollmentToDTO(enrollment, course) : null;

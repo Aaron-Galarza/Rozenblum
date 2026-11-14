@@ -262,6 +262,9 @@ export function courseStructure(
 }
 
 export function orderToDTO(order: StoredOrder): OrderDTO {
+  const paymentExpired = order.paymentProvider === "mercadopago" &&
+    (order.estado === "Pendiente" || order.estado === "Rechazado") &&
+    Boolean(order.paymentExpiresAt && Date.parse(order.paymentExpiresAt) <= Date.now());
   return {
     id: order.id,
     alumno: order.alumno,
@@ -269,13 +272,13 @@ export function orderToDTO(order: StoredOrder): OrderDTO {
     monto: order.monto,
     fecha: order.fecha,
     metodo: order.metodo,
-    estado: order.estado,
+    estado: paymentExpired ? "Vencido" : order.estado,
     courseSlug: order.courseSlug,
     externalReference: order.externalReference,
     paymentProvider: order.paymentProvider,
     paymentExpiresAt: order.paymentExpiresAt,
     fulfillmentIssue: order.fulfillmentIssue,
-    paymentUrl: !order.fulfillmentIssue &&
+    paymentUrl: !order.fulfillmentIssue && !paymentExpired &&
       (order.estado === "Pendiente" || order.estado === "Rechazado") &&
       (!order.paymentExpiresAt || Date.parse(order.paymentExpiresAt) > Date.now())
       ? order.paymentUrl : undefined,

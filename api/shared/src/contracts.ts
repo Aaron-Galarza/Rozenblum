@@ -326,7 +326,7 @@ export const coursePayloadSchema = z.object({
  * Orders / checkout
  * ────────────────────────────────────────────────────────────────────────────*/
 
-export const ORDER_STATUSES = ["Pagado", "Pendiente", "Rechazado", "En disputa", "Reembolsado"] as const;
+export const ORDER_STATUSES = ["Pagado", "Pendiente", "Rechazado", "Vencido", "En disputa", "Reembolsado"] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export type OrderDTO = {
@@ -342,7 +342,7 @@ export type OrderDTO = {
   paymentProvider?: "mercadopago" | "manual";
   paymentUrl?: string;
   paymentExpiresAt?: string;
-  fulfillmentIssue?: "course_closed";
+  fulfillmentIssue?: "course_closed" | "payment_expired";
 };
 
 export const checkoutSchema = z.object({

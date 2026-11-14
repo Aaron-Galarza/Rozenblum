@@ -18,6 +18,7 @@ const statusBadgeStyle: Record<OrderStatus, React.CSSProperties> = {
   Pagado: { backgroundColor: "#dcfce7", color: "#166534" },
   Pendiente: { backgroundColor: "#fef3c7", color: "#92400e" },
   Rechazado: { backgroundColor: "#fee2e2", color: "#991b1b" },
+  Vencido: { backgroundColor: "#f1f5f9", color: "#475569" },
   "En disputa": { backgroundColor: "#ffedd5", color: "#9a3412" },
   Reembolsado: { backgroundColor: "#e0e7ff", color: "#3730a3" },
 };
@@ -147,9 +148,9 @@ export default function PagosSection({ orders, onStatusChange }: PagosSectionPro
                         style={{ backgroundColor: "#FFFFFF", color: "#173B6C" }}>{status}</option>
                     ))}
                   </select>
-                  {o.fulfillmentIssue === "course_closed" && o.estado === "Pagado" &&
+                  {o.fulfillmentIssue && o.estado === "Pagado" &&
                     <span className="mt-1 block text-[10px] font-semibold" style={{ color: "#72132C" }}>
-                      Curso cerrado · sin acceso · revisar cobro
+                      {o.fulfillmentIssue === "payment_expired" ? "Pago fuera de plazo" : "Curso cerrado"} · sin acceso · revisar cobro
                     </span>}
                 </td>
               </tr>

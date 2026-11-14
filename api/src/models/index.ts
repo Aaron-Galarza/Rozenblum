@@ -174,7 +174,7 @@ const orderSchema = new Schema<StoredOrder>(
     estado: {
       type: String,
       required: true,
-      enum: ["Pagado", "Pendiente", "Rechazado", "En disputa", "Reembolsado"],
+      enum: ["Pagado", "Pendiente", "Rechazado", "Vencido", "En disputa", "Reembolsado"],
     },
     createdAt: { type: String, required: true },
     paymentProvider: { type: String, enum: ["mercadopago", "manual"], default: "manual" },
@@ -182,10 +182,11 @@ const orderSchema = new Schema<StoredOrder>(
     paymentUrl: { type: String, default: undefined },
     paymentExpiresAt: { type: String, default: undefined },
     paymentId: { type: String, default: undefined },
-    fulfillmentIssue: { type: String, enum: ["course_closed"], default: undefined },
+    fulfillmentIssue: { type: String, enum: ["course_closed", "payment_expired"], default: undefined },
   },
   { versionKey: false, collection: "orders" },
 );
+orderSchema.index({ paymentProvider: 1, estado: 1, paymentExpiresAt: 1 });
 
 orderSchema.index({ estado: 1, createdAt: -1 });
 orderSchema.index({ paymentId: 1 }, { unique: true,
