@@ -10,7 +10,7 @@ import "@blocknote/core/style.css";
 import "@blocknote/react/style.css";
 import "@blocknote/mantine/style.css";
 import type { LessonBlockDTO, LessonType, RichLessonDocument } from "@rozenblum/shared";
-import { apiFetch } from "../../lib/api";
+import { ApiClientError, apiFetch } from "../../lib/api";
 import { useModalA11y } from "../../lib/use-modal-a11y";
 import { IconLink } from "../../components/icons";
 import { lessonSchema, noteBlocks, serializeNote, youtubeId, type LessonNoteBlock, type LessonPartialBlock } from "../../lib/lesson-document";
@@ -31,8 +31,14 @@ type Props = {
   initialDocument?: RichLessonDocument;
   initialType?: LessonType;
   onClose: () => void;
-  onSave: (payload: LessonEditorPayload, idempotencyKey?: string) => Promise<void> | void;
+  onSave: (
+    payload: LessonEditorPayload,
+    idempotencyKey?: string,
+    options?: { autosave?: boolean },
+  ) => Promise<void> | void;
 };
+
+const AUTOSAVE_DELAY_MS = 1_800;
 
 const isWebUrl = (value: string) => {
   try {
@@ -93,7 +99,11 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
   const [canRetrySave, setCanRetrySave] = useState(false);
   const [createRetryBlocked, setCreateRetryBlocked] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [autosaveInFlight, setAutosaveInFlight] = useState(false);
   const [fetchingPreview, setFetchingPreview] = useState(false);
+  const [changeTick, setChangeTick] = useState(0);
+  const [autosaveBlocked, setAutosaveBlocked] = useState(false);
+  const [autosavePaused, setAutosavePaused] = useState(false);
   const createRequestIdRef = useRef<string | null>(null);
   const setFeedback = useCallback((message: string, isError = false) => {
     setStatus(message);
@@ -138,6 +148,13 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
   const savingRef = useRef(false);
   const initiallyHadContent = useRef(hasContent(serializeNote(editor.document)));
   const dirty = getSnapshot() !== savedRef.current;
+  const locked = saving && !autosaveInFlight;
+  const markChanged = useCallback(() => {
+    setChangeTick((value) => value + 1);
+    if (autosavePaused) return;
+    setFeedback("");
+    setCanRetrySave(false);
+  }, [autosavePaused, setFeedback]);
   const closeDialog = useCallback(() => {
     if (savingRef.current) {
       setFeedback("Esperá a que termine el guardado antes de cerrar.", true);
@@ -169,33 +186,68 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
     return () => window.removeEventListener("beforeunload", warn);
   }, [getSnapshot]);
 
-  const save = async (verifiedCreateRetry = false) => {
-    if (savingRef.current) return;
-    if (createRetryBlocked && !verifiedCreateRetry) return;
-    if (pendingUrl) { setFeedback("Elegí cómo insertar la URL o cancelala antes de guardar.", true); return; }
+  const save = async ({
+    autosave = false,
+    verifiedCreateRetry = false,
+  }: { autosave?: boolean; verifiedCreateRetry?: boolean } = {}) => {
+    if (savingRef.current) return false;
+    if (createRetryBlocked && !verifiedCreateRetry) return false;
+    if (autosave && (mode !== "edit" || autosaveBlocked || autosavePaused)) return false;
+    if (pendingUrl) {
+      if (!autosave) setFeedback("Elegí cómo insertar la URL o cancelala antes de guardar.", true);
+      return false;
+    }
     const next = payload();
-    if (!next.title) { setFeedback("Escribí un título para la lección.", true); return; }
-    if (initiallyHadContent.current && !hasContent(next.document) && !window.confirm("Esta lección quedará vacía. ¿Querés borrar todo su contenido?")) return;
+    if (!next.title) {
+      if (!autosave) setFeedback("Escribí un título para la lección.", true);
+      return false;
+    }
+    if (initiallyHadContent.current && !hasContent(next.document)) {
+      if (autosave) return false;
+      if (!window.confirm("Esta lección quedará vacía. ¿Querés borrar todo su contenido?")) return false;
+    }
+    const snapshot = getSnapshot();
     const idempotencyKey = mode === "new" ? (createRequestIdRef.current ??= newIdempotencyKey()) : undefined;
     savingRef.current = true;
     setSaving(true);
+    setAutosaveInFlight(autosave);
     setCanRetrySave(false);
-    setFeedback("Guardando lección…");
+    setFeedback(autosave ? "Guardando automáticamente…" : "Guardando lección…");
     try {
-      await onSave(next, idempotencyKey);
-      savedRef.current = getSnapshot();
-      setFeedback("✓ Lección guardada.");
+      await onSave(next, idempotencyKey, { autosave });
+      savedRef.current = snapshot;
+      const stillDirty = getSnapshot() !== snapshot;
+      setFeedback(stillDirty ? "Cambios sin guardar." : autosave ? "✓ Guardado automáticamente." : "✓ Lección guardada.");
+      setAutosaveBlocked(false);
+      setAutosavePaused(false);
+      return true;
     } catch (error) {
       setFeedback(editorErrorMessage(error, { creationMayHaveSucceeded: mode === "new" }), true);
-      setCanRetrySave(mode === "edit" && canRetryEditorOperation(error));
+      const conflict = error instanceof ApiClientError && error.status === 409;
+      setAutosaveBlocked(conflict);
+      setAutosavePaused(true);
+      setCanRetrySave(mode === "edit" && !conflict && canRetryEditorOperation(error));
       const uncertainCreate = mode === "new" && canRetryEditorOperation(error);
       setCreateRetryBlocked(uncertainCreate);
       if (mode === "new" && !uncertainCreate) createRequestIdRef.current = null;
+      return false;
     } finally {
       savingRef.current = false;
       setSaving(false);
+      setAutosaveInFlight(false);
     }
   };
+
+  const autosaveRef = useRef(save);
+  autosaveRef.current = save;
+
+  useEffect(() => {
+    if (mode !== "edit" || autosaveBlocked || autosavePaused || pendingUrl || createRetryBlocked || saving || !dirty) return;
+    const timer = window.setTimeout(() => {
+      void autosaveRef.current({ autosave: true });
+    }, AUTOSAVE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [autosaveBlocked, autosavePaused, changeTick, createRetryBlocked, dirty, mode, pendingUrl, saving]);
 
   const insertUrl = async (kind: "link" | "mention" | "bookmark" | "video" | "file") => {
     const url = pendingUrl;
@@ -230,6 +282,7 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
     urlAnchorRef.current = null;
     setFeedback(kind === "file" ? "Archivo enlazado. Guardá la lección para conservar el cambio." : "Contenido insertado. Guardá la lección para conservar el cambio.");
     setCanRetrySave(false);
+    setChangeTick((value) => value + 1);
     editor.focus();
   };
 
@@ -262,9 +315,9 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
       </div>
       <div className="flex flex-wrap items-center gap-3 border-b border-[#e5ded2] px-4 py-3 sm:px-6">
         <label htmlFor="rich-lesson-title" className="text-xs font-bold text-[#173B6C]">Título</label>
-        <input id="rich-lesson-title" value={title} disabled={saving || createRetryBlocked} onChange={(event) => { setTitle(event.target.value); setFeedback(""); setCanRetrySave(false); }} maxLength={180} placeholder="Título de la lección" className="min-h-11 min-w-0 flex-1 rounded border border-[#d6d6d6] bg-white px-3 py-2 text-sm text-[#173B6C] outline-[#B58A43] disabled:opacity-60" />
+        <input id="rich-lesson-title" value={title} disabled={locked || createRetryBlocked} onChange={(event) => { setTitle(event.target.value); markChanged(); }} maxLength={180} placeholder="Título de la lección" className="min-h-11 min-w-0 flex-1 rounded border border-[#d6d6d6] bg-white px-3 py-2 text-sm text-[#173B6C] outline-[#B58A43] disabled:opacity-60" />
       </div>
-      <div role="toolbar" aria-label="Formato e inserción" inert={saving || createRetryBlocked} className="lesson-top-toolbar flex flex-wrap items-center gap-1 border-b border-[#e5ded2] bg-white px-3 py-2 sm:px-5">
+      <div role="toolbar" aria-label="Formato e inserción" inert={locked || createRetryBlocked} className="lesson-top-toolbar flex flex-wrap items-center gap-1 border-b border-[#e5ded2] bg-white px-3 py-2 sm:px-5">
         {toolbarButton("Texto", () => changeBlock("paragraph"))}
         {toolbarButton("H1", () => changeBlock("heading", 1), "Título principal")}
         {toolbarButton("H2", () => changeBlock("heading", 2), "Título secundario")}
@@ -291,7 +344,7 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
         <button type="button" disabled={fetchingPreview} onClick={() => setPendingUrl("")} className="min-h-10 px-3 py-1.5 text-xs text-[#72132C] disabled:opacity-50">Cancelar</button>
       </div></div>}
       <div className="lesson-rich-editor min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5 sm:py-4" onKeyDownCapture={handleSpaceShortcut} onDropCapture={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); event.stopPropagation(); setFeedback("La carga de imágenes y archivos está pausada hasta definir el almacenamiento.", true); } }}>
-        <BlockNoteView editor={editor} editable={!saving && !createRetryBlocked} theme="light" sideMenu={false} slashMenu={false} onChange={() => { setFeedback(""); setCanRetrySave(false); renderChange((value) => value + 1); }}>
+        <BlockNoteView editor={editor} editable={!locked && !createRetryBlocked} theme="light" sideMenu={false} slashMenu={false} onChange={() => { markChanged(); renderChange((value) => value + 1); }}>
           <SideMenuController sideMenu={LessonSideMenu} />
           <SuggestionMenuController triggerCharacter="/" getItems={async (query) => filterSuggestionItems([
             ...getDefaultReactSlashMenuItems(editor).filter((item) => !["Video", "Audio", "File", "Image", es.slash_menu.image.title, es.slash_menu.video.title, es.slash_menu.audio.title, es.slash_menu.file.title].includes(item.title)),
@@ -302,10 +355,10 @@ export default function RichLessonEditorModal({ mode, lessonTitle, moduleName, i
         </BlockNoteView>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#e5ded2] bg-white px-4 py-2 text-xs text-[#6c7b90] sm:px-6" role={statusIsError ? "alert" : "status"} aria-live={statusIsError ? "assertive" : "polite"}>
-        <span>{status || (dirty ? "Hay cambios sin guardar. Solo se aplican al pulsar GUARDAR." : mode === "edit" ? "Sin cambios pendientes." : "Guardá para crear la lección.")}</span>
+        <span>{status || (dirty ? (mode === "edit" ? "Cambios sin guardar. Se guardarán automáticamente." : "Hay cambios sin guardar. Solo se aplican al pulsar GUARDAR.") : mode === "edit" ? "Sin cambios pendientes." : "Guardá para crear la lección.")}</span>
         {canRetrySave && <button type="button" onClick={() => void save()} disabled={saving} className="min-h-10 px-3 font-semibold text-[#173B6C] underline underline-offset-2 disabled:opacity-50">Reintentar guardado</button>}
         {createRetryBlocked && <button type="button" onClick={() => { if (!window.confirm("Verificá en el curso que esta lección ya aparece guardada. ¿Confirmás que se creó y querés cerrar sin volver a enviarla?")) return; savedRef.current = getSnapshot(); setCreateRetryBlocked(false); onClose(); }} disabled={saving} className="min-h-10 px-3 font-semibold text-[#173B6C] underline underline-offset-2 disabled:opacity-50">Ya aparece; cerrar</button>}
-        {createRetryBlocked && <button type="button" onClick={() => { if (!window.confirm("Revisá el curso en otra pestaña y confirmá que esta lección no se creó. ¿Querés volver a enviar la creación?")) return; setCreateRetryBlocked(false); void save(true); }} disabled={saving} className="min-h-10 px-3 font-semibold text-[#173B6C] underline underline-offset-2 disabled:opacity-50">Verifiqué que no se creó; reintentar</button>}
+        {createRetryBlocked && <button type="button" onClick={() => { if (!window.confirm("Revisá el curso en otra pestaña y confirmá que esta lección no se creó. ¿Querés volver a enviar la creación?")) return; setCreateRetryBlocked(false); void save({ verifiedCreateRetry: true }); }} disabled={saving} className="min-h-10 px-3 font-semibold text-[#173B6C] underline underline-offset-2 disabled:opacity-50">Verifiqué que no se creó; reintentar</button>}
       </div>
     </div>
   </div>;

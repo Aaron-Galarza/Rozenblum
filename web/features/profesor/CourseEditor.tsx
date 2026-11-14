@@ -129,7 +129,11 @@ export default function CourseEditor({
     }
   };
 
-  const handleEditorSave = async (payload: LessonPayload, idempotencyKey?: string) => {
+  const handleEditorSave = async (
+    payload: LessonPayload,
+    idempotencyKey?: string,
+    options: { autosave?: boolean } = {},
+  ) => {
     if (!editing) return;
     if (editorMode === "new") {
       if (!idempotencyKey) throw new Error("No se pudo generar la clave de creación. Volvé a intentar.");
@@ -137,9 +141,9 @@ export default function CourseEditor({
       showToast("✓ Lección creada");
     } else if (editing.lesson?.id) {
       await onUpdateLesson(editing.moduleId, editing.lesson.id, payload);
-      showToast("✓ Lección guardada");
+      if (!options.autosave) showToast("✓ Lección guardada");
     }
-    setEditorOpen(false);
+    if (!options.autosave) setEditorOpen(false);
   };
 
   const sendChat = async () => {
