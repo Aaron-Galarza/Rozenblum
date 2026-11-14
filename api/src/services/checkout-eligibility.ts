@@ -1,5 +1,5 @@
 import type { CheckoutInput } from "@rozenblum/shared";
-import { notFound, unauthorized } from "../lib/http.js";
+import { ApiError, notFound } from "../lib/http.js";
 import { isCourseEnrollmentOpen } from "../lib/course-expiry.js";
 import { verifyPassword } from "../lib/password.js";
 import { getRepositories } from "../repositories/index.js";
@@ -32,14 +32,18 @@ export async function resolveCheckoutParticipants(
   }
 
   const account = await repos.users.findByEmail(input.email);
-  // A student who changed their initial DNI password can use their session.
+  const identityError = () => new ApiError(403, "CHECKOUT_ACCOUNT_MISMATCH",
+    "No pudimos validar la cuenta. Revisá el correo, el DNI o contactá al administrador.");
+  if (account && (account.role !== "alumno" || account.status !== "Activo")) {
+    throw identityError();
+  }
   const authenticatedAsAccount = Boolean(actor && account && actor.id === account.id);
-  const dniValid = account && !authenticatedAsAccount
-    ? await verifyPassword(input.dni, account.passwordHash)
-    : false;
-  if (account && (account.role !== "alumno" || account.status !== "Activo" ||
-      (!authenticatedAsAccount && !dniValid))) {
-    throw unauthorized("No pudimos validar la cuenta. Revisá el correo, el DNI o contactá al administrador.");
+  if (account && !authenticatedAsAccount) {
+    // Older paid accounts may predate studentDniHash; their first paid order
+    // retains the protected DNI hash even after a login password change.
+    const hash = account.studentDniHash ?? await repos.orders.findStudentDniHash(input.email)
+      ?? account.passwordHash;
+    if (!await verifyPassword(input.dni, hash)) throw identityError();
   }
 
   const existingEnrollment = await repos.enrollments.findByStudentAndCourse(input.email, course.legacyId);

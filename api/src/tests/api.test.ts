@@ -10,7 +10,7 @@ import { courseEnrollmentClosesAt, courseExpiryInstant, todayInBuenosAires } fro
 import { createMockRepositories } from "../repositories/mock.js";
 import { setRepositoriesForTests } from "../repositories/index.js";
 import { parseYouTubeId } from "../services/youtube.js";
-import { login as loginService } from "../services/auth.js";
+import { changeOwnPassword, login as loginService } from "../services/auth.js";
 import { moduleStatuses } from "../services/mappers.js";
 import { detectImageFormat, isManagedImageUrl, mediaFolder } from "../services/media.js";
 import { setPaymentGatewayForTests, type PaymentSnapshot } from "../services/mercadopago.js";
@@ -1345,6 +1345,7 @@ test("admin paginated lists use repository data", async () => {
   assert.equal(users.status, 200);
   assert.equal(users.body.data.length, 1);
   assert.equal("passwordHash" in users.body.data[0], false);
+  assert.equal("studentDniHash" in users.body.data[0], false);
   assert.equal("dni" in users.body.data[0], false);
 });
 
@@ -1903,8 +1904,8 @@ test("a student can replace the DNI password with a strong one", async () => {
   const nextSession = await loginService({ email, password: nextPassword });
   assert.equal(nextSession.user.email, email);
 
-  // Buying another course after rotating the password: the DNI is no longer
-  // the password, but the signed-in session proves identity.
+  // This manually created legacy account has no paid order with a protected
+  // DNI hash. After changing its password, only its session proves identity.
   const extraCourse = await repositories.courses.create({
     title: "Post Rotation Course",
     description: "Course used to verify checkout after a password change.",
@@ -1932,7 +1933,7 @@ test("a student can replace the DNI password with a strong one", async () => {
     method: "POST",
     body,
   });
-  assert.equal(withoutSession.status, 401);
+  assert.equal(withoutSession.status, 403);
 
   const withSession = await api(server.baseUrl, "/api/checkout", {
     method: "POST",
@@ -2152,6 +2153,78 @@ test("an interrupted checkout resumes its order without duplicates or exposing a
     source: "mercadopago", providerEventId: "retry-paid", providerPaymentId: "1234567002",
     paymentStatus: "approved", reason: "Mercado Pago: approved" });
   assert.equal((await adminOrders()).body.data.filter((item) => item.id === first.order.id).length, 1);
+});
+
+test("a paid student buys a second course with the same DNI after changing the login password", async () => {
+  const email = "second-course-buyer@example.test";
+  const dni = "28123456";
+  const courses = [];
+  for (const title of ["First Paid Course", "Second Paid Course"]) {
+    courses.push(await repositories.courses.create({
+      title, description: "Second course checkout test", priceCents: 80_000,
+      duration: "Online", level: "Inicial", img: "https://example.test/second-course.jpg",
+      professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+    }));
+  }
+  const input = (courseSlug: string) => ({
+    courseSlug, nombre: "Second Course Buyer", email, dni,
+  });
+  const first = await checkoutService(input(courses[0]!.slug));
+  assert.equal(await repositories.users.findByEmail(email), null);
+  await applyOrderTransition({ reference: first.order.externalReference!,
+    status: "Pagado", source: "mercadopago", providerEventId: "second-course-first-paid",
+    providerPaymentId: "1234567801", paymentStatus: "approved", reason: "Pago confirmado" });
+  const account = await repositories.users.findByEmail(email);
+  assert.ok(account?.studentDniHash);
+  assert.equal(await verifyPassword(dni, account.studentDniHash), true);
+  await changeOwnPassword(account, { currentPassword: dni,
+    newPassword: "new-login-password-123" });
+
+  const second = await checkoutService(input(courses[1]!.slug));
+  assert.equal((await repositories.users.findByEmail(email))?.id, account.id);
+  assert.equal((await repositories.enrollments.listByStudent(email)).length, 2);
+  await applyOrderTransition({ reference: second.order.externalReference!,
+    status: "Pagado", source: "mercadopago", providerEventId: "second-course-second-paid",
+    providerPaymentId: "1234567802", paymentStatus: "approved", reason: "Pago confirmado" });
+  assert.equal((await repositories.users.findByEmail(email))?.id, account.id);
+  assert.equal((await repositories.enrollments.listByStudent(email)).filter(
+    (enrollment) => enrollment.status === "Activo").length, 2);
+  await assert.rejects(checkoutService(input(courses[1]!.slug)),
+    (error: unknown) => (error as { status?: number }).status === 409);
+  assert.equal((await repositories.orders.list()).filter((order) => order.email === email).length, 2);
+});
+
+test("simultaneous checkout requests return the same pending order and payment link", async () => {
+  const course = await repositories.courses.create({
+    title: "Simultaneous Checkout Course", description: "Double submit test", priceCents: 80_000,
+    duration: "Online", level: "Inicial", img: "https://example.test/double-submit.jpg",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+  });
+  let arrivals = 0;
+  let release!: () => void;
+  const bothStarted = new Promise<void>((resolve) => { release = resolve; });
+  setPaymentGatewayForTests({
+    ...checkoutGateway,
+    async createPreference(input) {
+      arrivals += 1;
+      if (arrivals === 2) release();
+      await bothStarted;
+      return checkoutGateway.createPreference(input);
+    },
+  });
+  try {
+    const input = { courseSlug: course.slug, nombre: "Double Submit Buyer",
+      email: "double-submit@example.test", dni: "29123456" };
+    const results = await Promise.all([checkoutService(input), checkoutService(input)]);
+    assert.equal(results[0]?.order.id, results[1]?.order.id);
+    assert.equal(results[0]?.enrollment?.id, results[1]?.enrollment?.id);
+    assert.equal(results[0]?.payment.preferenceId, results[1]?.payment.preferenceId);
+    assert.equal(results[0]?.payment.url, results[1]?.payment.url);
+    assert.equal((await repositories.orders.list()).filter((order) => order.email === input.email).length, 1);
+    assert.equal((await repositories.enrollments.listByStudent(input.email)).length, 1);
+  } finally {
+    setPaymentGatewayForTests(checkoutGateway);
+  }
 });
 
 test("returning from Mercado Pago verifies the payment and activates the order without a webhook", async () => {

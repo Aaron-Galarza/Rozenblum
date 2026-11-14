@@ -3,13 +3,13 @@ import type {
   CheckoutResultDTO,
   OrderDTO,
 } from "@rozenblum/shared";
-import { ApiError, badRequest, notFound } from "../lib/http.js";
+import { ApiError, badRequest, conflict, notFound } from "../lib/http.js";
 import { courseEnrollmentClosesAt } from "../lib/course-expiry.js";
 import { logger } from "../lib/logger.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
-import type { StoredOrder, StoredUser } from "../types.js";
+import type { StoredCourse, StoredEnrollment, StoredOrder, StoredUser } from "../types.js";
 import { resolveCheckoutParticipants } from "./checkout-eligibility.js";
 import { persistCheckoutRecords } from "./checkout-records.js";
 import { enrollmentToDTO, orderToDTO } from "./mappers.js";
@@ -23,6 +23,27 @@ function todayLabel() {
   }).format(new Date());
 }
 
+async function resumeCheckout(input: CheckoutInput, course: StoredCourse,
+  account: StoredUser | null, enrollment: StoredEnrollment): Promise<CheckoutResultDTO> {
+  if (enrollment.status !== "Pendiente") {
+    throw conflict("Ya existe una inscripción para este curso y correo.");
+  }
+  const order = await getRepositories().orders.findLatestByStudentAndCourse(input.email, course.legacyId);
+  const receipt = order && orderToDTO(order);
+  if (!order || order.paymentProvider !== "mercadopago" ||
+      !["Pendiente", "Rechazado"].includes(order.estado) || !order.preferenceId ||
+      !receipt?.paymentUrl || (!account && (!order.dniPasswordHash ||
+        !await verifyPassword(input.dni, order.dniPasswordHash)))) {
+    throw conflict("Esta inscripción necesita revisión antes de iniciar otro pago. Contactá al Estudio.");
+  }
+  return {
+    order: receipt,
+    enrollment: enrollmentToDTO(enrollment, course),
+    payment: { provider: "mercadopago", preferenceId: order.preferenceId, url: receipt.paymentUrl },
+    message: "Retomá el pago de tu inscripción existente en Mercado Pago.",
+  };
+}
+
 export async function checkout(
   input: CheckoutInput,
   /** Present when the caller sent a valid session (see `optionalAuth`). */
@@ -30,27 +51,15 @@ export async function checkout(
 ): Promise<CheckoutResultDTO> {
   const { course, account, existingEnrollment } = await resolveCheckoutParticipants(input, actor);
   // The account is created only after Mercado Pago confirms the payment.
-  const reference = `RB-${new Date().getFullYear()}-${newId("ref").slice(4).toUpperCase()}`;
   const gateway = paymentGateway();
   if (!gateway) throw new ApiError(503, "PAYMENTS_NOT_CONFIGURED", "Mercado Pago no está disponible en este momento. Intentá más tarde.");
   if (course.priceCents <= 0) {
     throw badRequest("Este curso no tiene un importe válido para Mercado Pago.");
   }
   if (existingEnrollment) {
-    const existingOrder = await getRepositories().orders.findLatestByStudentAndCourse(input.email, course.legacyId);
-    if (!existingOrder || existingOrder.paymentProvider !== "mercadopago" ||
-        !["Pendiente", "Rechazado"].includes(existingOrder.estado) || !existingOrder.paymentUrl ||
-        (account ? account.role !== "alumno" : !existingOrder.dniPasswordHash ||
-          !await verifyPassword(input.dni, existingOrder.dniPasswordHash))) {
-      throw badRequest("Esta inscripción necesita revisión antes de iniciar otro pago. Contactá al Estudio.");
-    }
-    return {
-      order: orderToDTO(existingOrder),
-      enrollment: enrollmentToDTO(existingEnrollment, course),
-      payment: { provider: "mercadopago", preferenceId: existingOrder.preferenceId!, url: existingOrder.paymentUrl },
-      message: "Retomá el pago de tu inscripción existente en Mercado Pago.",
-    };
+    return resumeCheckout(input, course, account, existingEnrollment);
   }
+  const reference = `RB-${new Date().getFullYear()}-${newId("ref").slice(4).toUpperCase()}`;
   const preference = await gateway.createPreference({
     reference, courseId: course.legacyId, title: course.title,
     priceCents: course.priceCents, email: input.email.toLowerCase(),
@@ -78,7 +87,17 @@ export async function checkout(
     paymentExpiresAt,
   };
 
-  const { createdOrder, enrollment } = await persistCheckoutRecords(order);
+  let createdOrder: StoredOrder;
+  let enrollment: StoredEnrollment;
+  try {
+    ({ createdOrder, enrollment } = await persistCheckoutRecords(order));
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "CONFLICT") {
+      const saved = await getRepositories().enrollments.findByStudentAndCourse(input.email, course.legacyId);
+      if (saved) return resumeCheckout(input, course, account, saved);
+    }
+    throw error;
+  }
   logger.debug("checkout_created", { reference, courseId: course.legacyId, paymentMethod: "mercadopago",
     amountCents: course.priceCents, orderId: createdOrder.id });
 

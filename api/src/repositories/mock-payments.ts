@@ -82,6 +82,11 @@ export function createMockPaymentsRepositories(db: Memory) {
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
       return order ? clone(order) : null;
     },
+    async findStudentDniHash(email) {
+      return db.orders.find((order) => order.email === email.toLowerCase() &&
+        ["Pagado", "En disputa", "Reembolsado"].includes(order.estado) &&
+        Boolean(order.dniPasswordHash))?.dniPasswordHash ?? null;
+    },
     async create(input) {
       db.orders.push(clone(input));
       return clone(input);

@@ -118,6 +118,14 @@ export function createMongoosePaymentsRepositories() {
         .sort({ createdAt: -1 }).select("+dniPasswordHash").lean().exec();
       return doc ? clean<StoredOrder>(doc) : null;
     },
+    async findStudentDniHash(email) {
+      const doc = await OrderModel.findOne({
+        email: email.toLowerCase(),
+        estado: { $in: ["Pagado", "En disputa", "Reembolsado"] },
+        dniPasswordHash: { $type: "string" },
+      }).sort({ createdAt: 1 }).select("+dniPasswordHash").lean().exec();
+      return doc?.dniPasswordHash ?? null;
+    },
     async create(input) {
       const doc = await OrderModel.create(input);
       return clean<StoredOrder>(doc.toObject());

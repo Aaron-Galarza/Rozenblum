@@ -45,6 +45,7 @@ async function activateEnrollment(order: StoredOrder, approvedAt?: string): Prom
     await repos.users.create({
       name: order.alumno, email: order.email, role: "alumno",
       passwordHash: order.dniPasswordHash,
+      studentDniHash: order.dniPasswordHash,
       initials: initialsFromName(order.alumno), sessionVersion: 0,
     });
   }

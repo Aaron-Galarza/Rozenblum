@@ -18,6 +18,8 @@ export type StoredUser = {
   initials: string;
   img?: string;
   passwordHash: string;
+  /** Salted DNI hash for later checkouts; changing the login password does not erase it. */
+  studentDniHash?: string;
   /** Bumped on password/status changes to revoke previously issued tokens. */
   sessionVersion: number;
   createdAt: string;

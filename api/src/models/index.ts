@@ -75,6 +75,7 @@ const userSchema = new Schema<StoredUser>(
     status: { type: String, required: true, enum: ["Activo", "Suspendido"], default: "Activo" },
     initials: { type: String, required: true },
     passwordHash: { type: String, required: true },
+    studentDniHash: { type: String, default: undefined, select: false },
     sessionVersion: { type: Number, required: true, default: 0 },
     img: { type: String, default: undefined },
     createdAt: { type: String, required: true },

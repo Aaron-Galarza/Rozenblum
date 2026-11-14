@@ -54,6 +54,7 @@ export interface UserRepository {
     role: Role;
     status?: "Activo" | "Suspendido";
     passwordHash: string;
+    studentDniHash?: string;
     initials: string;
     img?: string;
     sessionVersion?: number;
@@ -181,6 +182,8 @@ export interface OrderRepository {
   existsByCourse(courseId: number): Promise<boolean>;
   findByReference(reference: string): Promise<StoredOrder | null>;
   findLatestByStudentAndCourse(email: string, courseId: number): Promise<StoredOrder | null>;
+  /** The protected DNI hash on the paid order that originally created this student. */
+  findStudentDniHash(email: string): Promise<string | null>;
   create(input: StoredOrder): Promise<StoredOrder>;
   updateStatus(id: string, estado: OrderStatus, paymentId?: string,
     fulfillmentIssue?: StoredOrder["fulfillmentIssue"]): Promise<StoredOrder | null>;

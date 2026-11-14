@@ -287,13 +287,18 @@ test("Atlas persists auth, revocation and enrollment ownership", async () => {
     assert.equal(await repositories.conversations.findByStudentAndCourse(
       "buyer@example.test", course.legacyId), null);
     await EnrollmentModel.init();
-    const simultaneous = await Promise.all([0, 1].map(() => api(server!.baseUrl, "/api/checkout", {
+    const simultaneous = await Promise.all([0, 1].map(() => api<{
+      data: { order: { id: string }; payment: { preferenceId: string } };
+    }>(server!.baseUrl, "/api/checkout", {
       method: "POST", body: JSON.stringify({
         courseSlug: course.slug, nombre: "Concurrent Buyer", email: "concurrent-buyer@example.test",
         dni: "27123456",
       }),
     })));
-    assert.deepEqual(simultaneous.map((response) => response.status).sort(), [201, 400]);
+    assert.deepEqual(simultaneous.map((response) => response.status).sort(), [201, 201]);
+    assert.equal(simultaneous[0]?.body.data.order.id, simultaneous[1]?.body.data.order.id);
+    assert.equal(simultaneous[0]?.body.data.payment.preferenceId,
+      simultaneous[1]?.body.data.payment.preferenceId);
     assert.equal((await mongoose.connection.db!.collection("orders").countDocuments({
       email: "concurrent-buyer@example.test",
     })), 1);

@@ -1,4 +1,4 @@
-import { badRequest, notFound } from "../lib/http.js";
+import { conflict, notFound } from "../lib/http.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredEnrollment, StoredOrder } from "../types.js";
 
@@ -14,7 +14,7 @@ export async function persistCheckoutRecords(
         throw notFound("El curso solicitado no está disponible.");
       }
       if (await repos.enrollments.findByStudentAndCourse(order.email, order.courseId)) {
-        throw badRequest("Ya existe una inscripción para este curso y correo.");
+        throw conflict("Ya existe una inscripción para este curso y correo.");
       }
       const createdOrder = await repos.orders.create(order);
       const enrollment = await repos.enrollments.create({
@@ -28,7 +28,7 @@ export async function persistCheckoutRecords(
     });
   } catch (error) {
     if ((error as { code?: number }).code === 11000) {
-      throw badRequest("Ya existe una inscripción para este curso y correo.");
+      throw conflict("Ya existe una inscripción para este curso y correo.");
     }
     throw error;
   }

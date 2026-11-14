@@ -14,7 +14,8 @@ import { clean } from "./mongoose-common.js";
 export function createMongooseAccountsRepositories() {
   const users: UserRepository = {
     async findByEmail(email) {
-      const doc = await UserModel.findOne({ email: email.toLowerCase() }).lean().exec();
+      const doc = await UserModel.findOne({ email: email.toLowerCase() })
+        .select("+studentDniHash").lean().exec();
       return doc ? clean<StoredUser>(doc) : null;
     },
     async findById(id) {
@@ -60,6 +61,7 @@ export function createMongooseAccountsRepositories() {
         initials: input.initials,
         img: input.img,
         passwordHash: input.passwordHash,
+        studentDniHash: input.studentDniHash,
         sessionVersion: input.sessionVersion ?? 0,
         createdAt: nowIso(),
       });
