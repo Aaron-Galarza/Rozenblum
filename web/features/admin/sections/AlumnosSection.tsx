@@ -11,7 +11,7 @@ const inputStyle: React.CSSProperties = { border: "1px solid rgba(23,59,108,0.2)
 
 type AlumnosSectionProps = {
   alumnos: AdminAlumnoDTO[];
-  onUpdate: (id: string, patch: { name: string; email: string }) => Promise<void>;
+  onUpdate: (id: string, patch: { name: string; email: string; password?: string }) => Promise<void>;
   onToggleStatus: (alumno: AdminAlumnoDTO) => Promise<void>;
   onDelete: (alumno: AdminAlumnoDTO) => Promise<void>;
 };
@@ -21,7 +21,7 @@ export default function AlumnosSection({ alumnos, onUpdate, onToggleStatus, onDe
   const [search, setSearch] = useState("");
   const [estadoFilter, setEstadoFilter] = useState("Todos");
   const [modal, setModal] = useState<ModalState>(null);
-  const [form, setForm] = useState({ name: "", email: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
   const { busy, toast, showToast, run } = useAdminAction();
 
   const filtered = alumnos.filter((a) => {
@@ -42,9 +42,14 @@ export default function AlumnosSection({ alumnos, onUpdate, onToggleStatus, onDe
       showToast("Revisá nombre y correo.", true);
       return;
     }
+    if (form.password && form.password.length < 12) {
+      showToast("La nueva contraseña debe tener al menos 12 caracteres.", true);
+      return;
+    }
     const item = modal.item;
     void run(async () => {
-      await onUpdate(item.id, { name: form.name, email: form.email });
+      await onUpdate(item.id, { name: form.name, email: form.email,
+        ...(form.password ? { password: form.password } : {}) });
       setModal(null);
       showToast("✓ Cambios guardados");
     });
@@ -118,7 +123,7 @@ export default function AlumnosSection({ alumnos, onUpdate, onToggleStatus, onDe
                 <td className="px-4 py-3">
                   <div className="flex gap-2">
                     <button onClick={() => setModal({ type: "ver", item: a })} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity" style={{ color: "#173B6C" }}>Ver</button>
-                    <button disabled={busy} onClick={() => { setForm({ name: a.name, email: a.email }); setModal({ type: "editar", item: a }); }} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#173B6C" }}>Editar</button>
+                    <button disabled={busy} onClick={() => { setForm({ name: a.name, email: a.email, password: "" }); setModal({ type: "editar", item: a }); }} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#173B6C" }}>Editar</button>
                     <button disabled={busy} onClick={() => void toggleSuspend(a)} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#173B6C" }}>{a.estado === "Activo" ? "Suspender" : "Activar"}</button>
                     <button disabled={busy} onClick={() => { if (window.confirm(`¿Eliminar a ${a.name} y sus inscripciones?`)) void run(async () => { await onDelete(a); showToast("Alumno eliminado"); }); }} className="text-xs underline underline-offset-1 hover:opacity-50 transition-opacity disabled:opacity-40" style={{ color: "#72132C" }}>Eliminar</button>
                   </div>
@@ -170,7 +175,15 @@ export default function AlumnosSection({ alumnos, onUpdate, onToggleStatus, onDe
                 {key === "email" && <p className="text-xs" style={{ color: "rgba(23,59,108,0.55)" }}>El correo identifica las inscripciones y no se puede cambiar.</p>}
               </div>
             ))}
-            <p className="text-xs leading-relaxed" style={{ color: "rgba(23,59,108,0.55)" }}>La contraseña del alumno es su DNI y no se edita desde el panel.</p>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="alumno-password" className="text-xs font-medium tracking-wide uppercase" style={{ color: "rgba(23,59,108,0.6)" }}>Restablecer contraseña (opcional)</label>
+              <input id="alumno-password" type="password" autoComplete="new-password" minLength={12} maxLength={128}
+                value={form.password} onChange={(e) => setForm((current) => ({ ...current, password: e.target.value }))}
+                className="px-3 py-2.5 text-sm outline-none" style={inputStyle} />
+              <p className="text-xs leading-relaxed" style={{ color: "rgba(23,59,108,0.55)" }}>
+                Dejalo vacío para conservar la contraseña actual. Si la cambiás, el alumno deberá usar la nueva contraseña y sus sesiones abiertas se cerrarán.
+              </p>
+            </div>
           </div>
           <div className="flex gap-2">
             <button disabled={busy} onClick={saveEdit} className="flex-1 py-2.5 text-xs font-bold tracking-widest hover:brightness-110 transition-all disabled:opacity-50" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>
