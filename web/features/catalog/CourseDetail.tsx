@@ -32,14 +32,14 @@ export default function CourseDetail({ course, professor, onBack, onBuy }: Cours
   return (
     <div>
       {/* Breadcrumb */}
-      <div className="max-w-6xl mx-auto px-6 py-4">
-        <button onClick={onBack} className="flex items-center gap-1.5 text-xs hover:opacity-60 transition-opacity" style={{ color: "#173B6C" }}>
+      <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
+        <button onClick={onBack} className="flex min-h-11 items-center gap-1.5 text-xs hover:opacity-60 transition-opacity" style={{ color: "#173B6C" }}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M19 12H5M12 5l-7 7 7 7" /></svg>
           Volver al catálogo
         </button>
       </div>
 
-      <div className="max-w-6xl mx-auto px-6 pb-20 grid lg:grid-cols-[1fr_360px] gap-12 items-start">
+      <div className="mx-auto grid max-w-6xl items-start gap-10 px-4 pb-28 sm:px-6 lg:grid-cols-[1fr_360px] lg:gap-12 lg:pb-20">
         {/* ── Left column ── */}
         <div>
           {/* Course cover */}
@@ -50,18 +50,18 @@ export default function CourseDetail({ course, professor, onBack, onBuy }: Cours
             <img src={optimizedImage(course.img, 960)} srcSet={responsiveImageSet(course.img)} sizes="(max-width: 1024px) 100vw, 65vw" alt={course.title} className="absolute inset-0 w-full h-full object-cover opacity-40" />
           </div>
 
-          <h1 className="text-4xl lg:text-5xl font-light mb-2" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>
+          <h1 className="mb-2 text-3xl font-light sm:text-4xl lg:text-5xl" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>
             {course.title}
           </h1>
           <p className="text-sm mb-8" style={{ color: "rgba(23,59,108,0.65)" }}>Por {professor?.name ?? course.professor}</p>
 
           {/* Tabs */}
-          <div className="flex" style={{ borderBottom: "2px solid rgba(23,59,108,0.1)" }}>
+          <div className="grid grid-cols-3" style={{ borderBottom: "2px solid rgba(23,59,108,0.1)" }}>
             {(["descripcion", "temario", "docente"] as DetailTab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className="px-6 py-3 text-xs font-medium tracking-widest uppercase transition-all"
+                className="min-h-11 px-2 py-3 text-[11px] font-medium uppercase tracking-wide transition-all sm:px-6 sm:text-xs sm:tracking-widest"
                 style={{
                   color: tab === t ? "#B58A43" : "rgba(23,59,108,0.5)",
                   borderBottom: tab === t ? "2px solid #B58A43" : "2px solid transparent",
@@ -78,7 +78,7 @@ export default function CourseDetail({ course, professor, onBack, onBuy }: Cours
               <div className="space-y-4 text-sm leading-relaxed" style={{ color: "rgba(23,59,108,0.75)" }}>
                 <p>{course.description}</p>
                 <p>Este curso ha sido diseñado por abogados en actividad con años de experiencia en los tribunales argentinos. El contenido es 100% práctico y orientado a la resolución de casos reales.</p>
-                <div className="grid grid-cols-3 gap-4 mt-6">
+                <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
                   {[
                     ["Módulos", `${course.modules}`],
                     ["Modalidad", course.duration],
@@ -99,7 +99,7 @@ export default function CourseDetail({ course, professor, onBack, onBuy }: Cours
                   <div key={mod.mod} style={{ border: "1px solid rgba(23,59,108,0.1)", borderRadius: "4px" }}>
                     <button
                       onClick={() => toggleMod(mod.mod)}
-                      className="w-full flex items-center justify-between px-5 py-4 hover:opacity-80 transition-opacity"
+                      className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-4 hover:opacity-80 transition-opacity sm:px-5"
                     >
                       <span className="text-sm font-bold text-left" style={{ color: "#173B6C" }}>
                         Módulo {mod.mod}: {mod.title}
@@ -107,7 +107,7 @@ export default function CourseDetail({ course, professor, onBack, onBuy }: Cours
                       <svg viewBox="0 0 24 24" fill="none" stroke="#173B6C" strokeWidth="2" className={`w-4 h-4 flex-shrink-0 transition-transform ${expandedMods.includes(mod.mod) ? "rotate-180" : ""}`}><path d="M6 9l6 6 6-6" /></svg>
                     </button>
                     {expandedMods.includes(mod.mod) && (
-                      <div className="px-5 pb-4 space-y-2" style={{ borderTop: "1px solid rgba(23,59,108,0.06)" }}>
+                      <div className="px-4 pb-4 space-y-2 sm:px-5" style={{ borderTop: "1px solid rgba(23,59,108,0.06)" }}>
                         {mod.lessons.map((lesson) => (
                           <div key={lesson} className="flex items-center gap-2 py-1 text-sm" style={{ color: "rgba(23,59,108,0.7)" }}>
                             <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: "#B58A43" }} />
@@ -137,14 +137,14 @@ export default function CourseDetail({ course, professor, onBack, onBuy }: Cours
 
         {/* ── Right sticky column ── */}
         <div className="lg:sticky lg:top-24">
-          <div className="p-8 rounded-lg" style={{ backgroundColor: "#FFFFFF", border: "2px solid #B58A43", boxShadow: "0 4px 24px rgba(23,59,108,0.1)" }}>
-            <p className="text-center text-4xl font-light mb-2" style={{ color: "#B58A43", fontFamily: "'Cormorant Garamond', serif" }}>
+          <div className="rounded-lg p-5 sm:p-8" style={{ backgroundColor: "#FFFFFF", border: "2px solid #B58A43", boxShadow: "0 4px 24px rgba(23,59,108,0.1)" }}>
+            <p className="mb-2 text-center text-3xl font-light sm:text-4xl" style={{ color: "#B58A43", fontFamily: "'Cormorant Garamond', serif" }}>
               {course.price} ARS
             </p>
-            <p className="text-center text-xs mb-6" style={{ color: "rgba(23,59,108,0.5)" }}>Acceso al aula tras la confirmación</p>
+            <p className="mb-6 text-center text-xs" style={{ color: "rgba(23,59,108,0.5)" }}>Acceso al aula tras la confirmación</p>
 
             {/* Info box */}
-            <div className="p-4 rounded mb-6" style={{ backgroundColor: "#E8EDF3", border: "1px solid rgba(23,59,108,0.12)" }}>
+            <div className="mb-6 rounded p-4" style={{ backgroundColor: "#E8EDF3", border: "1px solid rgba(23,59,108,0.12)" }}>
               <p className="text-xs leading-relaxed" style={{ color: "#173B6C" }}>
                 <span className="inline-flex items-center gap-1 font-bold"><IconInfo className="h-3.5 w-3.5" /> Importante:</span> La inscripción se paga en Mercado Pago. El acceso al aula se activa automáticamente cuando Mercado Pago confirma el pago.
               </p>
@@ -153,7 +153,7 @@ export default function CourseDetail({ course, professor, onBack, onBuy }: Cours
             <button
               onClick={onBuy}
               disabled={registrationClosed}
-              className="w-full py-4 text-sm font-bold tracking-widest mb-4 transition-all duration-200 hover:brightness-110 active:scale-95 rounded disabled:cursor-not-allowed disabled:opacity-55"
+              className="mb-4 min-h-12 w-full rounded py-4 text-sm font-bold tracking-widest transition-all duration-200 hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
               style={{ backgroundColor: "#B58A43", color: "#FAF8F5", letterSpacing: "0.12em" }}
             >
               {registrationClosed ? "INSCRIPCIONES CERRADAS" : "INSCRIBIRSE AL CURSO"}
@@ -180,6 +180,28 @@ export default function CourseDetail({ course, professor, onBack, onBuy }: Cours
               ))}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* CTA móvil: mantiene la inscripción visible sin tocar el layout de escritorio. */}
+      <div
+        className="fixed inset-x-0 bottom-0 z-40 border-t px-4 pt-3 shadow-[0_-8px_24px_rgba(23,59,108,0.12)] lg:hidden"
+        style={{ backgroundColor: "#FFFFFF", borderColor: "rgba(181,138,67,0.35)", paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+      >
+        <div className="mx-auto flex max-w-6xl items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[10px] font-medium uppercase tracking-widest" style={{ color: "#B58A43" }}>Inscripción</p>
+            <p className="truncate text-lg font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{course.price} ARS</p>
+          </div>
+          <button
+            type="button"
+            onClick={onBuy}
+            disabled={registrationClosed}
+            className="min-h-12 shrink-0 rounded px-4 text-xs font-bold tracking-widest transition-all duration-200 hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
+            style={{ backgroundColor: "#B58A43", color: "#FAF8F5", letterSpacing: "0.08em" }}
+          >
+            {registrationClosed ? "CERRADAS" : "INSCRIBIRME"}
+          </button>
         </div>
       </div>
     </div>

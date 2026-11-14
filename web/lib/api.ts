@@ -68,7 +68,12 @@ function handleMissingSession() {
   redirectToLogin();
 }
 
-type RequestOptions = Omit<RequestInit, "body"> & { body?: unknown; auth?: boolean };
+type RequestOptions = Omit<RequestInit, "body"> & {
+  body?: unknown;
+  auth?: boolean;
+  /** A 401 from this request must not clear the stored session (e.g. checkout credentials). */
+  preserveSessionOn401?: boolean;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -111,7 +116,7 @@ async function performFetch<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<{ data: T; meta: ApiResponseMeta }> {
-  const { body, auth = false, headers, ...rest } = options;
+  const { body, auth = false, preserveSessionOn401 = false, headers, ...rest } = options;
   const started = performance.now();
   const method = rest.method ?? "GET";
   const requestHeaders = new Headers(headers);
@@ -150,7 +155,7 @@ async function performFetch<T>(
       `${Math.round(performance.now() - started)}ms`, response.headers.get("x-request-id") ?? "");
   }
 
-  if (response.status === 401 && requestToken) invalidateSession(requestToken, requestRevision);
+  if (response.status === 401 && requestToken && !preserveSessionOn401) invalidateSession(requestToken, requestRevision);
   const meta = { status: response.status, headers: response.headers };
   if (response.status === 204) {
     return { data: undefined as T, meta };
