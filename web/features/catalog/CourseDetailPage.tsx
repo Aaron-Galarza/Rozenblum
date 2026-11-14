@@ -73,7 +73,7 @@ export default function CourseDetailPage({ slug }: { slug: string }) {
         />
       ) : null}
 
-      <footer className="py-5 px-6 text-center" style={{ backgroundColor: "#173B6C" }}>
+      <footer className="px-6 pb-28 pt-5 text-center lg:pb-5" style={{ backgroundColor: "#173B6C" }}>
         <p className="text-xs" style={{ color: "rgba(250,248,245,0.4)" }}>
           © {new Date().getFullYear()} Estudio Jurídico Rozenblum ·{" "}
           <Link href="/terminos-y-condiciones" className="hover:underline">Términos de Servicio</Link> ·{" "}
