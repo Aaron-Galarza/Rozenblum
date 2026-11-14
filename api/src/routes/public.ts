@@ -7,7 +7,6 @@ import { orderToDTO } from "../services/mappers.js";
 import { listPublishedCourses, getLatestPublishedCourse, getPublishedCourseDetail } from "../services/courses.js";
 import { checkout, getOrderReceipt } from "../services/checkout.js";
 import { submitContact } from "../services/contact.js";
-import { optionalAuth } from "../middleware/auth.js";
 import { asyncRoute, parseBody } from "./helpers.js";
 import { getHomeContent } from "../services/home.js";
 import { paymentNotificationSchema, processPaymentWebhook, reconcileReturnedPayment } from "../services/payments.js";
@@ -59,10 +58,9 @@ publicRouter.get(
 
 publicRouter.post(
   "/checkout",
-  optionalAuth,
   asyncRoute(async (req, res) => {
     const input = parseBody(checkoutSchema, req.body);
-    const result = await checkout(input, req.authUser);
+    const result = await checkout(input);
     sendData(res, result, 201);
   }),
 );

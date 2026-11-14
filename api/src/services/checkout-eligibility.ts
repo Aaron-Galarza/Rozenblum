@@ -14,7 +14,6 @@ export type CheckoutParticipants = {
 
 export async function resolveCheckoutParticipants(
   input: CheckoutInput,
-  actor?: StoredUser,
 ): Promise<CheckoutParticipants> {
   const repos = getRepositories();
   const course = await repos.courses.findBySlug(input.courseSlug);
@@ -37,10 +36,9 @@ export async function resolveCheckoutParticipants(
   if (account && (account.role !== "alumno" || account.status !== "Activo")) {
     throw identityError();
   }
-  const authenticatedAsAccount = Boolean(actor && account && actor.id === account.id);
-  if (account && !authenticatedAsAccount) {
+  if (account) {
     // Older paid accounts may predate studentDniHash; their first paid order
-    // retains the protected DNI hash even after a login password change.
+    // retains the protected DNI hash even after an administrator resets the password.
     const hash = account.studentDniHash ?? await repos.orders.findStudentDniHash(input.email)
       ?? account.passwordHash;
     if (!await verifyPassword(input.dni, hash)) throw identityError();

@@ -46,10 +46,8 @@ async function resumeCheckout(input: CheckoutInput, course: StoredCourse,
 
 export async function checkout(
   input: CheckoutInput,
-  /** Present when the caller sent a valid session (see `optionalAuth`). */
-  actor?: StoredUser,
 ): Promise<CheckoutResultDTO> {
-  const { course, account, existingEnrollment } = await resolveCheckoutParticipants(input, actor);
+  const { course, account, existingEnrollment } = await resolveCheckoutParticipants(input);
   // The account is created only after Mercado Pago confirms the payment.
   const gateway = paymentGateway();
   if (!gateway) throw new ApiError(503, "PAYMENTS_NOT_CONFIGURED", "Mercado Pago no está disponible en este momento. Intentá más tarde.");

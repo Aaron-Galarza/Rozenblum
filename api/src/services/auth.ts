@@ -1,7 +1,7 @@
 import type { ChangePasswordInput, LoginInput, SessionDTO } from "@rozenblum/shared";
 import { createToken } from "../lib/token.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
-import { badRequest, unauthorized } from "../lib/http.js";
+import { badRequest, forbidden, unauthorized } from "../lib/http.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredUser } from "../types.js";
 import { userToDTO } from "./mappers.js";
@@ -50,6 +50,9 @@ export async function changeOwnPassword(
   user: StoredUser,
   input: ChangePasswordInput,
 ): Promise<SessionDTO> {
+  if (user.role === "alumno") {
+    throw forbidden("La contraseña del alumno solo puede modificarla un administrador.");
+  }
   const repos = getRepositories();
   const current = await repos.users.findById(user.id);
   if (!current) throw unauthorized();

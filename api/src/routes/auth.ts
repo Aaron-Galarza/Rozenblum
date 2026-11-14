@@ -26,7 +26,7 @@ authRouter.get(
 );
 
 /**
- * Self-service password change (all roles). The response is a new session:
+ * Self-service password change for staff. The response is a new session:
  * the password change revokes every token issued before it, including the one
  * used for this request.
  */

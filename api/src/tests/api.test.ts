@@ -10,7 +10,7 @@ import { courseEnrollmentClosesAt, courseExpiryInstant, todayInBuenosAires } fro
 import { createMockRepositories } from "../repositories/mock.js";
 import { setRepositoriesForTests } from "../repositories/index.js";
 import { parseYouTubeId } from "../services/youtube.js";
-import { changeOwnPassword, login as loginService } from "../services/auth.js";
+import { login as loginService } from "../services/auth.js";
 import { moduleStatuses } from "../services/mappers.js";
 import { detectImageFormat, isManagedImageUrl, mediaFolder } from "../services/media.js";
 import { setPaymentGatewayForTests, type PaymentSnapshot } from "../services/mercadopago.js";
@@ -1887,11 +1887,11 @@ test("users can change their own password and receive a fresh session", async ()
   assert.equal(repeated.status, 400);
 });
 
-test("a student can replace the DNI password with a strong one", async () => {
+test("students cannot change their own password; an administrator can reset it", async () => {
   const dni = "27654321";
-  const nextPassword = "student-own-password-789";
+  const nextPassword = "admin-assigned-password-789";
   const email = "dni-rotation@example.test";
-  await repositories.users.create({
+  const student = await repositories.users.create({
     name: "DNI Rotation",
     email,
     role: "alumno",
@@ -1905,48 +1905,19 @@ test("a student can replace the DNI password with a strong one", async () => {
     token: session.token,
     body: JSON.stringify({ currentPassword: dni, newPassword: nextPassword }),
   });
-  assert.equal(changed.status, 200);
+  assert.equal(changed.status, 403);
+  assert.equal((await loginService({ email, password: dni })).user.email, email);
+
+  const adminToken = await login("admin", adminEmail);
+  const reset = await api(server.baseUrl, `/api/admin/users/${student.id}`, {
+    method: "PATCH",
+    token: adminToken,
+    body: JSON.stringify({ password: nextPassword }),
+  });
+  assert.equal(reset.status, 200);
   await assert.rejects(loginService({ email, password: dni }));
   const nextSession = await loginService({ email, password: nextPassword });
   assert.equal(nextSession.user.email, email);
-
-  // This manually created legacy account has no paid order with a protected
-  // DNI hash. After changing its password, only its session proves identity.
-  const extraCourse = await repositories.courses.create({
-    title: "Post Rotation Course",
-    description: "Course used to verify checkout after a password change.",
-    priceCents: 75_000,
-    duration: "On-Demand",
-    level: "Inicial",
-    professor: "Test profesor",
-    professorEmail: teacherEmail,
-    status: "published",
-    img: "https://example.test/post-rotation.jpg",
-  });
-  await repositories.courses.saveModules(extraCourse.legacyId, [
-    { id: 1, title: "Only module", position: 1, lessons: [
-      { id: "1.1", title: "Only lesson", type: "doc", position: 1, content: [] },
-    ] },
-  ], 0);
-
-  const body = JSON.stringify({
-    courseSlug: extraCourse.slug,
-    nombre: "DNI Rotation",
-    email,
-    dni,
-  });
-  const withoutSession = await api(server.baseUrl, "/api/checkout", {
-    method: "POST",
-    body,
-  });
-  assert.equal(withoutSession.status, 403);
-
-  const withSession = await api(server.baseUrl, "/api/checkout", {
-    method: "POST",
-    token: nextSession.token,
-    body,
-  });
-  assert.equal(withSession.status, 201);
 });
 
 test("error envelopes always include the request id and malformed JSON is a 400", async () => {
@@ -2234,7 +2205,7 @@ test("an existing student keeps paid courses but does not see an unpaid second c
   assert.equal(visible.some((item) => item.id === pending.id), false);
 });
 
-test("a paid student buys a second course with the same DNI after changing the login password", async () => {
+test("a paid student buys a second course with the same DNI after an administrator resets the password", async () => {
   const email = "second-course-buyer@example.test";
   const dni = "28123456";
   const courses = [];
@@ -2256,8 +2227,18 @@ test("a paid student buys a second course with the same DNI after changing the l
   const account = await repositories.users.findByEmail(email);
   assert.ok(account?.studentDniHash);
   assert.equal(await verifyPassword(dni, account.studentDniHash), true);
-  await changeOwnPassword(account, { currentPassword: dni,
-    newPassword: "new-login-password-123" });
+  const adminToken = await login("admin", adminEmail);
+  const reset = await api(server.baseUrl, `/api/admin/users/${account.id}`, {
+    method: "PATCH", token: adminToken,
+    body: JSON.stringify({ password: "new-login-password-123" }),
+  });
+  assert.equal(reset.status, 200);
+  const studentSession = await loginService({ email, password: "new-login-password-123" });
+  const mismatch = await api(server.baseUrl, "/api/checkout", {
+    method: "POST", token: studentSession.token,
+    body: JSON.stringify({ ...input(courses[1]!.slug), dni: "28999999" }),
+  });
+  assert.equal(mismatch.status, 403);
 
   const second = await checkoutService(input(courses[1]!.slug));
   assert.equal((await repositories.users.findByEmail(email))?.id, account.id);
@@ -2271,6 +2252,29 @@ test("a paid student buys a second course with the same DNI after changing the l
   await assert.rejects(checkoutService(input(courses[1]!.slug)),
     (error: unknown) => (error as { status?: number }).status === 409);
   assert.equal((await repositories.orders.list()).filter((order) => order.email === email).length, 2);
+});
+
+test("the same DNI under another email creates a separate student account", async () => {
+  const course = await repositories.courses.create({
+    title: "Shared DNI Course", description: "Distinct email identity test", priceCents: 80_000,
+    duration: "Online", level: "Inicial", img: "https://example.test/shared-dni.jpg",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+  });
+  const dni = "29234567";
+  const emails = ["first-shared-dni@example.test", "second-shared-dni@example.test"];
+  for (const email of emails) {
+    const purchase = await checkoutService({ courseSlug: course.slug, nombre: "Test Alumno", email, dni });
+    await applyOrderTransition({ reference: purchase.order.externalReference!,
+      status: "Pagado", source: "mercadopago", providerEventId: `shared-dni-${email}`,
+      providerPaymentId: email === emails[0] ? "1234567811" : "1234567812",
+      paymentStatus: "approved", reason: "Pago confirmado" });
+  }
+  const first = await repositories.users.findByEmail(emails[0]!);
+  const second = await repositories.users.findByEmail(emails[1]!);
+  assert.ok(first && second);
+  assert.notEqual(first.id, second.id);
+  assert.equal((await repositories.enrollments.findByStudentAndCourse(emails[0]!, course.legacyId))?.status, "Activo");
+  assert.equal((await repositories.enrollments.findByStudentAndCourse(emails[1]!, course.legacyId))?.status, "Activo");
 });
 
 test("simultaneous checkout requests return the same pending order and payment link", async () => {
