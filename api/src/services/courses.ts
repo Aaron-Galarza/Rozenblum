@@ -9,6 +9,7 @@ import type {
 import { richLessonDocumentSchema } from "@rozenblum/shared";
 import { badRequest, conflict, forbidden, notFound } from "../lib/http.js";
 import { isCourseExpired } from "../lib/course-expiry.js";
+import { publishChatAccessChanged } from "../lib/chat-events.js";
 import { nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredCourse, StoredLesson, StoredModule, StoredUser } from "../types.js";
@@ -204,6 +205,10 @@ export async function updateCourse(
     }
     return saved;
   });
+
+  if (updated.professorEmail.toLowerCase() !== course.professorEmail.toLowerCase()) {
+    publishChatAccessChanged({ kind: "course", courseId });
+  }
 
   return courseToDTO(updated);
 }

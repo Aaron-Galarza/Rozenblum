@@ -1,5 +1,6 @@
 import { conflict, notFound, badRequest } from "../lib/http.js";
 import { hashPassword } from "../lib/password.js";
+import { publishChatAccessChanged } from "../lib/chat-events.js";
 import { initialsFromName, nowIso } from "../lib/utils.js";
 import type { Pagination } from "../lib/pagination.js";
 import { getRepositories } from "../repositories/index.js";
@@ -57,7 +58,7 @@ export async function updateAdminUser(
   if (patch.img) assertManagedImageUrl(patch.img, "professors");
   const { password, ...safePatch } = patch;
   const passwordHash = password ? await hashPassword(password) : undefined;
-  return repos.withTransaction(async () => {
+  const result = await repos.withTransaction(async () => {
     const user = await repos.users.findById(id);
     if (!user) throw notFound("Usuario no encontrado.");
     if (user.role === "admin") throw badRequest("La cuenta administradora no se edita desde este panel.");
@@ -75,6 +76,8 @@ export async function updateAdminUser(
       reason, previousState: safeUserState(user), nextState: safeUserState(updated) });
     return userToDTO(updated);
   });
+  if (patch.status || password) publishChatAccessChanged({ kind: "user", userId: id });
+  return result;
 }
 
 export async function deleteAdminUser(
@@ -105,6 +108,7 @@ export async function deleteAdminUser(
     await recordAdminEvent({ actor, action: "delete", entity: "user", entityId: user.id,
       reason, previousState: safeUserState(user) });
   });
+  publishChatAccessChanged({ kind: "user", userId: id });
 }
 
 export async function updateAdminOrder(

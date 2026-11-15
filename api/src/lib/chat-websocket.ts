@@ -4,7 +4,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { env } from "../config/env.js";
 import { logger } from "./logger.js";
 import { verifyToken } from "./token.js";
-import { onChatChanged, onCourseRemoved } from "./chat-events.js";
+import { onChatAccessChanged, onChatChanged, onCourseRemoved } from "./chat-events.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredUser } from "../types.js";
 import { assertEnrollmentAccess, loadEnrollment } from "../services/classroom.js";
@@ -164,10 +164,22 @@ export function attachChatWebSocket(server: Server): () => void {
       client.send(JSON.stringify({ type: "course_removed" }), () => client.close(1000, "Curso finalizado"));
     }
   });
+  const unsubscribeAccess = onChatAccessChanged((change) => {
+    for (const [client, subscription] of subscriptions) {
+      if (client.readyState !== WebSocket.OPEN) continue;
+      const affected = change.kind === "user"
+        ? subscription.user.id === change.userId
+        : change.kind === "course"
+          ? subscription.room.startsWith(`${change.courseId}:`)
+          : subscription.room === `${change.courseId}:${change.studentEmail.toLowerCase()}`;
+      if (affected) client.close(1008, "Acceso actualizado");
+    }
+  });
 
   return () => {
     unsubscribe();
     unsubscribeCourse();
+    unsubscribeAccess();
     clearInterval(heartbeat);
     server.off("upgrade", onUpgrade);
     for (const client of sockets.clients) client.terminate();

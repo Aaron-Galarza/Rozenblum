@@ -1,5 +1,6 @@
 import type { ChangePasswordInput, LoginInput, SessionDTO } from "@rozenblum/shared";
 import { createToken } from "../lib/token.js";
+import { publishChatAccessChanged } from "../lib/chat-events.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { badRequest, forbidden, unauthorized } from "../lib/http.js";
 import { getRepositories } from "../repositories/index.js";
@@ -67,6 +68,8 @@ export async function changeOwnPassword(
     { revokeSessions: true },
   );
   if (!updated) throw unauthorized();
+
+  publishChatAccessChanged({ kind: "user", userId: updated.id });
 
   return sessionFor(updated);
 }

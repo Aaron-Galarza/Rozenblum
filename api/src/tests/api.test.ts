@@ -2073,6 +2073,18 @@ test("reassigning a course professor moves its conversations", async () => {
     teacherName: "Test profesor",
     messages: [],
   });
+  const enrollment = await repositories.enrollments.create({
+    studentEmail: conversation.studentEmail, studentName: conversation.studentName,
+    courseId: course.legacyId, status: "Activo",
+  });
+  const socket = new WebSocket(server.baseUrl.replace(/^http:/, "ws:") + "/api/chat/socket",
+    { origin: "http://localhost:3000" });
+  await once(socket, "open");
+  const ready = once(socket, "message");
+  socket.send(JSON.stringify({ type: "subscribe", token: await login("profesor", teacherEmail),
+    path: `/api/teacher/courses/${course.legacyId}/students/${enrollment.id}/messages` }));
+  assert.equal(JSON.parse(String((await ready)[0])).type, "ready");
+  const socketClosed = once(socket, "close");
 
   const updated = await api(server.baseUrl, `/api/admin/courses/${course.legacyId}`, {
     method: "PATCH",
@@ -2080,15 +2092,11 @@ test("reassigning a course professor moves its conversations", async () => {
     body: JSON.stringify({ professorEmail: newProfessor.email }),
   });
   assert.equal(updated.status, 200);
+  assert.equal((await socketClosed)[0], 1008);
 
   const moved = await repositories.conversations.findById(conversation.id);
   assert.equal(moved?.teacherEmail, newProfessor.email);
   assert.equal(moved?.teacherName, newProfessor.name);
-
-  await repositories.enrollments.create({
-    studentEmail: conversation.studentEmail, studentName: conversation.studentName,
-    courseId: course.legacyId, status: "Activo",
-  });
 
   const newToken = (
     await loginService({ email: newProfessor.email, password })
@@ -2142,12 +2150,22 @@ test("closing a student account preserves academic and chat history", async () =
     teacherName: "Test profesor",
     messages: [],
   });
+  const socket = new WebSocket(server.baseUrl.replace(/^http:/, "ws:") + "/api/chat/socket",
+    { origin: "http://localhost:3000" });
+  await once(socket, "open");
+  const ready = once(socket, "message");
+  socket.send(JSON.stringify({ type: "subscribe",
+    token: (await loginService({ email: student.email, password: "deletable-password-123" })).token,
+    path: `/api/student/enrollments/${enrollment.id}/messages` }));
+  assert.equal(JSON.parse(String((await ready)[0])).type, "ready");
+  const socketClosed = once(socket, "close");
 
   const removed = await api(server.baseUrl, `/api/admin/users/${student.id}`, {
     method: "DELETE",
     token: adminToken,
   });
   assert.equal(removed.status, 204);
+  assert.equal((await socketClosed)[0], 1008);
   const closed = await repositories.users.findById(student.id);
   assert.equal(closed?.status, "Suspendido");
   assert.ok(closed?.deletedAt);

@@ -1,5 +1,6 @@
 import type { OrderStatus } from "@rozenblum/shared";
 import { courseExpiryInstant, isCourseEnrollmentOpen, isCourseExpired } from "../lib/course-expiry.js";
+import { publishChatAccessChanged } from "../lib/chat-events.js";
 import { badRequest, notFound } from "../lib/http.js";
 import { logger } from "../lib/logger.js";
 import { initialsFromName, newId, nowIso } from "../lib/utils.js";
@@ -147,6 +148,16 @@ export async function applyOrderTransition(input: Transition): Promise<StoredPay
       });
       if (result) logger.debug("order_transition", { orderId: result.orderId, source: result.source,
         previousStatus: result.previousStatus, nextStatus: result.nextStatus, eventId: result.id });
+      if (result && result.previousStatus !== result.nextStatus && result.nextStatus !== "Pagado") {
+        try {
+          const order = await repos.orders.findByReference(input.reference);
+          if (order) publishChatAccessChanged({ kind: "room", courseId: order.courseId,
+            studentEmail: order.email });
+        } catch {
+          // The payment already committed; the socket heartbeat remains a fallback.
+          logger.warn("chat_access_notification_failed", { orderId: result.orderId });
+        }
+      }
       return result;
     } catch (error) {
       if ((error as { code?: number }).code === 11000 && attempt === 0) continue;
