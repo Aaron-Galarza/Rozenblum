@@ -13,7 +13,7 @@ import type {
   StoredMessage,
   StoredUser,
 } from "../types.js";
-import { loadManagedCourse } from "./courses.js";
+import { canManageCourse, loadManagedCourse } from "./courses.js";
 import { assertEnrollmentAccess, loadEnrollment } from "./classroom.js";
 import { conversationToMessages, courseIndex, hasEnrollmentAccess } from "./mappers.js";
 
@@ -138,7 +138,7 @@ export async function listTeacherConversations(user: StoredUser): Promise<Conver
 
   return conversations.filter((conversation) => {
     const course = byId.get(conversation.courseId);
-    return course && !isCourseExpired(course) && accessible.has(
+    return course && canManageCourse(course, user) && !isCourseExpired(course) && accessible.has(
       `${conversation.courseId}:${conversation.studentEmail.toLowerCase()}`);
   }).map((conversation) => ({
     id: conversation.id,
@@ -203,6 +203,7 @@ async function loadTeacherConversation(
   if (!enrollment) throw notFound("Inscripción no encontrada.");
   const course = await getRepositories().courses.findById(conversation.courseId);
   if (!course || isCourseExpired(course)) throw forbidden("Este curso ya finalizó.");
+  if (!canManageCourse(course, user)) throw forbidden("No gestionás este curso.");
   assertEnrollmentAccess(enrollment, {
     expired: "El acceso del alumno a este curso venció.",
     denied: "La mensajería se habilita cuando se aprueba el acceso del alumno.",

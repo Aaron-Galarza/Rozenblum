@@ -12,6 +12,8 @@ import { loadManagedCourse } from "../services/courses.js";
 import { conversationToMessages } from "../services/mappers.js";
 
 const SOCKET_PATH = "/api/chat/socket";
+const MAX_CONNECTIONS = 1_000;
+const MAX_CONNECTIONS_PER_ACCOUNT = 5;
 const STUDENT_PATH = /^\/api\/student\/enrollments\/(enr_[a-zA-Z0-9_-]+)\/messages$/;
 const TEACHER_PATH = /^\/api\/teacher\/courses\/([1-9]\d*)\/students\/(enr_[a-zA-Z0-9_-]+)\/messages$/;
 
@@ -61,6 +63,11 @@ export function attachChatWebSocket(server: Server): () => void {
       socket.destroy();
       return;
     }
+    if (sockets.clients.size >= MAX_CONNECTIONS) {
+      socket.write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
     sockets.handleUpgrade(request, socket, head, (client) => sockets.emit("connection", client));
   };
   server.on("upgrade", onUpgrade);
@@ -101,6 +108,10 @@ export function attachChatWebSocket(server: Server): () => void {
         const room = user && await authorizedRoom(user, path);
         if (!room || client.readyState !== WebSocket.OPEN) {
           client.close(1008, "Acceso denegado"); return;
+        }
+        if ([...subscriptions.values()].filter((item) => item.user.id === user!.id).length >=
+            MAX_CONNECTIONS_PER_ACCOUNT) {
+          client.close(1008, "Demasiadas conexiones abiertas"); return;
         }
         clearTimeout(timeout);
         subscriptions.set(client, { token, path, room, user: user! });

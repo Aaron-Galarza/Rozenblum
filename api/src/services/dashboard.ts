@@ -109,6 +109,7 @@ export async function getTeacherDashboard(user: StoredUser): Promise<TeacherDash
 
   const conversations = await repos.conversations.listByTeacher(user.email);
   const studentMessages = conversations.filter((conversation) => {
+    if (!courseIds.has(conversation.courseId)) return false;
     const last = conversation.messages.at(-1);
     return last ? isStudentMessage(last) : false;
   });
