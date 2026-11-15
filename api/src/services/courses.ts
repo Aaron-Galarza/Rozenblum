@@ -181,41 +181,29 @@ export async function updateCourse(
   if (course.status === "published" || patch.status === "published") {
     nextPatch.everPublished = true;
   }
-  const updated = await repos.courses.update(
-    courseId,
-    nextPatch,
-    options.expectedRevision ?? courseRevision(course),
-  );
-  if (!updated) {
-    const current = await repos.courses.findById(courseId);
-    if (current) throw revisionConflict(current);
-    throw notFound("Curso no encontrado.");
-  }
-
-  // Course threads follow the current professor. Without this, a former
-  // professor would keep reading and answering the course conversations.
-  if (
-    updated.professorEmail &&
-    updated.professorEmail.toLowerCase() !== course.professorEmail.toLowerCase()
-  ) {
-    await repos.conversations.reassignTeacher(
-      courseId,
-      updated.professorEmail,
-      updated.professor,
+  const updated = await repos.withTransaction(async () => {
+    const saved = await repos.courses.update(
+      courseId, nextPatch, options.expectedRevision ?? courseRevision(course),
     );
-  }
+    if (!saved) {
+      const current = await repos.courses.findById(courseId);
+      if (current) throw revisionConflict(current);
+      throw notFound("Curso no encontrado.");
+    }
 
-  if (user.role === "admin") {
-    await recordAdminEvent({
-      actor: user,
-      action: "update",
-      entity: "course",
-      entityId: String(courseId),
-      reason: "Edición administrativa del curso.",
-      previousState: safeCourseState(course),
-      nextState: safeCourseState(updated),
-    });
-  }
+    // Assignment, conversations and the administrative record change together.
+    if (saved.professorEmail.toLowerCase() !== course.professorEmail.toLowerCase()) {
+      await repos.conversations.reassignTeacher(courseId, saved.professorEmail, saved.professor);
+    }
+    if (user.role === "admin") {
+      await recordAdminEvent({
+        actor: user, action: "update", entity: "course", entityId: String(courseId),
+        reason: "Edición administrativa del curso.",
+        previousState: safeCourseState(course), nextState: safeCourseState(saved),
+      });
+    }
+    return saved;
+  });
 
   return courseToDTO(updated);
 }
@@ -617,33 +605,28 @@ export async function createEmptyCourseForAdmin(
   requestId: string | undefined,
   actor: StoredUser,
 ): Promise<CourseDTO> {
+  const repos = getRepositories();
   if (requestId) {
-    const existing = await getRepositories().courses.findByRequestId(requestId);
+    const existing = await repos.courses.findByRequestId(requestId);
     if (existing) return courseToDTO(existing);
   }
   if (input.img) assertManagedImageUrl(input.img, "courses");
   const professor = await resolveProfessor(input.professorEmail);
-  const course = await getRepositories().courses.create({
-    title: input.title,
-    description: input.description,
-    priceCents: input.priceCents,
-    level: input.level ?? "Inicial",
-    duration: input.duration ?? "On-Demand",
-    professor: professor.name,
-    professorEmail: professor.email,
-    status: "draft",
-    img: input.img ?? "",
-    requestId,
-    accessDays: input.accessDays,
-    expiresOn: input.expiresOn,
+  return repos.withTransaction(async () => {
+    if (requestId) {
+      const existing = await repos.courses.findByRequestId(requestId);
+      if (existing) return courseToDTO(existing);
+    }
+    const course = await repos.courses.create({
+      title: input.title, description: input.description, priceCents: input.priceCents,
+      level: input.level ?? "Inicial", duration: input.duration ?? "On-Demand",
+      professor: professor.name, professorEmail: professor.email, status: "draft",
+      img: input.img ?? "", requestId, accessDays: input.accessDays,
+      expiresOn: input.expiresOn,
+    });
+    await recordAdminEvent({ actor, action: "create", entity: "course",
+      entityId: String(course.legacyId), reason: "Alta administrativa del curso.",
+      nextState: safeCourseState(course) });
+    return courseToDTO(course);
   });
-  await recordAdminEvent({
-    actor,
-    action: "create",
-    entity: "course",
-    entityId: String(course.legacyId),
-    reason: "Alta administrativa del curso.",
-    nextState: safeCourseState(course),
-  });
-  return courseToDTO(course);
 }

@@ -29,27 +29,22 @@ export async function createAdminUser(
 ): Promise<UserDTO> {
   const repos = getRepositories();
   if (input.img) assertManagedImageUrl(input.img, "professors");
-  const existing = await repos.users.findByEmail(input.email);
-  if (existing) throw conflict("Ya existe una cuenta con ese correo.");
-
-  const user = await repos.users.create({
-    name: input.name,
-    email: input.email,
-    role: input.role,
-    passwordHash: await hashPassword(input.password),
-    initials: initialsFromName(input.name),
-    img: input.img,
-    sessionVersion: 0,
-  });
-  await recordAdminEvent({
-    actor,
-    action: "create",
-    entity: "user",
-    entityId: user.id,
-    reason,
-    nextState: safeUserState(user),
-  });
-  return userToDTO(user);
+  const passwordHash = await hashPassword(input.password);
+  try {
+    return await repos.withTransaction(async () => {
+      if (await repos.users.findByEmail(input.email)) throw conflict("Ya existe una cuenta con ese correo.");
+      const user = await repos.users.create({
+        name: input.name, email: input.email, role: input.role, passwordHash,
+        initials: initialsFromName(input.name), img: input.img, sessionVersion: 0,
+      });
+      await recordAdminEvent({ actor, action: "create", entity: "user", entityId: user.id,
+        reason, nextState: safeUserState(user) });
+      return userToDTO(user);
+    });
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000) throw conflict("Ya existe una cuenta con ese correo.");
+    throw error;
+  }
 }
 
 export async function updateAdminUser(
@@ -60,34 +55,26 @@ export async function updateAdminUser(
 ): Promise<UserDTO> {
   const repos = getRepositories();
   if (patch.img) assertManagedImageUrl(patch.img, "professors");
-  const user = await repos.users.findById(id);
-  if (!user) throw notFound("Usuario no encontrado.");
-  if (user.role === "admin") throw badRequest("La cuenta administradora no se edita desde este panel.");
-
-  if (patch.email && patch.email.toLowerCase() !== user.email.toLowerCase()) {
-    throw badRequest("El correo de una cuenta existente no se puede cambiar porque identifica sus cursos, órdenes y conversaciones.");
-  }
-
   const { password, ...safePatch } = patch;
-  // Suspending, reactivating or changing a password invalidates every token
-  // issued before this update.
-  const mustRevoke = Boolean(patch.status && patch.status !== user.status) || Boolean(password);
-  const updated = await repos.users.update(id, {
-    ...safePatch,
-    ...(password ? { passwordHash: await hashPassword(password) } : {}),
-    initials: patch.name ? initialsFromName(patch.name) : undefined,
-  }, { revokeSessions: mustRevoke });
-  if (!updated) throw notFound("Usuario no encontrado.");
-  await recordAdminEvent({
-    actor,
-    action: "update",
-    entity: "user",
-    entityId: user.id,
-    reason,
-    previousState: safeUserState(user),
-    nextState: safeUserState(updated),
+  const passwordHash = password ? await hashPassword(password) : undefined;
+  return repos.withTransaction(async () => {
+    const user = await repos.users.findById(id);
+    if (!user) throw notFound("Usuario no encontrado.");
+    if (user.role === "admin") throw badRequest("La cuenta administradora no se edita desde este panel.");
+    if (patch.email && patch.email.toLowerCase() !== user.email.toLowerCase()) {
+      throw badRequest("El correo de una cuenta existente no se puede cambiar porque identifica sus cursos, órdenes y conversaciones.");
+    }
+    // Status and password changes invalidate every previously issued token.
+    const mustRevoke = Boolean(patch.status && patch.status !== user.status) || Boolean(password);
+    const updated = await repos.users.update(id, {
+      ...safePatch, ...(passwordHash ? { passwordHash } : {}),
+      initials: patch.name ? initialsFromName(patch.name) : undefined,
+    }, { revokeSessions: mustRevoke });
+    if (!updated) throw notFound("Usuario no encontrado.");
+    await recordAdminEvent({ actor, action: "update", entity: "user", entityId: user.id,
+      reason, previousState: safeUserState(user), nextState: safeUserState(updated) });
+    return userToDTO(updated);
   });
-  return userToDTO(updated);
 }
 
 export async function deleteAdminUser(
@@ -96,44 +83,27 @@ export async function deleteAdminUser(
   reason = DEFAULT_REASON,
 ): Promise<void> {
   const repos = getRepositories();
-  const user = await repos.users.findById(id);
-  if (!user) throw notFound("Usuario no encontrado.");
-  if (user.role === "admin") throw badRequest("No se puede eliminar la cuenta administradora.");
-
-  if (user.role === "profesor" &&
-      (await repos.courses.list()).some((course) => course.professorEmail?.toLowerCase() === user.email.toLowerCase())) {
-    throw badRequest("Reasigná los cursos del profesor antes de eliminar su cuenta.");
-  }
-
-  if (user.role === "alumno") {
-    // M-08: removing a student must not destroy financial or academic history.
-    // The account is closed (login and tokens stop working) while enrollments,
-    // orders and conversations stay available for reporting and disputes.
-    const closed = await repos.users.update(user.id, {
-      status: "Suspendido",
-      deletedAt: nowIso(),
-    }, { revokeSessions: true });
-    if (!closed) throw notFound("Usuario no encontrado.");
-    await recordAdminEvent({
-      actor,
-      action: "delete",
-      entity: "user",
-      entityId: user.id,
-      reason,
-      previousState: safeUserState(user),
-      nextState: safeUserState(closed),
-    });
-    return;
-  }
-
-  await repos.users.delete(id);
-  await recordAdminEvent({
-    actor,
-    action: "delete",
-    entity: "user",
-    entityId: user.id,
-    reason,
-    previousState: safeUserState(user),
+  await repos.withTransaction(async () => {
+    const user = await repos.users.findById(id);
+    if (!user) throw notFound("Usuario no encontrado.");
+    if (user.role === "admin") throw badRequest("No se puede eliminar la cuenta administradora.");
+    if (user.role === "profesor" &&
+        (await repos.courses.list()).some((course) => course.professorEmail?.toLowerCase() === user.email.toLowerCase())) {
+      throw badRequest("Reasigná los cursos del profesor antes de eliminar su cuenta.");
+    }
+    if (user.role === "alumno") {
+      // Preserve financial and academic records while revoking every session.
+      const closed = await repos.users.update(user.id, {
+        status: "Suspendido", deletedAt: nowIso(),
+      }, { revokeSessions: true });
+      if (!closed) throw notFound("Usuario no encontrado.");
+      await recordAdminEvent({ actor, action: "delete", entity: "user", entityId: user.id,
+        reason, previousState: safeUserState(user), nextState: safeUserState(closed) });
+      return;
+    }
+    if (!await repos.users.delete(id)) throw notFound("Usuario no encontrado.");
+    await recordAdminEvent({ actor, action: "delete", entity: "user", entityId: user.id,
+      reason, previousState: safeUserState(user) });
   });
 }
 
