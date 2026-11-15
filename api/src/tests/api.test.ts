@@ -1044,6 +1044,31 @@ test("admin course creation is idempotent and recoverable by request key", async
   await repositories.courses.delete(first.body.data.id, (await repositories.courses.findById(first.body.data.id))!.revision ?? 0);
 });
 
+test("course creation retries a unique collision outside the aborted transaction", async () => {
+  const original = repositories.courses.create;
+  let attempts = 0;
+  repositories.courses.create = async function (input) {
+    attempts += 1;
+    if (attempts === 1) throw Object.assign(new Error("Injected unique collision"), { code: 11000 });
+    return original.call(this, input);
+  };
+  try {
+    const response = await api<{ data: { id: number } }>(server.baseUrl, "/api/admin/courses", {
+      method: "POST", token: await login("admin", adminEmail),
+      headers: { "idempotency-key": "admin-course-collision-0001" },
+      body: JSON.stringify({ title: "Collision Recovery Course", description: "Retry test",
+        priceCents: 12_000, level: "Inicial", duration: "Online",
+        professorEmail: teacherEmail, expiresOn: futureCourseExpiry }),
+    });
+    assert.equal(response.status, 201);
+    assert.equal(attempts, 2);
+    assert.equal((await repositories.courses.list()).filter((course) =>
+      course.legacyId === response.body.data.id).length, 1);
+  } finally {
+    repositories.courses.create = original;
+  }
+});
+
 test("draft lessons keep unique IDs and launched courses cannot be deleted", async () => {
   const image = "https://res.cloudinary.com/test-cloud/image/upload/v1/Rozenblum/courses/academic.jpg";
   const course = await repositories.courses.create({

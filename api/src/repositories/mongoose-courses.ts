@@ -68,53 +68,24 @@ export function createMongooseCoursesRepositories() {
     },
     async create(input) {
       const baseSlug = slugify(input.title);
-      for (let attempt = 0; attempt < 5; attempt += 1) {
-        const legacyId = await this.nextLegacyId();
-        let slug = baseSlug;
-        let suffix = 2;
-        while (await CourseModel.exists({ slug }) || await CourseArchiveModel.exists({ slug })) {
-          slug = `${baseSlug}-${suffix++}`;
-        }
-        try {
-          const doc = await CourseModel.create({
-            legacyId,
-            slug,
-            title: input.title,
-            description: input.description,
-            price: formatArs(input.priceCents),
-            priceCents: input.priceCents,
-            duration: input.duration,
-            level: input.level,
-            img: input.img,
-            professor: input.professor,
-            professorEmail: input.professorEmail,
-            status: input.status,
-            temario: [],
-            modules: [],
-            createdAt: nowIso(),
-            updatedAt: nowIso(),
-            revision: 0,
-            everPublished: input.status === "published",
-            nextLessonNumber: 0,
-            requestId: input.requestId,
-            accessDays: input.accessDays,
-            expiresOn: input.expiresOn,
-          });
-          return clean<StoredCourse>(doc.toObject());
-        } catch (error) {
-          if ((error as { code?: number }).code !== 11000) throw error;
-          // A retried creation may collide with its own idempotency key. Return
-          // the resource created by the first attempt instead of duplicating it.
-          if (input.requestId) {
-            const existing = await CourseModel.findOne({ requestId: input.requestId }).lean().exec();
-            if (existing) return clean<StoredCourse>(existing);
-          }
-          if (attempt === 4) throw error;
-          // Another request claimed the slug or legacy ID after our lookup.
-          // Re-read both values rather than turning a normal race into a 500.
-        }
+      const legacyId = await this.nextLegacyId();
+      let slug = baseSlug;
+      let suffix = 2;
+      while (await CourseModel.exists({ slug }) || await CourseArchiveModel.exists({ slug })) {
+        slug = `${baseSlug}-${suffix++}`;
       }
-      throw new Error("No se pudo crear el curso.");
+      // Unique collisions are retried by the service outside its transaction.
+      const doc = await CourseModel.create({
+        legacyId, slug, title: input.title, description: input.description,
+        price: formatArs(input.priceCents), priceCents: input.priceCents,
+        duration: input.duration, level: input.level, img: input.img,
+        professor: input.professor, professorEmail: input.professorEmail,
+        status: input.status, temario: [], modules: [],
+        createdAt: nowIso(), updatedAt: nowIso(), revision: 0,
+        everPublished: input.status === "published", nextLessonNumber: 0,
+        requestId: input.requestId, accessDays: input.accessDays, expiresOn: input.expiresOn,
+      });
+      return clean<StoredCourse>(doc.toObject());
     },
     async update(legacyId, patch, expectedRevision) {
       const update: Record<string, unknown> = { ...patch, updatedAt: nowIso() };

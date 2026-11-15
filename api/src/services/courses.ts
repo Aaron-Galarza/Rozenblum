@@ -612,21 +612,33 @@ export async function createEmptyCourseForAdmin(
   }
   if (input.img) assertManagedImageUrl(input.img, "courses");
   const professor = await resolveProfessor(input.professorEmail);
-  return repos.withTransaction(async () => {
-    if (requestId) {
-      const existing = await repos.courses.findByRequestId(requestId);
-      if (existing) return courseToDTO(existing);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      return await repos.withTransaction(async () => {
+        if (requestId) {
+          const existing = await repos.courses.findByRequestId(requestId);
+          if (existing) return courseToDTO(existing);
+        }
+        const course = await repos.courses.create({
+          title: input.title, description: input.description, priceCents: input.priceCents,
+          level: input.level ?? "Inicial", duration: input.duration ?? "On-Demand",
+          professor: professor.name, professorEmail: professor.email, status: "draft",
+          img: input.img ?? "", requestId, accessDays: input.accessDays,
+          expiresOn: input.expiresOn,
+        });
+        await recordAdminEvent({ actor, action: "create", entity: "course",
+          entityId: String(course.legacyId), reason: "Alta administrativa del curso.",
+          nextState: safeCourseState(course) });
+        return courseToDTO(course);
+      });
+    } catch (error) {
+      if ((error as { code?: number }).code !== 11000) throw error;
+      if (requestId) {
+        const existing = await repos.courses.findByRequestId(requestId);
+        if (existing) return courseToDTO(existing);
+      }
+      if (attempt === 4) throw conflict("No se pudo crear el curso en este momento. Intentá nuevamente.");
     }
-    const course = await repos.courses.create({
-      title: input.title, description: input.description, priceCents: input.priceCents,
-      level: input.level ?? "Inicial", duration: input.duration ?? "On-Demand",
-      professor: professor.name, professorEmail: professor.email, status: "draft",
-      img: input.img ?? "", requestId, accessDays: input.accessDays,
-      expiresOn: input.expiresOn,
-    });
-    await recordAdminEvent({ actor, action: "create", entity: "course",
-      entityId: String(course.legacyId), reason: "Alta administrativa del curso.",
-      nextState: safeCourseState(course) });
-    return courseToDTO(course);
-  });
+  }
+  throw conflict("No se pudo crear el curso en este momento. Intentá nuevamente.");
 }
