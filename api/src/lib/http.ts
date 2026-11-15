@@ -29,6 +29,12 @@ export function sendData<T>(res: Response, data: T, status = 200) {
   res.status(status).json({ data });
 }
 
+/** Prevent caches from retaining sessions, student data and payment receipts. */
+export function noStore(_req: Request, res: Response, next: NextFunction) {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+}
+
 /**
  * Sends a list page and the real collection count. The body stays an array so
  * existing clients keep working; totals travel in standard pagination headers.
@@ -61,8 +67,12 @@ export function errorHandler(
   error: unknown,
   _req: Request,
   res: Response,
-  _next: NextFunction,
+  next: NextFunction,
 ) {
+  if (res.headersSent) {
+    next(error);
+    return;
+  }
   const bodyError = error as { type?: string; status?: number; statusCode?: number };
 
   if (bodyError?.type === "entity.too.large") {
@@ -86,12 +96,7 @@ export function errorHandler(
 
   if (error instanceof Error && error.name === "ZodError") {
     res.status(400).json(
-      errorPayload(
-        res,
-        "VALIDATION_ERROR",
-        "Los datos enviados no son válidos.",
-        (error as Error & { issues?: unknown }).issues,
-      ),
+      errorPayload(res, "VALIDATION_ERROR", "Los datos enviados no son válidos."),
     );
     return;
   }

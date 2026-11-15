@@ -13,17 +13,16 @@ export type ApiRequest = Request<Record<string, string>>;
 export function parseBody<T>(schema: ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body ?? {});
   if (!result.success) {
-    throw badRequest("Los datos enviados no son válidos.", result.error.issues);
+    throw badRequest("Los datos enviados no son válidos.");
   }
   return result.data;
 }
 
 export function numericParam(value: string | undefined, label: string): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
+  if (!value || !/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) {
     throw badRequest(`${label} inválido.`);
   }
-  return parsed;
+  return Number(value);
 }
 
 /**
@@ -38,7 +37,9 @@ export function requestRevision(req: ApiRequest): number | undefined {
   if (!/^\d+$/.test(value)) {
     throw badRequest("La versión del recurso no es válida.");
   }
-  return Number(value);
+  const revision = Number(value);
+  if (!Number.isSafeInteger(revision)) throw badRequest("La versión del recurso no es válida.");
+  return revision;
 }
 
 /** Reads the optional idempotency key of a creation request. */
@@ -46,8 +47,8 @@ export function requestIdempotencyKey(req: ApiRequest): string | undefined {
   const raw = req.get("idempotency-key") ?? req.get("x-idempotency-key");
   if (raw === undefined) return undefined;
   const value = raw.trim();
-  if (value.length < 8 || value.length > 200) {
-    throw badRequest("La clave de idempotencia debe tener entre 8 y 200 caracteres.");
+  if (value.length < 8 || value.length > 200 || !/^[A-Za-z0-9._:-]+$/.test(value)) {
+    throw badRequest("La clave de idempotencia debe tener entre 8 y 200 caracteres válidos.");
   }
   return value;
 }

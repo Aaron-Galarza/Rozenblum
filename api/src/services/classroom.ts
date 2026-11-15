@@ -38,7 +38,7 @@ export async function loadEnrollment(courseIdOrEnrollmentId: string, user: Store
     throw forbidden("No tenés una inscripción a este curso.");
   }
   if (enrollment.studentEmail.toLowerCase() !== user.email.toLowerCase()) {
-    throw forbidden("Esta inscripción pertenece a otro alumno.");
+    throw notFound("Inscripción no encontrada.");
   }
   const course = await repos.courses.findById(enrollment.courseId);
   if (!course || isCourseExpired(course)) {

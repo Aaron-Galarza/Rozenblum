@@ -192,7 +192,7 @@ teacherRouter.put(
   asyncRoute(async (req, res) => {
     const courseId = numericParam(req.params.courseId, "Curso");
     const input = parseBody(reorderSchema, req.body);
-    const ids = input.ids.map((id) => Number(id));
+    const ids = input.ids.map((id) => numericParam(String(id), "Módulo"));
     sendModules(
       res,
       await reorderModules(courseId, ids, req.authUser!, {

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { checkoutSchema, contactSchema } from "@rozenblum/shared";
-import { badRequest, notFound, sendData } from "../lib/http.js";
+import { badRequest, noStore, notFound, sendData } from "../lib/http.js";
 import { getRepositories } from "../repositories/index.js";
 import { orderToDTO } from "../services/mappers.js";
 import { listPublishedCourses, getLatestPublishedCourse, getPublishedCourseDetail } from "../services/courses.js";
@@ -58,6 +58,7 @@ publicRouter.get(
 
 publicRouter.post(
   "/checkout",
+  noStore,
   asyncRoute(async (req, res) => {
     const input = parseBody(checkoutSchema, req.body);
     const result = await checkout(input);
@@ -67,13 +68,14 @@ publicRouter.post(
 
 publicRouter.get(
   "/orders/:reference",
+  noStore,
   asyncRoute(async (req, res) => {
     const email = typeof req.query.email === "string" ? req.query.email : "";
     sendData(res, await getOrderReceipt(req.params.reference, email));
   }),
 );
 
-publicRouter.post("/orders/:reference/reconcile", asyncRoute(async (req, res) => {
+publicRouter.post("/orders/:reference/reconcile", noStore, asyncRoute(async (req, res) => {
   const input = parseBody(checkoutReturnSchema, req.body);
   await reconcileReturnedPayment(req.params.reference, input.email, input.paymentId);
   if (input.email) sendData(res, await getOrderReceipt(req.params.reference, input.email));

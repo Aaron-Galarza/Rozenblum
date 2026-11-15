@@ -8,6 +8,7 @@ export const LIST_HARD_LIMIT = 1000;
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
+const MAX_OFFSET = 100_000;
 /** History pages are read from the newest message backwards. */
 const DEFAULT_MESSAGE_LIMIT = 500;
 
@@ -28,7 +29,8 @@ export function parsePagination(
     Number.isFinite(rawLimit) && rawLimit > 0
       ? Math.min(Math.floor(rawLimit), MAX_LIMIT)
       : defaults.limit ?? DEFAULT_LIMIT;
-  const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? Math.floor(rawOffset) : 0;
+  const offset = Number.isFinite(rawOffset) && rawOffset > 0
+    ? Math.min(Math.floor(rawOffset), MAX_OFFSET) : 0;
 
   return { limit, offset };
 }

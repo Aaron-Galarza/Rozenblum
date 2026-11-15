@@ -7,7 +7,7 @@ import {
   orderStatusSchema,
 } from "@rozenblum/shared";
 import { requireAuth, requireRole } from "../middleware/auth.js";
-import { sendData, sendPaginated, notFound } from "../lib/http.js";
+import { badRequest, sendData, sendPaginated } from "../lib/http.js";
 import { parsePagination } from "../lib/pagination.js";
 import {
   createAdminUser,
@@ -108,9 +108,10 @@ adminRouter.get(
   "/audit",
   asyncRoute(async (req, res) => {
     const page = parsePagination(req);
-    const entity = req.query.entity === "user" || req.query.entity === "course"
-      ? req.query.entity
-      : undefined;
+    const entity = req.query.entity;
+    if (entity !== undefined && entity !== "user" && entity !== "course") {
+      throw badRequest("El tipo de registro solicitado no es válido.");
+    }
     const { events, total } = await listAdminEvents(page, entity);
     sendPaginated(res, events, total, page);
   }),
@@ -121,7 +122,7 @@ adminRouter.get(
   asyncRoute(async (req, res) => {
     const role = req.query.role;
     if (role !== "alumno" && role !== "profesor") {
-      throw notFound("Especificá role=alumno o role=profesor.");
+      throw badRequest("Especificá role=alumno o role=profesor.");
     }
     const page = parsePagination(req);
     const { users, total } = await listAdminUsers(role, page);
