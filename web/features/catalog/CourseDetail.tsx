@@ -141,12 +141,12 @@ export default function CourseDetail({ course, professor, onBack, onBuy }: Cours
             <p className="mb-2 text-center text-3xl font-light sm:text-4xl" style={{ color: "#B58A43", fontFamily: "'Cormorant Garamond', serif" }}>
               {course.price} ARS
             </p>
-            <p className="mb-6 text-center text-xs" style={{ color: "rgba(23,59,108,0.5)" }}>Acceso al aula tras la confirmación</p>
+            <p className="mb-6 text-center text-xs" style={{ color: "rgba(23,59,108,0.5)" }}>Acceso al aula al confirmarse el pago</p>
 
             {/* Info box */}
             <div className="mb-6 rounded p-4" style={{ backgroundColor: "#E8EDF3", border: "1px solid rgba(23,59,108,0.12)" }}>
               <p className="text-xs leading-relaxed" style={{ color: "#173B6C" }}>
-                <span className="inline-flex items-center gap-1 font-bold"><IconInfo className="h-3.5 w-3.5" /> Importante:</span> La inscripción se paga en Mercado Pago. El acceso al aula se activa automáticamente cuando Mercado Pago confirma el pago.
+                <span className="inline-flex items-center gap-1 font-bold"><IconInfo className="h-3.5 w-3.5" /> Importante:</span> La inscripción se paga en Mercado Pago. El acceso al aula se habilita cuando Mercado Pago confirma el pago.
               </p>
             </div>
 

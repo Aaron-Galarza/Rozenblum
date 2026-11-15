@@ -54,20 +54,62 @@ export function confirmationView(
 
   const courseClosed = order.fulfillmentIssue === "course_closed";
   const latePayment = order.fulfillmentIssue === "payment_expired";
+  const identityMismatch = order.fulfillmentIssue === "identity_mismatch";
+  const accountUnavailable = order.fulfillmentIssue === "account_unavailable";
   const registrationClosed = isRegistrationClosed(order, now);
   const terminal = isTerminalOrder(order);
 
-  if (order.estado === "Pagado" && (courseClosed || latePayment)) {
+  if (order.estado === "Pagado" && order.fulfillmentIssue) {
+    if (identityMismatch) {
+      return {
+        tone: "review",
+        title: "Pago recibido, identidad a revisar",
+        summary: "El pago se acreditó, pero los datos de identidad no coinciden con la cuenta asociada al correo. No habilitamos el aula.",
+        badge: "Identidad a revisar",
+        detail: "El DNI informado no coincide con la cuenta. Contactá al Estudio con tu número de orden para resolver el acceso.",
+        approved: false,
+        terminal,
+      };
+    }
+    if (accountUnavailable) {
+      return {
+        tone: "review",
+        title: "Pago recibido, cuenta no disponible",
+        summary: "El pago se acreditó, pero la cuenta asociada al correo no está disponible para esta inscripción. No habilitamos el aula.",
+        badge: "Cuenta a revisar",
+        detail: "La cuenta puede estar suspendida o no ser una cuenta de alumno. Contactá al Estudio con tu número de orden.",
+        approved: false,
+        terminal,
+      };
+    }
+    if (latePayment) {
+      return {
+        tone: "review",
+        title: "Pago recibido fuera de plazo",
+        summary: "Mercado Pago registró un cobro después de vencer la orden. No habilitamos el aula; contactá al Estudio con tu número de orden.",
+        badge: "Cobro para revisar",
+        detail: "El pago se acreditó después del plazo de cinco minutos; el acceso no se activó automáticamente.",
+        approved: false,
+        terminal,
+      };
+    }
+    if (courseClosed) {
+      return {
+        tone: "review",
+        title: "Pago recibido fuera de plazo",
+        summary: "El curso ya cerró y no se habilitó el aula. Conservá tu número de orden y contactá al Estudio para resolver el cobro.",
+        badge: "Cobro para revisar",
+        detail: "El pago se acreditó después del cierre del curso; el acceso no se activó automáticamente.",
+        approved: false,
+        terminal,
+      };
+    }
     return {
       tone: "review",
-      title: "Pago recibido fuera de plazo",
-      summary: latePayment
-        ? "Mercado Pago registró un cobro después de vencer la orden. No habilitamos el aula; contactá al Estudio con tu número de orden."
-        : "El curso ya cerró y no se habilitó el aula. Conservá tu número de orden y contactá al Estudio para resolver el cobro.",
-      badge: "Cobro para revisar",
-      detail: latePayment
-        ? "El pago se acreditó después del plazo de cinco minutos; el acceso no se activó automáticamente."
-        : "El pago se acreditó después del cierre del curso; el acceso no se activó automáticamente.",
+      title: "Pago recibido, acceso no habilitado",
+      summary: "El pago se acreditó, pero no pudimos habilitar el acceso automáticamente. Contactá al Estudio con tu número de orden.",
+      badge: "Acceso a revisar",
+      detail: "El Estudio revisará la orden y el acceso.",
       approved: false,
       terminal,
     };
@@ -87,9 +129,9 @@ export function confirmationView(
     return {
       tone: "review",
       title: "Pago en disputa",
-      summary: "Mercado Pago informó una disputa sobre este pago. El acceso queda en revisión hasta que se resuelva.",
+      summary: "Mercado Pago informó una disputa sobre este pago. El acceso puede quedar suspendido hasta que se resuelva.",
       badge: "En revisión",
-      detail: `El acceso queda en revisión hasta que se resuelva.${courseClosed ? " El curso ya cerró." : ""}`,
+      detail: `El acceso puede quedar suspendido mientras se resuelve la disputa.${courseClosed ? " El curso ya cerró." : ""}`,
       approved: false,
       terminal,
     };
@@ -120,9 +162,9 @@ export function confirmationView(
     return {
       tone: "approved",
       title: "¡Pago confirmado!",
-      summary: "Tu acceso al aula ya está habilitado.",
+      summary: "Tu pago fue confirmado. Ya podés ingresar al aula.",
       badge: "Acceso habilitado",
-      detail: "Mercado Pago confirmó el pago.",
+      detail: "Ingresá con tu correo y tu contraseña. Si es tu primera vez, usá tu DNI como contraseña inicial.",
       approved: true,
       terminal,
     };
@@ -131,9 +173,9 @@ export function confirmationView(
     return {
       tone: "rejected",
       title: "Pago rechazado",
-      summary: "Mercado Pago rechazó el pago. No se habilitó el acceso.",
+      summary: "El pago no se completó o fue rechazado. No se habilitó el acceso.",
       badge: "Pago rechazado",
-      detail: "Si el enlace de pago sigue vigente, podés reintentar el pago desde esta página.",
+      detail: "Si cancelaste o el pago fue rechazado, podés reintentar desde esta página mientras el enlace siga vigente.",
       approved: false,
       terminal,
     };
@@ -144,7 +186,7 @@ export function confirmationView(
       title: "Inscripción pendiente de pago",
       summary: "Registramos tu solicitud, pero el pago todavía no está confirmado.",
       badge: "Pago pendiente",
-      detail: "Completá el pago en Mercado Pago para activar el acceso.",
+      detail: "Completá el pago en Mercado Pago para activar el acceso. Si abandonaste o cancelaste el checkout, la orden sigue pendiente y podés reanudarla desde esta página; si ya pagaste, esperá la confirmación.",
       approved: false,
       terminal,
     };

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { CheckoutResultDTO } from "@rozenblum/shared";
 import type { Course } from "../../types";
-import { ApiClientError, apiFetch, errorMessage, getSession } from "../../lib/api";
+import { ApiClientError, apiFetch, errorMessage } from "../../lib/api";
 import { useModalA11y } from "../../lib/use-modal-a11y";
 import { safeHttpUrl } from "../../lib/safe-url";
 import {
@@ -54,21 +54,12 @@ export default function CheckoutModal({ course, onClose }: CheckoutModalProps) {
   const [error, setError] = useState("");
   const [uncertain, setUncertain] = useState(false);
   const [recovery, setRecovery] = useState<{ reference: string; email: string } | null>(null);
-  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
-  }, []);
-
-  useEffect(() => {
-    try {
-      setSessionEmail(getSession()?.user.email ?? null);
-    } catch {
-      setSessionEmail(null);
-    }
   }, []);
 
   useEffect(() => {
@@ -117,17 +108,10 @@ export default function CheckoutModal({ course, onClose }: CheckoutModalProps) {
     const timeout = window.setTimeout(() => controller.abort(), CHECKOUT_TIMEOUT_MS);
     setLoading(true);
     try {
-      let session: ReturnType<typeof getSession> = null;
-      try {
-        session = getSession();
-      } catch {
-        session = null;
-      }
       const result = await apiFetch<CheckoutResultDTO>("/api/checkout", {
         method: "POST",
         body: checkoutPayload(course.slug ?? String(course.id), values),
         signal: controller.signal,
-        ...(session ? { auth: true, preserveSessionOn401: true } : {}),
       });
       if (!mountedRef.current) return;
 
@@ -170,9 +154,6 @@ export default function CheckoutModal({ course, onClose }: CheckoutModalProps) {
     }
   };
 
-  const sessionMatchesEmail = Boolean(
-    sessionEmail && form.email.trim() && sessionEmail.toLowerCase() === form.email.trim().toLowerCase(),
-  );
   const recoveryHref = recovery
     ? `/confirmacion?orden=${encodeURIComponent(recovery.reference)}&email=${encodeURIComponent(recovery.email)}`
     : null;
@@ -255,11 +236,9 @@ export default function CheckoutModal({ course, onClose }: CheckoutModalProps) {
           })}
 
           <div className="rounded border-l-2 p-4" style={{ backgroundColor: "#FAF8F5", borderColor: "#B58A43" }}>
-            <p className="mb-2 text-xs font-bold uppercase tracking-widest" style={{ color: "#173B6C" }}>{sessionMatchesEmail ? "Sesión verificada" : "Solicitud de inscripción"}</p>
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest" style={{ color: "#173B6C" }}>Solicitud de inscripción</p>
             <p className="text-xs leading-relaxed" style={{ color: "rgba(23,59,108,0.7)" }}>
-              {sessionMatchesEmail
-                ? "Ya iniciaste sesión con este correo. Si tu sesión sigue activa, usaremos tu cuenta existente y no se volverá a validar tu contraseña. El acceso se habilita cuando Mercado Pago confirme el pago."
-                : "Tu DNI será la contraseña inicial de tu cuenta. Al continuar, irás a Mercado Pago. La cuenta y el acceso al aula se habilitarán cuando se confirme el pago."}
+              Usamos tu DNI para validar tu cuenta si ya existe, o como contraseña inicial si es tu primera compra. Al continuar, irás a Mercado Pago; la cuenta y el acceso se habilitan cuando se confirme el pago.
             </p>
           </div>
 
@@ -315,6 +294,17 @@ export default function CheckoutModal({ course, onClose }: CheckoutModalProps) {
 
           <p role="status" className="text-center text-[11px] leading-relaxed" style={{ color: "rgba(23,59,108,0.55)" }}>
             {loading ? "Estamos registrando tu solicitud y preparando el pago seguro en Mercado Pago." : "El acceso se habilita cuando se confirma el pago."}
+          </p>
+
+          <p className="text-center text-[11px] leading-relaxed" style={{ color: "rgba(23,59,108,0.55)" }}>
+            Consultá los{" "}
+            <a href="/terminos-y-condiciones" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2" style={{ color: "#173B6C" }}>
+              Términos y Condiciones
+            </a>{" "}
+            y la{" "}
+            <a href="/politica-de-privacidad" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2" style={{ color: "#173B6C" }}>
+              Política de Privacidad
+            </a>.
           </p>
         </form>
       </div>

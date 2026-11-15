@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { OrderDTO } from "@rozenblum/shared";
 import { ApiClientError, apiFetch, errorMessage } from "../lib/api";
 import BrandLogo from "../components/ui/BrandLogo";
@@ -214,18 +215,17 @@ export default function ConfirmacionPage({
 
   const view = useMemo(() => confirmationView(order, { error: order ? undefined : error, now }), [order, error, now]);
   const registrationClosed = isRegistrationClosed(order, now);
-  const courseClosed = order?.fulfillmentIssue === "course_closed";
-  const latePayment = order?.fulfillmentIssue === "payment_expired";
+  const accessBlocked = Boolean(order?.fulfillmentIssue);
   const isMercadoPago = order?.paymentProvider === "mercadopago";
   const paymentUrl = safeHttpUrl(order?.paymentUrl);
-  const needsContact = (registrationClosed && order?.estado !== "Pagado") || courseClosed || latePayment ||
+  const needsContact = (registrationClosed && order?.estado !== "Pagado") || accessBlocked ||
     order?.estado === "En disputa" || order?.estado === "Rechazado" || Boolean(error);
   const canResumePayment = Boolean(
-    paymentUrl && isMercadoPago && !courseClosed && !registrationClosed &&
+    paymentUrl && isMercadoPago && !accessBlocked && !registrationClosed &&
     (order?.estado === "Pendiente" || order?.estado === "Rechazado"),
   );
   const missingPaymentLink = Boolean(
-    order && isMercadoPago && !courseClosed && !registrationClosed &&
+    order && isMercadoPago && !accessBlocked && !registrationClosed &&
     (order.estado === "Pendiente" || order.estado === "Rechazado") && !paymentUrl,
   );
   const terminal = isTerminalOrder(order);
@@ -323,7 +323,7 @@ export default function ConfirmacionPage({
               </p>
             )}
 
-            {(view.tone === "pending" || view.tone === "rejected") && !courseClosed && !registrationClosed && (
+            {(view.tone === "pending" || view.tone === "rejected") && !accessBlocked && !registrationClosed && (
               <>
                 <div className="my-4 h-px" style={{ backgroundColor: "rgba(23,59,108,0.08)" }} />
                 <div className="space-y-2">
@@ -341,6 +341,11 @@ export default function ConfirmacionPage({
             )}
           </div>
 
+          {view.approved && (
+            <Link href="/alumno" className="mb-3 flex min-h-12 w-full items-center justify-center rounded px-4 py-3 text-center text-sm font-bold tracking-widest" style={{ backgroundColor: "#27704A", color: "#FFFFFF" }}>
+              INGRESAR AL AULA
+            </Link>
+          )}
           {canResumePayment && paymentUrl && (
             <a href={paymentUrl} className="mb-3 flex min-h-12 w-full items-center justify-center rounded px-4 py-3 text-center text-sm font-bold tracking-widest" style={{ backgroundColor: "#009EE3", color: "#FFFFFF" }}>
               CONTINUAR PAGO EN MERCADO PAGO
@@ -405,6 +410,15 @@ export default function ConfirmacionPage({
       <footer className="px-4 py-5 text-center sm:px-6" style={{ backgroundColor: "#173B6C" }}>
         <p className="text-xs" style={{ color: "rgba(250,248,245,0.4)" }}>
           © {new Date().getFullYear()} Estudio Jurídico Rozenblum
+        </p>
+        <p className="mt-2 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs">
+          <Link href="/terminos-y-condiciones" className="underline underline-offset-2 transition-opacity hover:opacity-70" style={{ color: "rgba(250,248,245,0.55)" }}>
+            Términos y Condiciones
+          </Link>
+          <span aria-hidden="true" style={{ color: "rgba(250,248,245,0.35)" }}>·</span>
+          <Link href="/politica-de-privacidad" className="underline underline-offset-2 transition-opacity hover:opacity-70" style={{ color: "rgba(250,248,245,0.55)" }}>
+            Política de Privacidad
+          </Link>
         </p>
       </footer>
     </div>
