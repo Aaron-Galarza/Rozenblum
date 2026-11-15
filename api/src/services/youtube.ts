@@ -1,4 +1,5 @@
 import { ApiError, badRequest } from "../lib/http.js";
+import { readBoundedJson } from "../lib/upstream-json.js";
 
 export type YouTubePreview = { videoId: string; title: string; channel: string };
 
@@ -8,6 +9,7 @@ export function parseYouTubeId(value: string): string | null {
   try {
     const url = new URL(value);
     if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    if (url.username || url.password || url.port) return null;
     const host = url.hostname.toLowerCase();
     let id: string | null = null;
     if (host === "youtu.be" || host === "www.youtu.be") id = url.pathname.slice(1);
@@ -32,12 +34,10 @@ export async function getYouTubePreview(url: string): Promise<YouTubePreview> {
   const endpoint = `https://www.youtube.com/oembed?url=${encodeURIComponent(canonical)}&format=json`;
   try {
     const response = await fetch(endpoint, { signal: AbortSignal.timeout(4000) });
-    if (!response.ok || Number(response.headers.get("content-length") || 0) > 16_384) {
+    if (!response.ok) {
       throw new Error("YouTube oEmbed unavailable");
     }
-    const raw = await response.text();
-    if (raw.length > 16_384) throw new Error("YouTube oEmbed response too large");
-    const data = JSON.parse(raw) as { title?: unknown; author_name?: unknown };
+    const data = await readBoundedJson<{ title?: unknown; author_name?: unknown }>(response, 16_384);
     if (typeof data.title !== "string" || !data.title.trim() || typeof data.author_name !== "string") {
       throw new Error("YouTube oEmbed response invalid");
     }

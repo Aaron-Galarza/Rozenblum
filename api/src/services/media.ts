@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { ApiError, badRequest, forbidden } from "../lib/http.js";
 import { env } from "../config/env.js";
+import { readBoundedJson } from "../lib/upstream-json.js";
 
 export const MEDIA_CATEGORIES = ["courses", "professors", "lessons"] as const;
 export type MediaCategory = (typeof MEDIA_CATEGORIES)[number];
@@ -41,6 +42,7 @@ export function isManagedImageUrl(value: string, category: MediaCategory, cloud 
     const url = new URL(value);
     const parts = url.pathname.split("/");
     return url.protocol === "https:" && url.hostname === "res.cloudinary.com" &&
+      !url.username && !url.password && !url.port &&
       parts[1] === cloud && parts[2] === "image" && parts[3] === "upload" &&
       /^v\d+$/.test(parts[4] ?? "") && parts[5] === MEDIA_ROOT &&
       parts[6] === category && /^[a-zA-Z0-9_-]+\.(?:png|jpe?g|webp|avif)$/i.test(parts[7] ?? "") &&
@@ -50,7 +52,7 @@ export function isManagedImageUrl(value: string, category: MediaCategory, cloud 
 
 export function assertManagedImageUrl(value: string, category: MediaCategory) {
   if (!isManagedImageUrl(value, category)) {
-    throw badRequest(`Seleccioná una imagen de la carpeta ${mediaFolder(category)} en Cloudinary.`);
+    throw badRequest("Seleccioná una imagen válida de la galería.");
   }
 }
 
@@ -79,10 +81,12 @@ function basicAuth() {
 }
 
 function publicImage(asset: CloudinaryAsset, folder: string): GalleryImage | null {
+  if (!asset || typeof asset.secure_url !== "string") return null;
   const { cloud } = config();
   let url: URL;
   try { url = new URL(asset.secure_url); } catch { return null; }
   if (url.protocol !== "https:" || url.hostname !== "res.cloudinary.com" ||
+      url.username || url.password || url.port || url.search || url.hash ||
       !url.pathname.startsWith(`/${cloud}/image/upload/`) || asset.asset_folder !== folder ||
       asset.resource_type !== "image") return null;
   const thumbnailUrl = asset.secure_url.replace("/image/upload/", "/image/upload/c_fill,g_auto,w_320,h_220,f_auto,q_auto/");
@@ -112,7 +116,13 @@ export async function listImages(category: MediaCategory, cursor?: string) {
   }
   if (response.status === 404) return { images: [], nextCursor: null };
   if (!response.ok) throw new ApiError(502, "MEDIA_UPSTREAM_ERROR", "No se pudo consultar la galería de imágenes.");
-  const payload = await response.json() as { resources?: CloudinaryAsset[]; next_cursor?: string };
+  let payload: { resources?: CloudinaryAsset[]; next_cursor?: string };
+  try {
+    payload = await readBoundedJson<typeof payload>(response, 128 * 1024);
+    if (!Array.isArray(payload.resources)) throw new Error("Invalid image list");
+  } catch {
+    throw new ApiError(502, "MEDIA_UPSTREAM_ERROR", "No se pudo consultar la galería de imágenes.");
+  }
   return {
     images: (payload.resources ?? []).map((asset) => publicImage(asset, folder)).filter((asset): asset is GalleryImage => asset !== null),
     nextCursor: payload.next_cursor ?? null,
@@ -150,9 +160,14 @@ export async function uploadImage(category: MediaCategory, bytes: Buffer) {
     throw new ApiError(502, "MEDIA_UPSTREAM_ERROR", "No se pudo subir la imagen. Intentá nuevamente.");
   }
   if (!response.ok) throw new ApiError(502, "MEDIA_UPSTREAM_ERROR", "No se pudo subir la imagen. Intentá nuevamente.");
-  const asset = await response.json() as CloudinaryAsset;
+  let asset: CloudinaryAsset;
+  try {
+    asset = await readBoundedJson<CloudinaryAsset>(response, 32 * 1024);
+  } catch {
+    throw new ApiError(502, "MEDIA_UPSTREAM_ERROR", "No se pudo subir la imagen. Intentá nuevamente.");
+  }
   const image = publicImage(asset, folder);
-  if (!image) throw new ApiError(502, "MEDIA_UPSTREAM_ERROR", "Cloudinary devolvió una imagen inesperada.");
+  if (!image) throw new ApiError(502, "MEDIA_UPSTREAM_ERROR", "No se pudo completar la carga de la imagen.");
   return image;
 }
 
