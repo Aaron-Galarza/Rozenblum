@@ -5,6 +5,8 @@ import { after, before, test } from "node:test";
 import WebSocket from "ws";
 import { BRAND_HERO_URL, loginSchema } from "@rozenblum/shared";
 import { hashPassword, verifyPassword } from "../lib/password.js";
+import { dniBinding } from "../lib/dni-binding.js";
+import { readBoundedJson } from "../lib/upstream-json.js";
 import { chatDayStartIso } from "../lib/chat-limit.js";
 import { courseEnrollmentClosesAt, courseExpiryInstant, todayInBuenosAires } from "../lib/course-expiry.js";
 import { createMockRepositories } from "../repositories/mock.js";
@@ -58,6 +60,18 @@ test("asynchronous scrypt verifies hashes created by the previous synchronous im
   const fresh = await hashPassword(password);
   assert.match(fresh, /^scrypt\$[0-9a-f]{32}\$[0-9a-f]{128}$/);
   assert.equal(await verifyPassword(password, fresh), true);
+});
+
+test("external JSON responses have a byte ceiling without a content length", async () => {
+  const oversized = new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"value":"'));
+      controller.enqueue(new TextEncoder().encode("x".repeat(100)));
+      controller.close();
+    },
+  }));
+  await assert.rejects(readBoundedJson(oversized, 32), /too large/);
+  assert.deepEqual(await readBoundedJson(new Response('{"ok":true}'), 32), { ok: true });
 });
 
 let server: TestServer;
@@ -151,6 +165,31 @@ test("health and request IDs work without a live database in isolated tests", as
   const response = await fetch(`${server.baseUrl}/health/ready`);
   assert.equal(response.status, 200);
   assert.ok(response.headers.get("x-request-id"));
+  assert.deepEqual(await response.json(), { data: { ready: true } });
+  const live = await api<{ data: Record<string, unknown> }>(server.baseUrl, "/health", {
+    headers: { "x-request-id": "unsafe request id" },
+  });
+  assert.equal(live.status, 200);
+  assert.deepEqual(live.body.data, { status: "ok" });
+  assert.notEqual(live.headers.get("x-request-id"), "unsafe request id");
+});
+
+test("invalid identifiers and validation errors do not expose internals", async () => {
+  const token = await login("profesor", teacherEmail);
+  for (const invalid of ["0", "0x10", "1.5", "9007199254740992"]) {
+    const result = await api<{ error: { code: string; details?: unknown } }>(
+      server.baseUrl, `/api/teacher/courses/${invalid}`, { token },
+    );
+    assert.equal(result.status, 400);
+    assert.equal(result.body.error.details, undefined);
+  }
+  const invalidUrl = await api<{ error: { details?: unknown } }>(
+    server.baseUrl, "/api/teacher/youtube-preview?url=bad", { token },
+  );
+  assert.equal(invalidUrl.status, 400);
+  assert.equal(invalidUrl.body.error.details, undefined);
+  const invalidToken = await api(server.baseUrl, "/api/auth/session", { token: `${token}.extra` });
+  assert.equal(invalidToken.status, 401);
 });
 
 test("login uses the stored role without requiring or trusting a client role", async () => {
@@ -191,6 +230,7 @@ test("login uses the stored role without requiring or trusting a client role", a
   const token = await login("admin", adminEmail);
   const session = await api(server.baseUrl, "/api/auth/session", { token });
   assert.equal(session.status, 200);
+  assert.equal(session.headers.get("cache-control"), "no-store");
   for (const email of ["missing@example.test", studentEmail]) {
     await assert.rejects(
       loginService({ email, password }),
@@ -626,6 +666,23 @@ test("admin can create professors but never students", async () => {
     method: "PATCH", token, body: JSON.stringify({ email: "renamed@example.test" }),
   });
   assert.equal(emailChange.status, 400);
+});
+
+test("failed administrative audit does not leave an account without its record", async () => {
+  const token = await login("admin", adminEmail);
+  const original = repositories.adminEvents.create;
+  repositories.adminEvents.create = async () => { throw new Error("Injected audit failure"); };
+  const email = "audit-rollback-professor@example.test";
+  try {
+    const response = await api(server.baseUrl, "/api/admin/users", {
+      method: "POST", token,
+      body: JSON.stringify({ role: "profesor", name: "Audit Rollback", email, password }),
+    });
+    assert.equal(response.status, 500);
+    assert.equal(await repositories.users.findByEmail(email), null);
+  } finally {
+    repositories.adminEvents.create = original;
+  }
 });
 
 test("contact form validates and stores messages", async () => {
@@ -1403,6 +1460,7 @@ test("payment cannot extend an enrollment beyond the course expiry", async () =>
   const order = await repositories.orders.create({
     id: "ord_access_cap", externalReference: "REF-ACCESS-CAP",
     alumno: "Test alumno", email: studentEmail,
+    dniBinding: dniBinding(studentEmail, studentDni),
     curso: course.title, courseSlug: course.slug, courseId: course.legacyId,
     monto: course.price, montoCents: course.priceCents, fecha: "12/11/2026",
     metodo: "Mercado Pago", estado: "Pendiente", createdAt: new Date().toISOString(),
@@ -1503,11 +1561,11 @@ test("roles and enrollment ownership are enforced on every private flow", async 
   const otherEnrollment = await repositories.enrollments.create({
     studentEmail: other.email, studentName: other.name, courseId, status: "Activo",
   });
-  assert.equal((await api(server.baseUrl, `/api/student/enrollments/${otherEnrollment.id}`, { token: studentToken })).status, 403);
-  assert.equal((await api(server.baseUrl, `/api/student/enrollments/${otherEnrollment.id}/messages`, { token: studentToken })).status, 403);
+  assert.equal((await api(server.baseUrl, `/api/student/enrollments/${otherEnrollment.id}`, { token: studentToken })).status, 404);
+  assert.equal((await api(server.baseUrl, `/api/student/enrollments/${otherEnrollment.id}/messages`, { token: studentToken })).status, 404);
   assert.equal((await api(server.baseUrl, `/api/student/enrollments/${otherEnrollment.id}/progress`, {
     method: "PATCH", token: studentToken, body: JSON.stringify({ lessonId: "1.1", completed: true }),
-  })).status, 403);
+  })).status, 404);
 });
 
 test("text fields, prices, IDs and lesson blocks reject invalid boundaries", async () => {
@@ -1522,6 +1580,7 @@ test("text fields, prices, IDs and lesson blocks reject invalid boundaries", asy
     { path: `/api/teacher/courses/${courseId}/modules/1/lessons`, method: "POST", token: teacherToken, body: { title: " ", type: "doc" } },
     { path: `/api/teacher/courses/${courseId}/modules/1/lessons`, method: "POST", token: teacherToken, body: { title: "Bad link", type: "doc", content: [{ id: "bad", type: "link", content: "javascript:alert(1)" }] } },
     { path: `/api/teacher/courses/${courseId}/modules/1/lessons/reorder`, method: "PUT", token: teacherToken, body: { ids: [] } },
+    { path: `/api/teacher/courses/${courseId}/modules/reorder`, method: "PUT", token: teacherToken, body: { ids: ["0x1", "2"] } },
     { path: "/api/admin/courses", method: "POST", token: adminToken, body: { title: "Valid title", description: "Valid description", priceCents: -1, professorEmail: teacherEmail, duration: "Online", level: "Inicial" } },
     { path: "/api/admin/courses", method: "POST", token: adminToken, body: { title: "Valid title", description: "Valid description", priceCents: 1000, professorEmail: teacherEmail, duration: "Online", level: "Inicial", img: "data:image/png;base64,AAAA" } },
     { path: "/api/admin/users", method: "POST", token: adminToken, body: { role: "profesor", name: "New Professor", email: "new@example.test", password: "short" } },
@@ -2019,6 +2078,19 @@ test("reassigning a course professor moves its conversations", async () => {
     body: JSON.stringify({ text: "Still here?" }),
   });
   assert.equal(former.status, 403);
+
+  // Even if a stale chat record points to the former teacher, the course
+  // assignment remains the authority for reading and sending messages.
+  await repositories.conversations.reassignTeacher(course.legacyId, teacherEmail, "Test profesor");
+  const formerList = await api<{ data: { id: string }[] }>(server.baseUrl, "/api/teacher/conversations", {
+    token: await login("profesor", teacherEmail),
+  });
+  assert.equal(formerList.body.data.some((item) => item.id === conversation.id), false);
+  const staleRead = await api(server.baseUrl, `/api/teacher/conversations/${conversation.id}`, {
+    token: await login("profesor", teacherEmail),
+  });
+  assert.equal(staleRead.status, 403);
+  await repositories.conversations.reassignTeacher(course.legacyId, newProfessor.email, newProfessor.name);
 });
 
 test("closing a student account preserves academic and chat history", async () => {
@@ -2110,7 +2182,7 @@ test("an interrupted checkout resumes its order without duplicates or exposing a
   assert.equal((await repositories.orders.list()).filter((order) => order.email === input.email).length, 1);
   await assert.rejects(checkoutService({ ...input, dni: "32999999" }),
     (error: unknown) => (error as { code?: string; message?: string }).code === "CHECKOUT_ACCOUNT_MISMATCH" &&
-      (error as { message?: string }).message?.includes("Este correo ya está asociado a otro DNI") === true);
+      (error as { message?: string }).message?.includes("Este correo no está disponible") === true);
   const adminToken = await login("admin", adminEmail);
   const teacherToken = await login("profesor", teacherEmail);
   const adminOrders = () => api<{ data: { id: string }[] }>(server.baseUrl,
@@ -2242,7 +2314,7 @@ test("a paid student buys a second course with the same DNI after an administrat
   });
   assert.equal(mismatch.status, 403);
   assert.equal((mismatch.body as { error: { code: string; message: string } }).error.code, "CHECKOUT_ACCOUNT_MISMATCH");
-  assert.match((mismatch.body as { error: { message: string } }).error.message, /Este correo ya está asociado a otro DNI/);
+  assert.match((mismatch.body as { error: { message: string } }).error.message, /Este correo no está disponible/);
 
   const second = await checkoutService(input(courses[1]!.slug));
   assert.equal((await repositories.users.findByEmail(email))?.id, account.id);
@@ -2279,6 +2351,68 @@ test("the same DNI under another email creates a separate student account", asyn
   assert.notEqual(first.id, second.id);
   assert.equal((await repositories.enrollments.findByStudentAndCourse(emails[0]!, course.legacyId))?.status, "Activo");
   assert.equal((await repositories.enrollments.findByStudentAndCourse(emails[1]!, course.legacyId))?.status, "Activo");
+});
+
+test("a second pending checkout cannot bind another DNI to the same email", async () => {
+  const email = "pending-identity@example.test";
+  const firstDni = "31123456";
+  const secondDni = "31999999";
+  const courses = [];
+  for (const title of ["Identity first course", "Identity second course"]) {
+    courses.push(await repositories.courses.create({
+      title, description: "Identity binding test", priceCents: 10_000,
+      duration: "Online", level: "Inicial", img: "https://example.test/identity.jpg",
+      professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+    }));
+  }
+  const first = await checkoutService({ courseSlug: courses[0]!.slug, nombre: "Alumno Prueba", email, dni: firstDni });
+  await assert.rejects(
+    checkoutService({ courseSlug: courses[1]!.slug, nombre: "Alumno Prueba", email, dni: secondDni }),
+    (error: unknown) => (error as { code?: string }).code === "CHECKOUT_ACCOUNT_MISMATCH",
+  );
+
+  // Model an older concurrent checkout that was already persisted before the
+  // first account existed; fulfillment must still reject its different DNI.
+  const original = await repositories.orders.findByReference(first.order.externalReference!);
+  assert.ok(original);
+  const competing = await repositories.orders.create({
+    ...original, id: "ord_identity_competing", externalReference: "RB-IDENTITY-COMPETING",
+    courseId: courses[1]!.legacyId, courseSlug: courses[1]!.slug, curso: courses[1]!.title,
+    dniPasswordHash: await hashPassword(secondDni), dniBinding: dniBinding(email, secondDni),
+  });
+  await applyOrderTransition({ reference: first.order.externalReference!, status: "Pagado",
+    source: "mercadopago", providerEventId: "identity-first", providerPaymentId: "9123456781",
+    paymentStatus: "approved", reason: "Pago confirmado" });
+  await applyOrderTransition({ reference: competing.externalReference, status: "Pagado",
+    source: "mercadopago", providerEventId: "identity-second", providerPaymentId: "9123456782",
+    paymentStatus: "approved", reason: "Pago confirmado" });
+  assert.equal((await repositories.orders.findByReference(competing.externalReference))?.fulfillmentIssue,
+    "identity_mismatch");
+  assert.equal(await repositories.enrollments.findByStudentAndCourse(email, courses[1]!.legacyId), null);
+  const account = await repositories.users.findByEmail(email);
+  assert.ok(account);
+  assert.equal(await verifyPassword(firstDni, account.studentDniHash!), true);
+  assert.equal(JSON.stringify(first).includes(firstDni), false);
+});
+
+test("a payment cannot activate a suspended account created after checkout", async () => {
+  const email = "suspended-after-checkout@example.test";
+  const course = await repositories.courses.create({
+    title: "Suspended account checkout", description: "Payment timing test", priceCents: 10_000,
+    duration: "Online", level: "Inicial", img: "https://example.test/suspended.jpg",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+  });
+  const purchase = await checkoutService({ courseSlug: course.slug, nombre: "Alumno Prueba",
+    email, dni: "33123456" });
+  await repositories.users.create({ name: "Alumno Prueba", email, role: "alumno",
+    status: "Suspendido", initials: "AP", passwordHash: await hashPassword("33123456") });
+  await applyOrderTransition({ reference: purchase.order.externalReference!, status: "Pagado",
+    source: "mercadopago", providerEventId: "suspended-after-checkout",
+    providerPaymentId: "9123456783", paymentStatus: "approved", reason: "Pago confirmado" });
+  assert.equal((await repositories.orders.findByReference(purchase.order.externalReference!))?.fulfillmentIssue,
+    "account_unavailable");
+  assert.equal((await repositories.enrollments.findByStudentAndCourse(email, course.legacyId))?.status,
+    "Pendiente");
 });
 
 test("simultaneous checkout requests return the same pending order and payment link", async () => {
