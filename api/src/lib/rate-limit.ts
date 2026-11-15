@@ -4,7 +4,7 @@ import { ApiError } from "./http.js";
 type Bucket = { count: number; resetAt: number };
 
 type RateLimitOptions = {
-  /** Sliding window length in milliseconds. */
+  /** Fixed window length in milliseconds. */
   windowMs: number;
   /** Maximum requests allowed per key inside the window. */
   max: number;
@@ -20,6 +20,7 @@ type RateLimitOptions = {
  * shared one (e.g. Redis) behind this same middleware contract.
  */
 export function createRateLimiter({ windowMs, max, key }: RateLimitOptions): RequestHandler {
+  const MAX_BUCKETS = 50_000;
   const buckets = new Map<string, Bucket>();
   let lastSweep = Date.now();
 
@@ -39,6 +40,10 @@ export function createRateLimiter({ windowMs, max, key }: RateLimitOptions): Req
     const bucket = buckets.get(bucketKey);
 
     if (!bucket || bucket.resetAt <= now) {
+      if (!bucket && buckets.size >= MAX_BUCKETS) {
+        next(new ApiError(429, "RATE_LIMITED", "Demasiadas solicitudes. Intentá nuevamente más tarde."));
+        return;
+      }
       buckets.set(bucketKey, { count: 1, resetAt: now + windowMs });
       res.setHeader("RateLimit-Limit", String(max));
       res.setHeader("RateLimit-Remaining", String(max - 1));

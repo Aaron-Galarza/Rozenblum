@@ -25,6 +25,9 @@ async function resolveAuth(req: Request): Promise<AuthState> {
 
   const user = await getRepositories().users.findById(payload.sub);
   if (!user) return { status: "invalid" };
+  if (user.role !== payload.role || user.email.toLowerCase() !== payload.email.toLowerCase()) {
+    return { status: "revoked" };
+  }
   if ((payload.ver ?? 0) !== (user.sessionVersion ?? 0)) return { status: "revoked" };
   if (user.status !== "Activo") return { status: "suspended" };
   return { status: "authenticated", user };
@@ -50,17 +53,6 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     return;
   }
   next(unauthorized());
-}
-
-/**
- * Best-effort authentication for endpoints that serve both anonymous and
- * signed-in callers (e.g. checkout). A missing or invalid token is not an
- * error: the request continues as anonymous.
- */
-export async function optionalAuth(req: Request, _res: Response, next: NextFunction) {
-  const auth = await resolveAuth(req);
-  if (auth.status === "authenticated") req.authUser = auth.user;
-  next();
 }
 
 export function requireRole(...roles: Role[]) {

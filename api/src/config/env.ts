@@ -82,6 +82,9 @@ const isTest = raw.NODE_ENV === "test";
 const trustProxy = (() => {
   const value = raw.TRUST_PROXY?.toLowerCase();
   if (!value) return isProduction ? 1 : false;
+  if (isProduction && (!/^[1-3]$/.test(value))) {
+    throw new Error("TRUST_PROXY debe indicar entre uno y tres saltos de proxy en producción.");
+  }
   if (value === "true") return true;
   if (value === "false") return false;
   if (/^\d+$/.test(value)) return Number(value);

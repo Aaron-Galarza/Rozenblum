@@ -10,7 +10,8 @@ const REQUEST_ID_HEADER = "x-request-id";
  */
 export const requestContext: RequestHandler = (req, res, next) => {
   const incoming = req.header(REQUEST_ID_HEADER);
-  const id = incoming && incoming.length <= 128 ? incoming : randomUUID();
+  const id = incoming && incoming.length <= 128 && /^[A-Za-z0-9._:-]+$/.test(incoming)
+    ? incoming : randomUUID();
   res.locals.requestId = id;
   res.setHeader(REQUEST_ID_HEADER, id);
 

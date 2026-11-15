@@ -48,7 +48,7 @@ async function main() {
           });
         }
         logger.info("shutdown_complete", { signal });
-        process.exit(error ? 1 : 0);
+        process.exit(error || (signal !== "SIGINT" && signal !== "SIGTERM") ? 1 : 0);
       })();
     });
 
@@ -63,6 +63,7 @@ async function main() {
     logger.error("unhandled_rejection", {
       message: reason instanceof Error ? reason.message : String(reason),
     });
+    void shutdown("unhandledRejection");
   });
 
   process.on("uncaughtException", (error) => {

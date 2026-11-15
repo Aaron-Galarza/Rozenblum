@@ -39,6 +39,7 @@ export function createToken(payload: Omit<TokenPayload, "exp">, ttlSeconds = 60 
 }
 
 export function verifyToken(token: string): TokenPayload | null {
+  if (token.length > 2048 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) return null;
   const [data, signature] = token.split(".");
   if (!data || !signature) return null;
 

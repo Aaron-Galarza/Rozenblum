@@ -61,7 +61,8 @@ main()
   .catch((error) => {
     console.error(
       "No se pudo crear el administrador:",
-      error instanceof Error ? error.message : "Error desconocido.",
+      error instanceof Error && error.message.startsWith("Ya existe un administrador")
+        ? error.message : "Revisá la configuración y el estado de la base de datos.",
     );
     process.exitCode = 1;
   })
