@@ -20,6 +20,8 @@ export type StoredUser = {
   passwordHash: string;
   /** Salted DNI hash for later checkouts; changing the login password does not erase it. */
   studentDniHash?: string;
+  /** Keyed verifier for matching paid orders without storing the DNI. */
+  studentDniBinding?: string;
   /** Bumped on password/status changes to revoke previously issued tokens. */
   sessionVersion: number;
   createdAt: string;
@@ -140,6 +142,8 @@ export type StoredOrder = {
   email: string;
   /** Salted scrypt hash of the DNI, carried until payment confirmation. Never expose in DTOs. */
   dniPasswordHash?: string;
+  /** Compared at fulfillment when another order creates the account first. */
+  dniBinding?: string;
   curso: string;
   courseSlug: string;
   courseId: number;
@@ -155,7 +159,7 @@ export type StoredOrder = {
   paymentExpiresAt?: string;
   paymentId?: string;
   /** Provider confirmed after a deadline; payment needs human review. */
-  fulfillmentIssue?: "course_closed" | "payment_expired";
+  fulfillmentIssue?: "course_closed" | "payment_expired" | "identity_mismatch" | "account_unavailable";
 };
 
 export type StoredPaymentEvent = {

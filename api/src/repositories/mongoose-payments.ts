@@ -116,14 +116,14 @@ export function createMongoosePaymentsRepositories() {
       const doc = await OrderModel.findOne({
         $or: [{ externalReference: reference }, { id: reference }],
       })
-        .select("+dniPasswordHash")
+        .select("+dniPasswordHash +dniBinding")
         .lean()
         .exec();
       return doc ? clean<StoredOrder>(doc) : null;
     },
     async findLatestByStudentAndCourse(email, courseId) {
       const doc = await OrderModel.findOne({ email: email.toLowerCase(), courseId })
-        .sort({ createdAt: -1 }).select("+dniPasswordHash").lean().exec();
+        .sort({ createdAt: -1 }).select("+dniPasswordHash +dniBinding").lean().exec();
       return doc ? clean<StoredOrder>(doc) : null;
     },
     async findStudentDniHash(email) {
@@ -131,6 +131,13 @@ export function createMongoosePaymentsRepositories() {
         email: email.toLowerCase(),
         estado: { $in: ["Pagado", "En disputa", "Reembolsado"] },
         dniPasswordHash: { $type: "string" },
+      }).sort({ createdAt: 1 }).select("+dniPasswordHash").lean().exec();
+      return doc?.dniPasswordHash ?? null;
+    },
+    async findPendingDniHash(email, now) {
+      const doc = await OrderModel.findOne({ email: email.toLowerCase(),
+        estado: { $in: ["Pendiente", "Rechazado"] },
+        paymentExpiresAt: { $gt: now }, dniPasswordHash: { $type: "string" },
       }).sort({ createdAt: 1 }).select("+dniPasswordHash").lean().exec();
       return doc?.dniPasswordHash ?? null;
     },
@@ -143,7 +150,7 @@ export function createMongoosePaymentsRepositories() {
         $set: { estado, ...(paymentId ? { paymentId } : {}),
           ...(fulfillmentIssue ? { fulfillmentIssue } : {}) },
       }, { returnDocument: "after" })
-        .select("+dniPasswordHash")
+        .select("+dniPasswordHash +dniBinding")
         .lean()
         .exec();
       return doc ? clean<StoredOrder>(doc) : null;

@@ -47,6 +47,7 @@ export function createMockAccountsRepositories(db: Memory) {
         img: input.img,
         passwordHash: input.passwordHash,
         studentDniHash: input.studentDniHash,
+        studentDniBinding: input.studentDniBinding,
         sessionVersion: input.sessionVersion ?? 0,
         createdAt: nowIso(),
       };

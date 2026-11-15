@@ -30,7 +30,7 @@ export type LoginInput = {
 };
 
 export const loginSchema = z.object({
-  email: z.string().trim().email(),
+  email: z.string().trim().email().max(254),
   /**
    * The password of every student account is their DNI. Staff accounts keep a
    * regular password, so this field only enforces a sane length boundary.
@@ -162,7 +162,7 @@ export type ProgressInput = {
 };
 
 export const progressSchema = z.object({
-  lessonId: z.string().min(1),
+  lessonId: z.string().min(1).max(100),
   completed: z.boolean(),
 });
 
@@ -203,7 +203,8 @@ export type RichLessonDocument = {
 const safeDocumentUrl = (value: string) => {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:";
+    return (url.protocol === "https:" || url.protocol === "http:") &&
+      !url.username && !url.password;
   } catch {
     return false;
   }
@@ -297,7 +298,7 @@ export const modulePayloadSchema = z.object({
 });
 
 export const reorderSchema = z.object({
-  ids: z.array(z.union([z.string(), z.number()])).min(1),
+  ids: z.array(z.union([z.string(), z.number()])).min(1).max(500),
 });
 
 export const courseExpiryDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -314,9 +315,9 @@ export const coursePayloadSchema = z.object({
   priceCents: z.number().int().nonnegative(),
   level: z.string().trim().min(1).max(60),
   duration: z.string().trim().min(1).max(60),
-  professorEmail: z.string().trim().email(),
+  professorEmail: z.string().trim().email().max(254),
   status: z.literal("draft").default("draft"),
-  img: z.string().trim().url().refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
+  img: z.string().trim().url().max(2048).refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
   /** Days of access after payment. 0 means the course never expires. */
   accessDays: z.number().int().min(0).max(3650).optional(),
   expiresOn: courseExpiryDateSchema,
@@ -342,13 +343,13 @@ export type OrderDTO = {
   paymentProvider?: "mercadopago" | "manual";
   paymentUrl?: string;
   paymentExpiresAt?: string;
-  fulfillmentIssue?: "course_closed" | "payment_expired";
+  fulfillmentIssue?: "course_closed" | "payment_expired" | "identity_mismatch" | "account_unavailable";
 };
 
 export const checkoutSchema = z.object({
-  courseSlug: z.string().min(1),
+  courseSlug: z.string().min(1).max(160),
   nombre: z.string().trim().min(3).max(120),
-  email: z.string().trim().email(),
+  email: z.string().trim().email().max(254),
   /**
    * Hashed with a unique salt on the order. No account is created here: the
    * student account is created after Mercado Pago confirms payment.
@@ -404,7 +405,7 @@ export type HomeContentDTO = {
 
 export const contactSchema = z.object({
   name: z.string().trim().min(3).max(120),
-  email: z.string().trim().email(),
+  email: z.string().trim().email().max(254),
   message: z.string().trim().min(10).max(2000),
 });
 
@@ -431,28 +432,28 @@ export type AdminUserInput = {
 export const adminUserSchema = z.object({
   role: z.literal("profesor"),
   name: z.string().trim().min(3).max(120),
-  email: z.string().trim().email(),
+  email: z.string().trim().email().max(254),
   password: z.string().min(12).max(128),
-  img: z.string().trim().url().refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
+  img: z.string().trim().url().max(2048).refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
 });
 
 export const adminUserPatchSchema = z.object({
   name: z.string().trim().min(3).max(120).optional(),
-  email: z.string().trim().email().optional(),
+  email: z.string().trim().email().max(254).optional(),
   status: z.enum(["Activo", "Suspendido"]).optional(),
   password: z.string().min(12).max(128).optional(),
-  img: z.string().trim().url().refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
+  img: z.string().trim().url().max(2048).refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
 });
 
 export const adminCoursePatchSchema = z.object({
   title: z.string().trim().min(3).max(180).optional(),
   description: z.string().trim().min(3).max(2000).optional(),
-  professorEmail: z.string().trim().email().optional(),
+  professorEmail: z.string().trim().email().max(254).optional(),
   priceCents: z.number().int().nonnegative().optional(),
   duration: z.string().trim().min(1).max(60).optional(),
   level: z.string().trim().min(1).max(60).optional(),
   status: z.enum(["published", "draft"]).optional(),
-  img: z.string().trim().url().refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
+  img: z.string().trim().url().max(2048).refine(safeDocumentUrl, "La imagen debe usar http o https.").optional(),
   /** Days of access after payment. 0 means the course never expires. */
   accessDays: z.number().int().min(0).max(3650).optional(),
   expiresOn: courseExpiryDateSchema.optional(),

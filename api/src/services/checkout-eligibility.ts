@@ -2,6 +2,7 @@ import type { CheckoutInput } from "@rozenblum/shared";
 import { ApiError, notFound } from "../lib/http.js";
 import { isCourseEnrollmentOpen } from "../lib/course-expiry.js";
 import { verifyPassword } from "../lib/password.js";
+import { dniBinding } from "../lib/dni-binding.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredCourse, StoredEnrollment, StoredUser } from "../types.js";
 
@@ -14,7 +15,7 @@ export type CheckoutParticipants = {
 
 export function checkoutDniMismatch(): ApiError {
   return new ApiError(403, "CHECKOUT_ACCOUNT_MISMATCH",
-    "Este correo ya está asociado a otro DNI. Revisá los datos o probá con otro correo.");
+    "Este correo no está disponible con los datos ingresados. Probá con otro correo.");
 }
 
 export async function resolveCheckoutParticipants(
@@ -46,6 +47,14 @@ export async function resolveCheckoutParticipants(
     const hash = account.studentDniHash ?? await repos.orders.findStudentDniHash(input.email)
       ?? account.passwordHash;
     if (!await verifyPassword(input.dni, hash)) throw checkoutDniMismatch();
+    const binding = dniBinding(input.email, input.dni);
+    if (account.studentDniBinding !== binding) {
+      account.studentDniBinding = binding;
+      await repos.users.update(account.id, { studentDniBinding: account.studentDniBinding });
+    }
+  } else {
+    const pendingHash = await repos.orders.findPendingDniHash(input.email, new Date().toISOString());
+    if (pendingHash && !await verifyPassword(input.dni, pendingHash)) throw checkoutDniMismatch();
   }
 
   const existingEnrollment = await repos.enrollments.findByStudentAndCourse(input.email, course.legacyId);

@@ -98,6 +98,12 @@ export function createMockPaymentsRepositories(db: Memory) {
         ["Pagado", "En disputa", "Reembolsado"].includes(order.estado) &&
         Boolean(order.dniPasswordHash))?.dniPasswordHash ?? null;
     },
+    async findPendingDniHash(email, now) {
+      return db.orders.filter((order) => order.email === email.toLowerCase() &&
+        ["Pendiente", "Rechazado"].includes(order.estado) &&
+        Boolean(order.paymentExpiresAt && order.paymentExpiresAt > now && order.dniPasswordHash))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0]?.dniPasswordHash ?? null;
+    },
     async create(input) {
       db.orders.push(clone(input));
       return clone(input);

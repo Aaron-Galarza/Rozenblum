@@ -7,6 +7,7 @@ import { ApiError, badRequest, conflict, notFound } from "../lib/http.js";
 import { courseEnrollmentClosesAt } from "../lib/course-expiry.js";
 import { logger } from "../lib/logger.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
+import { dniBinding } from "../lib/dni-binding.js";
 import { newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
 import type { StoredCourse, StoredEnrollment, StoredOrder, StoredUser } from "../types.js";
@@ -73,6 +74,7 @@ export async function checkout(
     alumno: account?.name ?? input.nombre,
     email: input.email.toLowerCase(),
     dniPasswordHash: account ? undefined : await hashPassword(input.dni),
+    dniBinding: dniBinding(input.email, input.dni),
     curso: course.title,
     courseSlug: course.slug,
     courseId: course.legacyId,

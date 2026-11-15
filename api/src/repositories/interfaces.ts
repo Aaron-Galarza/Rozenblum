@@ -55,6 +55,7 @@ export interface UserRepository {
     status?: "Activo" | "Suspendido";
     passwordHash: string;
     studentDniHash?: string;
+    studentDniBinding?: string;
     initials: string;
     img?: string;
     sessionVersion?: number;
@@ -64,7 +65,7 @@ export interface UserRepository {
     patch: Partial<
       Pick<
         StoredUser,
-        "name" | "email" | "status" | "passwordHash" | "initials" | "img" | "deletedAt"
+        "name" | "email" | "status" | "passwordHash" | "studentDniBinding" | "initials" | "img" | "deletedAt"
       >
     >,
     options?: { revokeSessions?: boolean },
@@ -186,6 +187,8 @@ export interface OrderRepository {
   findLatestByStudentAndCourse(email: string, courseId: number): Promise<StoredOrder | null>;
   /** The protected DNI hash on the paid order that originally created this student. */
   findStudentDniHash(email: string): Promise<string | null>;
+  /** First still-payable order for an email without an account. */
+  findPendingDniHash(email: string, now: string): Promise<string | null>;
   create(input: StoredOrder): Promise<StoredOrder>;
   updateStatus(id: string, estado: OrderStatus, paymentId?: string,
     fulfillmentIssue?: StoredOrder["fulfillmentIssue"]): Promise<StoredOrder | null>;

@@ -15,7 +15,8 @@ type AuditInput = {
 
 /** Keeps credentials out of the audit trail while preserving the rest of the record. */
 export function safeUserState(user: StoredUser): Record<string, unknown> {
-  const { passwordHash: _passwordHash, studentDniHash: _studentDniHash, ...state } = user;
+  const { passwordHash: _passwordHash, studentDniHash: _studentDniHash,
+    studentDniBinding: _studentDniBinding, ...state } = user;
   return state;
 }
 

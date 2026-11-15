@@ -1,6 +1,6 @@
 import type { OrderStatus } from "@rozenblum/shared";
 import { courseExpiryInstant, isCourseEnrollmentOpen, isCourseExpired } from "../lib/course-expiry.js";
-import { badRequest, conflict, notFound } from "../lib/http.js";
+import { badRequest, notFound } from "../lib/http.js";
 import { logger } from "../lib/logger.js";
 import { initialsFromName, newId, nowIso } from "../lib/utils.js";
 import { getRepositories } from "../repositories/index.js";
@@ -42,17 +42,22 @@ async function activateEnrollment(order: StoredOrder, approvedAt?: string): Prom
     return "payment_expired";
   }
   const account = await repos.users.findByEmail(order.email);
-  if (account && account.role !== "alumno") {
-    throw conflict("El correo de la orden pertenece a otra clase de cuenta.");
+  if (account && (account.role !== "alumno" || account.status !== "Activo" || account.deletedAt)) {
+    return "account_unavailable";
+  }
+  if (account?.studentDniBinding && account.studentDniBinding !== order.dniBinding) {
+    return "identity_mismatch";
+  }
+  if (account && order.dniBinding && !account.studentDniBinding) {
+    return "identity_mismatch";
   }
   if (!account) {
-    if (!order.dniPasswordHash) {
-      throw badRequest("La orden no tiene una credencial protegida para crear al alumno.");
-    }
+    if (!order.dniPasswordHash) return "account_unavailable";
     await repos.users.create({
       name: order.alumno, email: order.email, role: "alumno",
       passwordHash: order.dniPasswordHash,
       studentDniHash: order.dniPasswordHash,
+      studentDniBinding: order.dniBinding,
       initials: initialsFromName(order.alumno), sessionVersion: 0,
     });
   }
@@ -128,7 +133,9 @@ export async function applyOrderTransition(input: Transition): Promise<StoredPay
           id: newId("pev"), orderId: order.id, source: input.source,
           previousStatus: order.estado, nextStatus: input.status,
           reason: fulfillmentIssue
-            ? `${input.reason}. ${fulfillmentIssue === "payment_expired" ? "Plazo de pago vencido" : "Curso cerrado"}; acceso no activado.`
+            ? `${input.reason}. ${fulfillmentIssue === "payment_expired" ? "Plazo de pago vencido" :
+              fulfillmentIssue === "identity_mismatch" ? "Datos de la cuenta no coinciden" :
+              fulfillmentIssue === "account_unavailable" ? "Cuenta no disponible" : "Curso cerrado"}; acceso no activado.`
             : input.reason,
           createdAt: nowIso(),
           ...(input.actorId ? { actorId: input.actorId } : {}),
