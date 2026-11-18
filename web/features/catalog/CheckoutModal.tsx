@@ -7,6 +7,7 @@ import { ApiClientError, apiFetch, errorMessage } from "../../lib/api";
 import { useModalA11y } from "../../lib/use-modal-a11y";
 import { safeHttpUrl } from "../../lib/safe-url";
 import {
+  checkoutErrorMessage,
   checkoutPayload,
   createSingleFlight,
   normalizeCheckoutFields,
@@ -145,7 +146,7 @@ export default function CheckoutModal({ course, onClose }: CheckoutModalProps) {
         const apiError = err instanceof ApiClientError ? err : null;
         // Network failures and 5xx responses can happen after the server persisted the order.
         setUncertain(!apiError || apiError.status === 0 || apiError.status >= 500);
-        setError(errorMessage(err));
+        setError(checkoutErrorMessage(apiError?.code, errorMessage(err)));
       }
     } finally {
       window.clearTimeout(timeout);
@@ -238,7 +239,7 @@ export default function CheckoutModal({ course, onClose }: CheckoutModalProps) {
           <div className="rounded border-l-2 p-4" style={{ backgroundColor: "#FAF8F5", borderColor: "#B58A43" }}>
             <p className="mb-2 text-xs font-bold uppercase tracking-widest" style={{ color: "#173B6C" }}>Solicitud de inscripción</p>
             <p className="text-xs leading-relaxed" style={{ color: "rgba(23,59,108,0.7)" }}>
-              Usamos tu DNI para validar tu cuenta si ya existe, o como contraseña inicial si es tu primera compra. Al continuar, irás a Mercado Pago; la cuenta y el acceso se habilitan cuando se confirme el pago.
+              Usamos tu DNI para validar tu cuenta si ya existe, o como contraseña inicial si es tu primera compra. Si ya te inscribiste antes, usá el mismo correo y el mismo DNI. Al continuar, irás a Mercado Pago; la cuenta y el acceso se habilitan cuando se confirme el pago.
             </p>
           </div>
 

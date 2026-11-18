@@ -15,7 +15,7 @@ export type CheckoutParticipants = {
 
 export function checkoutDniMismatch(): ApiError {
   return new ApiError(403, "CHECKOUT_ACCOUNT_MISMATCH",
-    "Este correo no está disponible con los datos ingresados. Probá con otro correo.");
+    "No pudimos validar los datos ingresados. Revisá el correo y la contraseña utilizada para tu inscripción.");
 }
 
 export async function resolveCheckoutParticipants(
@@ -39,7 +39,7 @@ export async function resolveCheckoutParticipants(
   const account = await repos.users.findByEmail(input.email);
   if (account && (account.role !== "alumno" || account.status !== "Activo")) {
     throw new ApiError(403, "CHECKOUT_ACCOUNT_UNAVAILABLE",
-      "Este correo no está disponible para inscripciones. Contactá al Estudio.");
+      "No pudimos procesar la inscripción con los datos ingresados. Contactá al Estudio.");
   }
   if (account) {
     // Older paid accounts may predate studentDniHash; their first paid order

@@ -2225,7 +2225,8 @@ test("an interrupted checkout resumes its order without duplicates or exposing a
   assert.equal((await repositories.orders.list()).filter((order) => order.email === input.email).length, 1);
   await assert.rejects(checkoutService({ ...input, dni: "32999999" }),
     (error: unknown) => (error as { code?: string; message?: string }).code === "CHECKOUT_ACCOUNT_MISMATCH" &&
-      (error as { message?: string }).message?.includes("Este correo no está disponible") === true);
+      (error as { message?: string }).message ===
+        "No pudimos validar los datos ingresados. Revisá el correo y la contraseña utilizada para tu inscripción.");
   const adminToken = await login("admin", adminEmail);
   const teacherToken = await login("profesor", teacherEmail);
   const adminOrders = () => api<{ data: { id: string }[] }>(server.baseUrl,
@@ -2357,7 +2358,10 @@ test("a paid student buys a second course with the same DNI after an administrat
   });
   assert.equal(mismatch.status, 403);
   assert.equal((mismatch.body as { error: { code: string; message: string } }).error.code, "CHECKOUT_ACCOUNT_MISMATCH");
-  assert.match((mismatch.body as { error: { message: string } }).error.message, /Este correo no está disponible/);
+  const mismatchMessage = (mismatch.body as { error: { message: string } }).error.message;
+  assert.equal(mismatchMessage,
+    "No pudimos validar los datos ingresados. Revisá el correo y la contraseña utilizada para tu inscripción.");
+  assert.doesNotMatch(mismatchMessage, /existe|no existe|otro correo/i);
 
   const second = await checkoutService(input(courses[1]!.slug));
   assert.equal((await repositories.users.findByEmail(email))?.id, account.id);
@@ -2394,6 +2398,23 @@ test("the same DNI under another email creates a separate student account", asyn
   assert.notEqual(first.id, second.id);
   assert.equal((await repositories.enrollments.findByStudentAndCourse(emails[0]!, course.legacyId))?.status, "Activo");
   assert.equal((await repositories.enrollments.findByStudentAndCourse(emails[1]!, course.legacyId))?.status, "Activo");
+});
+
+test("checkout rejects an unavailable account without revealing its existence", async () => {
+  const course = await repositories.courses.create({
+    title: "Unavailable Account Course", description: "Account error message test", priceCents: 10_000,
+    duration: "Online", level: "Inicial", img: "https://example.test/unavailable.jpg",
+    professor: "Test profesor", professorEmail: teacherEmail, status: "published",
+  });
+  const message = "No pudimos procesar la inscripción con los datos ingresados. Contactá al Estudio.";
+  await assert.rejects(
+    checkoutService({ courseSlug: course.slug, nombre: "Test profesor", email: teacherEmail, dni: "30123456" }),
+    (error: unknown) => {
+      const failure = error as { status?: number; code?: string; message?: string };
+      return failure.status === 403 && failure.code === "CHECKOUT_ACCOUNT_UNAVAILABLE" &&
+        failure.message === message && failure.message.includes(teacherEmail) === false;
+    },
+  );
 });
 
 test("a second pending checkout cannot bind another DNI to the same email", async () => {

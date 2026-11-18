@@ -51,3 +51,13 @@ export function createSingleFlight(): SingleFlight {
     },
   };
 }
+
+const CHECKOUT_ERROR_MESSAGES: Record<string, string> = {
+  CONFLICT:
+    "Ya existe una inscripción para este curso con ese correo, o el pago anterior necesita revisión. Consultá el estado de tu orden o contactá al Estudio; no inicies otro pago.",
+};
+
+/** Keeps the backend message as fallback, but makes checkout-specific errors actionable. */
+export function checkoutErrorMessage(code: string | undefined, fallback: string): string {
+  return (code && CHECKOUT_ERROR_MESSAGES[code]) || fallback;
+}
