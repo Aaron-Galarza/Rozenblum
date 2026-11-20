@@ -37,19 +37,19 @@ function Modal({ area, onClose, onContact }: { area: PracticeArea; onClose: () =
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="relative w-full max-w-xl max-h-[85vh] overflow-y-auto outline-none"
+        className="relative max-h-[85dvh] w-full max-w-xl overflow-y-auto outline-none"
         style={{ backgroundColor: "#FFFFFF", boxShadow: "0 24px 80px rgba(23,59,108,0.25)" }}
       >
-        <div className="flex items-start justify-between p-8 pb-6" style={{ borderBottom: "1px solid rgba(23,59,108,0.1)" }}>
+        <div className="flex items-start justify-between gap-3 p-5 pb-5 sm:p-8 sm:pb-6" style={{ borderBottom: "1px solid rgba(23,59,108,0.1)" }}>
           <div>
             <p className="text-xs tracking-[0.2em] uppercase font-medium mb-2" style={{ color: "#B58A43" }}>Casos Comunes</p>
-            <h2 id={titleId} className="text-3xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{area.title}</h2>
+            <h2 id={titleId} className="text-2xl font-light sm:text-3xl" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>{area.title}</h2>
           </div>
           <button onClick={onClose} aria-label="Cerrar" className="flex-shrink-0 ml-4 mt-1 w-9 h-9 flex items-center justify-center hover:scale-110 transition-transform" style={{ color: "#173B6C", backgroundColor: "rgba(23,59,108,0.06)" }}>
             <IconClose />
           </button>
         </div>
-        <div className="p-8 space-y-6">
+        <div className="space-y-6 p-5 sm:p-8">
           {area.casos.map(({ q, a }) => (
             <div key={q} className="space-y-2">
               <div className="flex gap-3 items-start">
@@ -60,7 +60,7 @@ function Modal({ area, onClose, onContact }: { area: PracticeArea; onClose: () =
             </div>
           ))}
         </div>
-        <div className="px-8 pb-8">
+        <div className="px-5 pb-5 sm:px-8 sm:pb-8">
           <div className="h-px mb-6" style={{ backgroundColor: "rgba(23,59,108,0.1)" }} />
           <button
             onClick={onContact}
@@ -103,6 +103,22 @@ export default function LandingPage() {
       .catch((error) => setContentError(errorMessage(error)));
   }, []);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    const onResize = () => {
+      if (window.innerWidth >= 1024) setMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [menuOpen]);
+
   const practiceAreas: PracticeArea[] = (homeContent?.practiceAreas ?? []).map((area) => ({
     ...area,
     icon: AREA_ICONS[area.icon],
@@ -135,7 +151,7 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "#FAF8F5", fontFamily: "'Roboto', sans-serif" }}>
+    <div className="landing-page min-h-screen min-w-0 max-w-full overflow-x-hidden" style={{ backgroundColor: "#FAF8F5", fontFamily: "'Roboto', sans-serif" }}>
       {activeModal && (
         <Modal
           area={activeModal}
@@ -146,9 +162,9 @@ export default function LandingPage() {
 
       {/* ── NAV ── */}
       <nav aria-label="Navegación principal" className="fixed top-0 left-0 right-0 z-50 shadow-[0_4px_24px_rgba(23,59,108,0.04)]" style={{ backgroundColor: "#FAF8F5", borderBottom: "1px solid rgba(23,59,108,0.1)" }}>
-        <div className="max-w-7xl mx-auto px-6 flex items-center justify-between h-[72px]">
-          <button onClick={() => scrollTo("inicio")} aria-label="Volver al inicio" className="flex-shrink-0 transition-opacity hover:opacity-75">
-            <BrandLogo className="h-11 w-auto object-contain" />
+        <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
+          <button onClick={() => scrollTo("inicio")} aria-label="Volver al inicio" className="min-w-0 shrink-0 transition-opacity hover:opacity-75">
+            <BrandLogo className="h-10 w-auto max-w-[150px] object-contain sm:h-11 sm:max-w-[220px]" />
 
           </button>
           <ul className="hidden lg:flex items-center gap-7">
@@ -179,7 +195,7 @@ export default function LandingPage() {
           </div>
         </div>
         {menuOpen && (
-          <div id="menu-principal-mobile" className="lg:hidden px-6 pb-6 pt-3 space-y-1 shadow-[0_16px_24px_rgba(23,59,108,0.08)]" style={{ backgroundColor: "#FAF8F5", borderTop: "1px solid rgba(23,59,108,0.1)" }}>
+          <div id="menu-principal-mobile" className="max-h-[calc(100dvh-72px)] overflow-y-auto overscroll-contain px-4 pb-6 pt-3 space-y-1 shadow-[0_16px_24px_rgba(23,59,108,0.08)] sm:px-6 lg:hidden" style={{ backgroundColor: "#FAF8F5", borderTop: "1px solid rgba(23,59,108,0.1)" }}>
             {NAV_LINKS.map((link) => (
               <button key={link} onClick={() => { if (link === "Cursos") { setMenuOpen(false); goToAula(); return; } scrollTo(link.toLowerCase().replace("á","a").replace("é","e").replace("ó","o").replace("ú","u").replace("í","i")); }} className="block min-h-11 w-full border-b border-[#173B6C]/5 py-3 text-left text-xs font-medium tracking-widest transition-colors hover:text-[#9A7435]" style={{ color: "#173B6C" }}>
                 {link.toUpperCase()}
@@ -194,15 +210,15 @@ export default function LandingPage() {
 
       {/* ── HERO ── */}
       <section id="inicio" className="pt-[72px]">
-        <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-12 items-center min-h-[calc(100vh-72px)] py-20">
-          <div className="space-y-8">
+        <div className="mx-auto grid min-h-[calc(100dvh-72px)] max-w-7xl items-center gap-8 px-4 py-12 sm:px-6 sm:py-20 lg:grid-cols-2 lg:gap-12">
+          <div className="min-w-0 space-y-8">
             <div className="flex items-center gap-3">
               <div className="h-px w-10" style={{ backgroundColor: "#B58A43" }} />
               <span className="text-xs font-medium tracking-[0.2em] uppercase" style={{ color: "#B58A43" }}>{homeContent?.brand.locationLabel}</span>
             </div>
-            <h1 className="text-5xl lg:text-6xl xl:text-[68px] leading-[1.08] font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>
-              Excelencia Jurídica<br />
-              <span className="font-semibold italic" style={{ color: "#72132C" }}>y Formación</span><br />
+            <h1 className="text-balance text-3xl leading-[1.12] font-light sm:text-4xl md:text-5xl lg:text-6xl xl:text-[68px]" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>
+              Excelencia Jurídica<br className="hidden sm:block" />{" "}
+              <span className="font-semibold italic" style={{ color: "#72132C" }}>y Formación</span><br className="hidden sm:block" />{" "}
               Profesional
             </h1>
             <p className="text-base lg:text-lg leading-relaxed max-w-md" style={{ color: "#173B6C", opacity: 0.72 }}>
@@ -216,16 +232,16 @@ export default function LandingPage() {
                 VER CURSOS
               </button>
             </div>
-            <div className="flex gap-10 pt-2">
+            <div className="grid grid-cols-3 gap-4 pt-2 sm:flex sm:gap-10">
               {(homeContent?.brand.metrics ?? []).map(({ value, label }) => (
                 <div key={label}>
-                  <p className="text-3xl font-light" style={{ color: "#B58A43", fontFamily: "'Cormorant Garamond', serif" }}>{value}</p>
-                  <p className="text-xs tracking-widest uppercase mt-0.5" style={{ color: "#173B6C", opacity: 0.5 }}>{label}</p>
+                  <p className="text-2xl font-light sm:text-3xl" style={{ color: "#B58A43", fontFamily: "'Cormorant Garamond', serif" }}>{value}</p>
+                  <p className="mt-0.5 text-[10px] tracking-wider uppercase sm:text-xs sm:tracking-widest" style={{ color: "#173B6C", opacity: 0.5 }}>{label}</p>
                 </div>
               ))}
             </div>
           </div>
-          <div className="hidden lg:block relative">
+          <div className="relative hidden min-w-0 lg:block">
             {homeContent?.brand.heroImage && <img src={optimizedImage(homeContent.brand.heroImage, 960)} srcSet={responsiveImageSet(homeContent.brand.heroImage)} sizes="(max-width: 1024px) 100vw, 50vw" alt="Despacho jurídico moderno" className="w-full object-cover" style={{ height: 560 }} />}
             <div className="absolute -bottom-4 -right-4 w-40 h-40 border-2 pointer-events-none" style={{ borderColor: "#B58A43" }} />
             <div className="absolute bottom-8 left-8 px-6 py-5" style={{ backgroundColor: "#173B6C" }}>
@@ -237,20 +253,20 @@ export default function LandingPage() {
       </section>
 
       {/* ── ÁREAS ── */}
-      <section id="areas" className="py-24" style={{ backgroundColor: "#FAF8F5" }}>
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="mb-14">
+      <section id="areas" className="py-14 sm:py-24" style={{ backgroundColor: "#FAF8F5" }}>
+        <div className="mx-auto min-w-0 max-w-7xl px-4 sm:px-6">
+          <div className="mb-8 sm:mb-14">
             <div className="flex items-center gap-3 mb-4">
               <div className="h-px w-10" style={{ backgroundColor: "#B58A43" }} />
               <span className="text-xs font-medium tracking-[0.2em] uppercase" style={{ color: "#B58A43" }}>Especialidades</span>
             </div>
-            <h2 className="text-5xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Áreas de Práctica</h2>
+            <h2 className="text-balance text-3xl font-light sm:text-4xl lg:text-5xl" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Áreas de Práctica</h2>
             <p className="mt-3 text-sm leading-relaxed max-w-lg" style={{ color: "#173B6C", opacity: 0.65 }}>Equipos especializados con profundo conocimiento de la jurisprudencia nacional y provincial.</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             {contentError && <p role="alert" className="mb-6 text-sm" style={{ color: "#72132C" }}>No se pudo cargar el contenido: {contentError}</p>}
             {practiceAreas.map((area) => (
-              <div key={area.title} className="group flex flex-col p-7 gap-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl" style={{ backgroundColor: "#173B6C" }}>
+              <div key={area.title} className="group flex flex-col gap-4 p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl sm:gap-5 sm:p-7" style={{ backgroundColor: "#173B6C" }}>
                 <div style={{ color: "#B58A43" }} className="transition-transform duration-300 group-hover:scale-110">{area.icon}</div>
                 <div className="flex-1 space-y-2">
                   <h3 className="text-xl font-medium leading-snug" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>{area.title}</h3>
@@ -270,25 +286,25 @@ export default function LandingPage() {
       </section>
 
       {/* ── CURSOS ── */}
-      <section id="cursos" className="py-24" style={{ backgroundColor: "#173B6C" }}>
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="mb-14">
+      <section id="cursos" className="py-14 sm:py-24" style={{ backgroundColor: "#173B6C" }}>
+        <div className="mx-auto min-w-0 max-w-7xl px-4 sm:px-6">
+          <div className="mb-8 sm:mb-14">
             <div className="flex items-center gap-3 mb-4">
               <div className="h-px w-10" style={{ backgroundColor: "#B58A43" }} />
               <span className="text-xs font-medium tracking-[0.2em] uppercase" style={{ color: "#B58A43" }}>Academia Jurídica</span>
             </div>
-            <h2 className="text-5xl font-light max-w-2xl leading-tight" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>Capacitación para Estudiantes y Profesionales</h2>
+            <h2 className="text-balance text-3xl font-light max-w-2xl leading-tight sm:text-4xl lg:text-5xl" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>Capacitación para Estudiantes y Profesionales</h2>
             <p className="mt-4 text-base leading-relaxed max-w-xl" style={{ color: "rgba(250,248,245,0.65)" }}>
               Llevá tu carrera al siguiente nivel con nuestros cursos especializados. Accedé a nuestra plataforma virtual para inscribirte y ver el material.
             </p>
           </div>
           {featuredCourse && <div className="grid lg:grid-cols-5 overflow-hidden" style={{ border: "1px solid rgba(181,138,67,0.3)" }}>
-            <div className="lg:col-span-2 relative overflow-hidden" style={{ minHeight: 280 }}>
+            <div className="relative overflow-hidden lg:col-span-2" style={{ minHeight: 200 }}>
               <img src={optimizedImage(featuredCourse.img, 960)} srcSet={responsiveImageSet(featuredCourse.img)} sizes="(max-width: 1024px) 100vw, 40vw" alt={featuredCourse.title} className="w-full h-full object-cover" />
               <div className="absolute inset-0" style={{ background: "linear-gradient(to right, transparent 50%, #173B6C)" }} />
               <div className="absolute top-5 left-5 px-3 py-1.5 text-xs font-medium tracking-widest" style={{ backgroundColor: "#B58A43", color: "#FAF8F5" }}>DESTACADO</div>
             </div>
-            <div className="lg:col-span-3 p-10 lg:p-14 flex flex-col justify-center gap-6" style={{ backgroundColor: "rgba(250,248,245,0.04)" }}>
+            <div className="flex flex-col justify-center gap-5 p-6 sm:p-10 lg:col-span-3 lg:p-14" style={{ backgroundColor: "rgba(250,248,245,0.04)" }}>
               <div>
                 <p className="text-xs tracking-widest uppercase mb-2" style={{ color: "#B58A43" }}>Curso Principal</p>
                 <h3 className="text-3xl lg:text-4xl font-light leading-snug" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>{featuredCourse.title}</h3>
@@ -326,14 +342,14 @@ export default function LandingPage() {
       </section>
 
       {/* ── NOSOTROS ── */}
-      <section id="nosotros" className="py-24" style={{ backgroundColor: "#FAF8F5" }}>
-        <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-16 items-center">
+      <section id="nosotros" className="py-14 sm:py-24" style={{ backgroundColor: "#FAF8F5" }}>
+        <div className="mx-auto grid min-w-0 max-w-7xl items-center gap-10 px-4 sm:px-6 lg:grid-cols-2 lg:gap-16">
           <div className="space-y-8">
             <div className="flex items-center gap-3">
               <div className="h-px w-10" style={{ backgroundColor: "#B58A43" }} />
               <span className="text-xs font-medium tracking-[0.2em] uppercase" style={{ color: "#B58A43" }}>Nuestra Historia</span>
             </div>
-            <h2 className="text-5xl font-light leading-tight" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Más de Dos Décadas de Compromiso Jurídico</h2>
+            <h2 className="text-balance text-3xl font-light leading-tight sm:text-4xl lg:text-5xl" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Más de Dos Décadas de Compromiso Jurídico</h2>
             <div className="space-y-5 text-sm leading-relaxed" style={{ color: "rgba(23,59,108,0.72)" }}>
               {(homeContent?.brand.aboutParagraphs ?? []).map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
             </div>
@@ -356,13 +372,13 @@ export default function LandingPage() {
               { label: "Confianza", desc: "Construimos una relación sólida basada en la transparencia y comunicación.", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-6 h-6"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" /></svg> },
               { label: "Experiencia", desc: "Años de trayectoria nos respaldan en la resolución de conflictos legales.", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-6 h-6"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg> },
             ].map(({ label, desc, icon }, i) => (
-              <div key={label} className="flex items-start gap-6 p-7 group transition-all duration-300 hover:shadow-lg" style={{ backgroundColor: "#173B6C" }}>
-                <div className="flex-shrink-0 w-14 h-14 rounded-full flex items-center justify-center transition-transform duration-300 group-hover:scale-110" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>{icon}</div>
+              <div key={label} className="group flex items-start gap-4 p-5 transition-all duration-300 hover:shadow-lg sm:gap-6 sm:p-7" style={{ backgroundColor: "#173B6C" }}>
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform duration-300 group-hover:scale-110 sm:h-14 sm:w-14" style={{ backgroundColor: "#B58A43", color: "#173B6C" }}>{icon}</div>
                 <div className="space-y-1.5 flex-1">
                   <h3 className="text-2xl font-semibold" style={{ color: "#B58A43", fontFamily: "'Cormorant Garamond', serif" }}>{label}</h3>
                   <p className="text-sm leading-relaxed" style={{ color: "rgba(250,248,245,0.72)" }}>{desc}</p>
                 </div>
-                <span className="ml-auto flex-shrink-0 text-5xl font-light leading-none select-none" style={{ color: "rgba(181,138,67,0.12)", fontFamily: "'Cormorant Garamond', serif" }}>0{i + 1}</span>
+                <span className="ml-auto hidden shrink-0 select-none text-5xl font-light leading-none sm:block" style={{ color: "rgba(181,138,67,0.12)", fontFamily: "'Cormorant Garamond', serif" }}>0{i + 1}</span>
               </div>
             ))}
           </div>
@@ -370,22 +386,22 @@ export default function LandingPage() {
       </section>
 
       {/* ── EQUIPO ── */}
-      <section id="equipo" className="py-24" style={{ backgroundColor: "#FAF8F5", borderTop: "1px solid rgba(23,59,108,0.08)" }}>
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-16">
+      <section id="equipo" className="py-14 sm:py-24" style={{ backgroundColor: "#FAF8F5", borderTop: "1px solid rgba(23,59,108,0.08)" }}>
+        <div className="mx-auto min-w-0 max-w-7xl px-4 sm:px-6">
+          <div className="mb-10 text-center sm:mb-16">
             <div className="flex items-center justify-center gap-3 mb-4">
               <div className="h-px w-10" style={{ backgroundColor: "#B58A43" }} />
               <span className="text-xs font-medium tracking-[0.2em] uppercase" style={{ color: "#B58A43" }}>Profesionales</span>
               <div className="h-px w-10" style={{ backgroundColor: "#B58A43" }} />
             </div>
-            <h2 className="text-5xl font-light" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Nuestro Equipo</h2>
+            <h2 className="text-balance text-3xl font-light sm:text-4xl lg:text-5xl" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Nuestro Equipo</h2>
             <p className="mt-4 text-sm max-w-md mx-auto" style={{ color: "rgba(23,59,108,0.65)" }}>Abogados con trayectoria comprobada, formación continua y vocación por la defensa de los derechos de nuestros clientes.</p>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
+          <div className="grid grid-cols-2 gap-5 sm:gap-8 lg:grid-cols-4 lg:gap-12">
             {team.map((m) => (
               <div key={m.name} className="flex flex-col items-center text-center group">
                 <div className="relative mb-5">
-                  <div className="w-36 h-36 lg:w-44 lg:h-44 rounded-full overflow-hidden border-4 transition-all duration-300" style={{ borderColor: "rgba(23,59,108,0.12)" }}>
+                  <div className="h-24 w-24 overflow-hidden rounded-full border-4 transition-all duration-300 sm:h-32 sm:w-32 lg:h-44 lg:w-44" style={{ borderColor: "rgba(23,59,108,0.12)" }}>
                     <img src={optimizedImage(m.img, 640)} srcSet={responsiveImageSet(m.img)} sizes="(max-width: 640px) 80vw, 25vw" alt={m.name} loading="lazy" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                   </div>
                   <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-8 h-0.5" style={{ backgroundColor: "#B58A43" }} />
@@ -410,7 +426,7 @@ export default function LandingPage() {
             </div>
             <h2 className="text-4xl font-light sm:text-5xl" style={{ color: "#FAF8F5", fontFamily: "'Cormorant Garamond', serif" }}>Contacto</h2>
           </div>
-          <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_0.82fr] lg:gap-16">
+          <div className="grid min-w-0 gap-12 lg:grid-cols-[minmax(0,1fr)_0.82fr] lg:gap-16">
             <div className="flex min-w-0 flex-col">
             <form className="space-y-5" onSubmit={handleContact}>
               {[{ id: "name", label: "Nombre completo", type: "text", placeholder: "Ej. Juan García" }, { id: "email", label: "Correo electrónico", type: "email", placeholder: "juan@ejemplo.com" }].map(({ id, label, type, placeholder }) => (

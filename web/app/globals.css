@@ -12,32 +12,69 @@
   --font-sans: 'Roboto', system-ui, sans-serif;
 }
 
-html, body {
-  height: 100%;
+/*
+ * Mobile-first guard rails: nothing may create a horizontal page scroll.
+ * `clip` (instead of `hidden`) does not turn the root into a scroll container,
+ * so `position: sticky` keeps working.
+ */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overflow-x: clip;
 }
 
 body {
+  min-height: 100%;
+  max-width: 100%;
+  overflow-x: clip;
   background-color: #FAF8F5;
   color: #173B6C;
   font-family: 'Roboto', system-ui, sans-serif;
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #B58A43 transparent;
+/* The landing page contains decorative positioned elements and embedded maps.
+ * Keep their visual overflow from widening the document on narrow viewports. */
+.landing-page,
+.landing-page > section,
+.landing-page > footer {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
-*::-webkit-scrollbar {
-  width: 4px;
+/* Media and tables can never be wider than their container by default. */
+img,
+video,
+canvas,
+svg,
+iframe {
+  max-width: 100%;
 }
 
-*::-webkit-scrollbar-track {
-  background: transparent;
+/* Long emails, URLs and pasted content wrap instead of stretching the layout. */
+h1, h2, h3, h4, h5, h6, p, li, dd, dt {
+  overflow-wrap: anywhere;
 }
 
-*::-webkit-scrollbar-thumb {
-  background-color: #B58A43;
-  border-radius: 2px;
+@media (pointer: fine) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #B58A43 transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: #B58A43;
+    border-radius: 2px;
+  }
 }
 
 /* Visible keyboard focus, consistent with the gold accent palette. */
