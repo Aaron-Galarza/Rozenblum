@@ -6,12 +6,12 @@ import type { AdminReportesDTO } from "@rozenblum/shared";
 function BarChart({ data }: { data: { month: string; value: number }[] }) {
   const max = Math.max(1, ...data.map((point) => point.value));
   return (
-    <div className="flex items-end justify-between gap-3 h-36 px-2">
+    <div className="flex h-32 items-end justify-between gap-1 px-1 sm:h-36 sm:gap-3 sm:px-2">
       {data.map(({ month, value }) => (
         <div key={month} className="flex flex-col items-center gap-1 flex-1">
-          <span className="text-[10px]" style={{ color: "#B58A43" }}>${value}k</span>
+          <span className="text-[8px] sm:text-[10px]" style={{ color: "#B58A43" }}>${value}k</span>
           <div className="w-full rounded-t transition-all duration-500" style={{ height: `${(value / max) * 100}%`, backgroundColor: "#B58A43", opacity: 0.85 }} />
-          <span className="text-[10px]" style={{ color: "rgba(23,59,108,0.55)" }}>{month}</span>
+          <span className="text-[8px] sm:text-[10px]" style={{ color: "rgba(23,59,108,0.55)" }}>{month}</span>
         </div>
       ))}
     </div>
@@ -36,24 +36,24 @@ function LineChart({ points }: { points: number[] }) {
 export default function ReportesSection({ reportes }: { reportes: AdminReportesDTO }) {
   return (
     <>
-      <h2 className="text-3xl font-light mb-8" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Reportes</h2>
-      <div className="grid lg:grid-cols-2 gap-6">
-        <div className="p-6 rounded-lg" style={{ backgroundColor: "#FFFFFF", border: "1px solid rgba(23,59,108,0.08)" }}>
+      <h2 className="mb-6 text-2xl font-light sm:mb-8 sm:text-3xl" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Reportes</h2>
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-2">
+        <div className="rounded-lg p-4 sm:p-6" style={{ backgroundColor: "#FFFFFF", border: "1px solid rgba(23,59,108,0.08)" }}>
           <h3 className="text-lg font-medium mb-4" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Ingresos por Mes</h3>
           <BarChart data={reportes.ingresosPorMes} />
         </div>
-        <div className="p-6 rounded-lg" style={{ backgroundColor: "#FFFFFF", border: "1px solid rgba(23,59,108,0.08)" }}>
+        <div className="rounded-lg p-4 sm:p-6" style={{ backgroundColor: "#FFFFFF", border: "1px solid rgba(23,59,108,0.08)" }}>
           <h3 className="text-lg font-medium mb-4" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Alumnos Nuevos por Mes</h3>
           <LineChart points={reportes.alumnosPorMes.map((point) => point.value)} />
         </div>
-        <div className="p-6 rounded-lg" style={{ backgroundColor: "#FFFFFF", border: "1px solid rgba(23,59,108,0.08)" }}>
+        <div className="rounded-lg p-4 sm:p-6" style={{ backgroundColor: "#FFFFFF", border: "1px solid rgba(23,59,108,0.08)" }}>
           <h3 className="text-lg font-medium mb-4" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Completion Rate por Curso</h3>
           <div className="space-y-3">
             {reportes.completionPorCurso.length === 0 ? (
               <p className="text-xs" style={{ color: "rgba(23,59,108,0.4)" }}>Sin datos todavía</p>
             ) : reportes.completionPorCurso.map(({ name, pct }) => (
               <div key={name}>
-                <div className="flex justify-between text-xs mb-1" style={{ color: "#173B6C" }}><span>{name}</span><span style={{ color: "#B58A43" }}>{pct}%</span></div>
+                <div className="mb-1 flex justify-between gap-3 text-xs" style={{ color: "#173B6C" }}><span className="min-w-0 truncate">{name}</span><span style={{ color: "#B58A43" }}>{pct}%</span></div>
                 <div className="w-full h-2 rounded-full" style={{ backgroundColor: "#E0E0E0" }}>
                   <div className="h-2 rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: "#B58A43" }} />
                 </div>
@@ -61,7 +61,7 @@ export default function ReportesSection({ reportes }: { reportes: AdminReportesD
             ))}
           </div>
         </div>
-        <div className="p-6 rounded-lg" style={{ backgroundColor: "#FFFFFF", border: "1px solid rgba(23,59,108,0.08)" }}>
+        <div className="rounded-lg p-4 sm:p-6" style={{ backgroundColor: "#FFFFFF", border: "1px solid rgba(23,59,108,0.08)" }}>
           <h3 className="text-lg font-medium mb-4" style={{ color: "#173B6C", fontFamily: "'Cormorant Garamond', serif" }}>Cursos Más Populares</h3>
           <div className="space-y-3">
             {reportes.cursosPopulares.length === 0 ? (
@@ -69,7 +69,7 @@ export default function ReportesSection({ reportes }: { reportes: AdminReportesD
             ) : reportes.cursosPopulares.map(({ name, count, color }) => (
               <div key={name} className="flex items-center gap-3">
                 <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                <span className="text-xs flex-1" style={{ color: "#173B6C" }}>{name}</span>
+                <span className="min-w-0 flex-1 truncate text-xs" style={{ color: "#173B6C" }}>{name}</span>
                 <span className="text-xs font-bold" style={{ color: "#B58A43" }}>{count} alumnos</span>
               </div>
             ))}
